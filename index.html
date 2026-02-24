@@ -5,36 +5,149 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>همزة المالية</title>
 
-  <!-- CSS خارجي -->
-  <link rel="stylesheet" href="assets/css/style.css?v=1" />
+  <!-- ✅ ربط ملف CSS الخارجي -->
+  <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 
 <body>
 
-  <header>
-    <h1>همزة المالية</h1>
-    <p>محرك تقييم جودة الأداء المالي</p>
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand">
+        <h1>همزة المالية</h1>
+        <p>نقرأ المؤشرات الحيوية للأداء المالي</p>
+      </div>
+      <div class="header-badges">
+        <span class="badge">نسخة تجريبية</span>
+        <span class="badge badge-muted">RTL</span>
+      </div>
+    </div>
   </header>
 
-  <div class="container">
-    <div class="card">
-      <div class="title">تحليل جودة الربح</div>
+  <main class="container">
 
-      <label>صافي الربح:</label><br />
-      <input type="number" id="netProfit" placeholder="ادخل الرقم" /><br /><br />
+    <!-- شريط علوي -->
+    <section class="topbar">
+      <div class="topbar-title">
+        <h2>لوحة المؤشرات</h2>
+        <p>ابدأ بإدخال الأرقام أو ارفع ملفاتك لتجهيز التحليل</p>
+      </div>
 
-      <label>التدفق النقدي التشغيلي:</label><br />
-      <input type="number" id="cashFlow" placeholder="ادخل الرقم" /><br /><br />
+      <div class="topbar-actions">
+        <button class="btn btn-secondary" id="btnDemo">تعبئة مثال</button>
+        <button class="btn" id="btnClear">مسح</button>
+      </div>
+    </section>
 
-      <!-- مهم: زر بدون onclick -->
-      <button id="analyzeBtn" type="button">تحليل</button>
+    <!-- ✅ البطاقات (Cards) -->
+    <section class="grid">
+      <article class="card">
+        <div class="card-head">
+          <h3>جودة الربح</h3>
+          <span class="pill pill-good">جاهز</span>
+        </div>
+        <p class="muted">مقارنة صافي الربح بالتدفق النقدي التشغيلي لقياس هل الربح نقدي أم ورقي.</p>
+        <div class="mini">
+          <div class="mini-item">
+            <span class="mini-label">مستوى جيد</span>
+            <span class="mini-value">≥ 80%</span>
+          </div>
+          <div class="mini-item">
+            <span class="mini-label">تحذير</span>
+            <span class="mini-value">أقل من 60%</span>
+          </div>
+        </div>
+      </article>
 
-      <div id="result"></div>
-    </div>
-  </div>
+      <article class="card">
+        <div class="card-head">
+          <h3>السيولة التشغيلية</h3>
+          <span class="pill pill-warn">قريبًا</span>
+        </div>
+        <p class="muted">قياس قدرة النشاط على توليد نقد من التشغيل واتساقه عبر السنوات.</p>
+        <div class="mini">
+          <div class="mini-item">
+            <span class="mini-label">ملاحظة</span>
+            <span class="mini-value">يحتاج بيانات سنوات</span>
+          </div>
+        </div>
+      </article>
 
-  <!-- JS خارجي -->
-  <script src="assets/js/main.js?v=1" defer></script>
+      <article class="card">
+        <div class="card-head">
+          <h3>نسبة التداول</h3>
+          <span class="pill pill-warn">قريبًا</span>
+        </div>
+        <p class="muted">قدرة الشركة على تغطية الالتزامات قصيرة الأجل (Current Ratio).</p>
+        <div class="mini">
+          <div class="mini-item">
+            <span class="mini-label">مستوى مريح</span>
+            <span class="mini-value">1.5+</span>
+          </div>
+        </div>
+      </article>
+    </section>
 
+    <!-- ✅ تحليل جودة الربح -->
+    <section class="card card-large">
+      <div class="card-head">
+        <h3>تحليل جودة الربح</h3>
+        <span class="pill pill-good">جاهز</span>
+      </div>
+
+      <div class="split">
+        <div class="form">
+          <label for="netProfit">صافي الربح</label>
+          <input type="number" id="netProfit" placeholder="أدخل الرقم" inputmode="decimal" />
+
+          <label for="cashFlow">التدفق النقدي التشغيلي</label>
+          <input type="number" id="cashFlow" placeholder="أدخل الرقم" inputmode="decimal" />
+
+          <button class="btn" id="btnAnalyze">تحليل</button>
+
+          <div class="result" id="result"></div>
+        </div>
+
+        <div class="hint">
+          <h4>ماذا يعني هذا المؤشر؟</h4>
+          <ul>
+            <li>إذا كان التدفق النقدي قريب/أعلى من الربح: غالبًا الربح مدعوم بنقد.</li>
+            <li>إذا كان أقل بكثير: قد يكون الربح محاسبي ويحتاج فحص.</li>
+          </ul>
+          <p class="muted small">* قراءة أولية وليست توصية استثمارية.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ✅ خانة رفع الملفات -->
+    <section class="card">
+      <div class="card-head">
+        <h3>رفع الملفات</h3>
+        <span class="pill pill-good">يقبل كل الأنواع</span>
+      </div>
+
+      <p class="muted">
+        ارفع أي ملفات لديك (PDF / Excel / CSV / Word / صور). الآن سنعرض قائمة الملفات،
+        وفي الخطوة التالية سنبدأ استخراج البيانات تلقائيًا.
+      </p>
+
+      <div class="uploader">
+        <input id="fileInput" type="file" multiple />
+        <div class="file-meta">
+          <span class="muted small">يمكنك رفع عدة ملفات دفعة واحدة.</span>
+        </div>
+      </div>
+
+      <div class="file-list" id="fileList"></div>
+    </section>
+
+    <footer class="footer">
+      <p class="muted small">© همزة المالية — بناء تدريجي خطوة بخطوة.</p>
+    </footer>
+
+  </main>
+
+  <!-- ✅ ربط ملف JS الخارجي -->
+  <script src="assets/js/main.js"></script>
 </body>
 </html>
