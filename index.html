@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>همزة المالية</title>
 
   <!-- CSS خارجي -->
-  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/style.css?v=1" />
 </head>
 
 <body>
@@ -20,12 +20,13 @@
     <div class="card">
       <div class="title">تحليل جودة الربح</div>
 
-      <label>صافي الربح:</label><br>
-      <input type="number" id="netProfit" placeholder="ادخل الرقم"><br><br>
+      <label>صافي الربح:</label><br />
+      <input type="number" id="netProfit" placeholder="ادخل الرقم" /><br /><br />
 
-      <label>التدفق النقدي التشغيلي:</label><br>
-      <input type="number" id="cashFlow" placeholder="ادخل الرقم"><br><br>
+      <label>التدفق النقدي التشغيلي:</label><br />
+      <input type="number" id="cashFlow" placeholder="ادخل الرقم" /><br /><br />
 
+      <!-- مهم: زر بدون onclick -->
       <button id="analyzeBtn" type="button">تحليل</button>
 
       <div id="result"></div>
@@ -33,7 +34,7 @@
   </div>
 
   <!-- JS خارجي -->
-  <script src="assets/js/main.js"></script>
+  <script src="assets/js/main.js?v=1" defer></script>
 
 </body>
 </html>
