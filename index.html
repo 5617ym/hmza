@@ -13,73 +13,99 @@
 
 <body>
 
-  <header class="site-header">
-    <div class="container header-inner">
-      <div class="brand">
+<header class="site-header">
+  <div class="container header-inner">
 
-        <img src="assets/images/logo.png" alt="وصلة المالية" class="logo-img" />
-
-        <div class="brand-text">
-          <h1>وصلة المالية</h1>
-          <p>نقرأ المؤشرات الحيوية للأداء المالي</p>
-        </div>
-
-      </div>
-
-      <div class="header-badges">
-        <span class="badge">نسخة تجريبية</span>
-        <span class="badge badge-muted">RTL</span>
+    <div class="brand">
+      <img src="assets/images/logo.png" class="logo-img" alt="وصلة المالية" />
+      <div>
+        <h1>وصلة المالية</h1>
+        <p>نقرأ المؤشرات الحيوية للأداء المالي</p>
       </div>
     </div>
-  </header>
 
-  <main class="container">
+  </div>
+</header>
 
-    <!-- شاشة البداية -->
-    <section class="card card-large" id="uploadStage">
-      <div class="card-head">
-        <h3>ابدأ برفع الملفات</h3>
-        <span class="pill pill-good">الخطوة 1</span>
+<main class="container">
+
+  <!-- شاشة البداية -->
+  <section class="card card-large" id="uploadStage">
+
+    <div class="card-head">
+      <h3>ابدأ برفع الملفات</h3>
+      <span class="pill pill-good">الخطوة 1</span>
+    </div>
+
+    <p class="muted">
+      ارفع ملفاتك ثم سيتم عرض لوحة المؤشرات تلقائيًا.
+    </p>
+
+    <div class="controls">
+
+      <div class="control">
+        <label>الفترة</label>
+        <select id="period">
+          <option value="q">ربع سنوي</option>
+          <option value="y" selected>سنوي</option>
+          <option value="t">آخر 12 شهر</option>
+        </select>
       </div>
 
-      <p class="muted">
-        ارفع ملفاتك وسيتم تحليل البيانات تلقائيًا.
-      </p>
-
-      <div class="controls">
-        <div class="control">
-          <label for="period">الفترة</label>
-          <select id="period">
-            <option value="q">ربع سنوي</option>
-            <option value="y" selected>سنوي</option>
-            <option value="t">آخر 12 شهر</option>
-          </select>
-        </div>
-
-        <div class="control">
-          <label for="compare">المقارنة</label>
-          <select id="compare">
-            <option value="none" selected>بدون مقارنة</option>
-            <option value="prev">مقارنة بالفترة السابقة</option>
-            <option value="avg">متوسط 3 فترات</option>
-          </select>
-        </div>
-
-        <div class="control">
-          <label for="fileInput">رفع الملفات</label>
-          <input id="fileInput" type="file" multiple />
-        </div>
+      <div class="control">
+        <label>المقارنة</label>
+        <select id="compare">
+          <option value="none" selected>بدون مقارنة</option>
+          <option value="prev">مقارنة بالفترة السابقة</option>
+          <option value="avg">متوسط 3 فترات</option>
+        </select>
       </div>
 
-      <div class="file-list" id="fileList"></div>
-
-      <div class="stage-actions">
-        <button class="btn" id="btnStart" disabled>عرض النتائج</button>
+      <div class="control">
+        <label>رفع الملفات</label>
+        <input id="fileInput" type="file" multiple />
       </div>
-    </section>
 
-  </main>
+    </div>
 
-  <script src="assets/js/main.js"></script>
+    <div id="fileList" class="file-list"></div>
+
+    <div class="stage-actions">
+      <button class="btn" id="btnStart" disabled>عرض النتائج</button>
+    </div>
+
+  </section>
+
+  <!-- لوحة المؤشرات -->
+  <section id="dashboard" class="is-hidden">
+
+    <div class="topbar">
+      <h2>لوحة المؤشرات</h2>
+    </div>
+
+    <div class="grid">
+
+      <div class="card">
+        <h3>جودة الربح</h3>
+        <p class="muted">سيتم تحليل جودة الربح بعد رفع الملفات.</p>
+      </div>
+
+      <div class="card">
+        <h3>السيولة التشغيلية</h3>
+        <p class="muted">سيتم تحليل التدفقات النقدية.</p>
+      </div>
+
+      <div class="card">
+        <h3>نسبة التداول</h3>
+        <p class="muted">سيتم حساب نسبة التداول.</p>
+      </div>
+
+    </div>
+
+  </section>
+
+</main>
+
+<script src="assets/js/main.js"></script>
 </body>
 </html>
