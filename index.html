@@ -4,49 +4,59 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>همزة المالية</title>
+
 <style>
 body {
     font-family: Tahoma, Arial, sans-serif;
-    background: #F4F6F8;
+    background: #0E1117;
     margin: 0;
     padding: 0;
-    direction: rtl;
+    color: #E6EDF3;
 }
+
 header {
-    background: #0F4C5C;
-    color: white;
-    padding: 20px;
+    background: linear-gradient(90deg,#0F4C5C,#0B2E36);
+    padding: 25px;
 }
+
+header h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+header p {
+    margin-top: 8px;
+    color: #B0BEC5;
+}
+
 .container {
     max-width: 1100px;
     margin: auto;
-    padding: 20px;
+    padding: 30px;
 }
+
 .card {
-    background: white;
+    background: #161B22;
     padding: 20px;
     border-radius: 16px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
+
 .title {
     font-size: 18px;
     font-weight: bold;
     margin-bottom: 10px;
 }
-.result {
-    font-weight: bold;
-}
-.stars {
-    color: #BFA140;
-    font-size: 14px;
-}
+
 .metric {
     margin-top: 10px;
-    background: #FAFBFC;
+    background: #0F4C5C;
     padding: 10px;
     border-radius: 10px;
+    display: inline-block;
 }
+
 button {
     background: #0F4C5C;
     color: white;
@@ -54,67 +64,85 @@ button {
     border: none;
     border-radius: 10px;
     cursor: pointer;
+    transition: 0.3s;
 }
+
+button:hover {
+    background: #136F85;
+}
+
+input {
+    padding: 8px;
+    border-radius: 8px;
+    border: none;
+    margin-top: 5px;
+    width: 200px;
+}
+
+#result {
+    margin-top: 20px;
+    font-size: 18px;
+}
+.good { color: #4CAF50; }
+.medium { color: #FFC107; }
+.bad { color: #F44336; }
+
 </style>
 </head>
+
 <body>
 
 <header>
 <h1>همزة المالية</h1>
-<p>نقرأ المؤشرات الحيوية للأداء 〰️</p>
+<p>محرك تقييم جودة الأداء المالي</p>
 </header>
 
 <div class="container">
 
 <div class="card">
-<div class="title">السيولة التشغيلية</div>
-<div class="result">استقرار يميل للتراجع <span class="stars">★★☆</span></div>
-<p>تعكس البيانات تغيرًا في قدرة النشاط على تحويل الأرباح إلى تدفق نقدي فعلي.</p>
-<div class="metric">نسبة التحويل النقدي: 68% (كانت 74%)</div>
-</div>
+<div class="title">تحليل جودة الربح</div>
 
-<div class="card">
-<div class="title">جودة الربح</div>
-<div class="result">استقرار قوي في جودة الربح <span class="stars">★★★</span></div>
-<p>تعكس البيانات علاقة ممتازة بين صافي الربح والتدفق النقدي التشغيلي.</p>
-<div class="metric">نسبة التحويل النقدي: 90% (كانت 82%)</div>
-</div>
+<label>صافي الربح:</label><br>
+<input type="number" id="netProfit" placeholder="ادخل الرقم"><br><br>
 
-<div class="card">
-<div class="title">نسبة التداول</div>
-<div class="result">استقرار نسبي <span class="stars">★★☆</span></div>
-<p>تعكس البيانات قدرة مقبولة على تغطية الالتزامات قصيرة الأجل.</p>
-<div class="metric">النسبة: 1.6 (كانت 1.8)</div>
+<label>التدفق النقدي التشغيلي:</label><br>
+<input type="number" id="cashFlow" placeholder="ادخل الرقم"><br><br>
+
+<button onclick="analyze()">تحليل</button>
+
+<div id="result"></div>
+
 </div>
 
 </div>
-<hr style="margin:40px 0;">
-
-<section style="background:#ffffff; padding:20px; border-radius:10px;">
-  <h2>رفع بيانات للتحليل</h2>
-
-  <label>صافي الربح:</label>
-  <input type="number" id="netProfit" placeholder="ادخل الرقم"><br><br>
-
-  <label>التدفق النقدي التشغيلي:</label>
-  <input type="number" id="cashFlow" placeholder="ادخل الرقم"><br><br>
-
-  <button onclick="analyze()">تحليل</button>
-
-  <div id="result" style="margin-top:20px; font-weight:bold;"></div>
-</section>
 
 <script>
 function analyze() {
-  let profit = parseFloat(document.getElementById("netProfit").value);
-  let cash = parseFloat(document.getElementById("cashFlow").value);
 
-  if (cash > profit) {
-    document.getElementById("result").innerText = "جودة الربح ممتازة ⭐⭐⭐⭐";
-  } else {
-    document.getElementById("result").innerText = "تحذير: التدفق أقل من الربح ⭐⭐";
-  }
+let profit = parseFloat(document.getElementById("netProfit").value);
+let cash = parseFloat(document.getElementById("cashFlow").value);
+
+if (!profit || !cash) {
+    document.getElementById("result").innerHTML = "⚠️ أدخل القيم أولاً";
+    return;
+}
+
+let ratio = ((cash / profit) * 100).toFixed(1);
+
+let resultBox = document.getElementById("result");
+
+if (ratio >= 100) {
+    resultBox.innerHTML = `<span class="good">جودة ربح ممتازة ⭐⭐⭐⭐<br>نسبة التحويل: ${ratio}%</span>`;
+}
+else if (ratio >= 80) {
+    resultBox.innerHTML = `<span class="medium">جودة جيدة ⭐⭐⭐<br>نسبة التحويل: ${ratio}%</span>`;
+}
+else {
+    resultBox.innerHTML = `<span class="bad">تحذير: جودة ضعيفة ⭐⭐<br>نسبة التحويل: ${ratio}%</span>`;
+}
+
 }
 </script>
+
 </body>
 </html>
