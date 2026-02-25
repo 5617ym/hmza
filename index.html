@@ -4,72 +4,79 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>وصلة المالية</title>
+
+  <!-- ✅ ربط ملف CSS الخارجي -->
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 
 <body>
 
-  <!-- HERO -->
+  <!-- ✅ الهيدر (اللوجو + الاسم + العبارة بالمنتصف) -->
   <header class="hero">
     <div class="hero-inner">
-      <img class="hero-logo" src="assets/images/logo.png" alt="W Logo" />
+      <img class="hero-logo" src="assets/images/logo.png" alt="Wasla Logo">
       <h1 class="hero-title">وصلة المالية</h1>
       <p class="hero-subtitle">نتحدث مع الأرقام ونخبرك عن الأداء</p>
 
       <div class="hero-badges">
-        <span class="badge">نسخة تجريبية</span>
-        <span class="badge badge-muted">RTL</span>
+        <span class="badge">RTL</span>
+        <span class="badge badge-muted">نسخة تجريبية</span>
       </div>
     </div>
   </header>
 
-  <main class="content">
-    <section class="container">
+  <main class="container">
 
-      <section class="card upload-card">
-        <div class="card-head card-head-right">
-          <span class="pill pill-step">الخطوة 1</span>
-          <h2 class="card-title">ابدأ برفع الملفات</h2>
+    <!-- ✅ بطاقة رفع الملفات (الصفحة تبدأ بها) -->
+    <section class="card upload-card">
+      <div class="step-row">
+        <span class="pill pill-good">الخطوة 1</span>
+        <h2 class="section-title">ابدأ برفع الملفات</h2>
+      </div>
+
+      <!-- ✅ العبارة الطويلة محذوفة كما طلبت -->
+      <div class="grid-2">
+        <div class="field">
+          <label for="period">الفترة</label>
+          <select id="period">
+            <option value="yearly" selected>سنوي</option>
+            <option value="quarterly">ربع سنوي</option>
+            <option value="monthly">شهري</option>
+          </select>
         </div>
 
-        <!-- ✅ (2) حذف العبارة كاملة -->
-
-        <div class="row two">
-          <div class="field">
-            <label>الفترة</label>
-            <select>
-              <option selected>سنوي</option>
-              <option>ربع سنوي</option>
-              <option>شهري</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label>المقارنة</label>
-            <select>
-              <option selected>بدون مقارنة</option>
-              <option>سنة بسنة</option>
-              <option>ربع بربع</option>
-            </select>
-          </div>
+        <div class="field">
+          <label for="compare">المقارنة</label>
+          <select id="compare">
+            <option value="none" selected>بدون مقارنة</option>
+            <option value="yoy">سنة بسنة (YoY)</option>
+            <option value="qoq">ربع بربع (QoQ)</option>
+          </select>
         </div>
+      </div>
 
-        <div class="row file-row">
-          <div class="file-box">
-            <div class="file-box-title">رفع الملفات</div>
-            <input type="file" multiple />
-            <div class="file-note muted small">يمكنك رفع عدة ملفات دفعة واحدة.</div>
-          </div>
-        </div>
+      <div class="field">
+        <label for="fileInput">رفع الملفات</label>
+        <input id="fileInput" type="file" multiple />
+        <p class="hint">يمكنك رفع عدة ملفات دفعة واحدة.</p>
+      </div>
 
-        <div class="actions">
-          <button class="btn btn-ghost">مسح</button>
-          <button class="btn btn-primary">عرض النتائج</button>
-        </div>
-      </section>
+      <div class="actions">
+        <button class="btn btn-secondary" id="btnSample">تحميل ملف تجريبي</button>
+        <button class="btn" id="btnShow">عرض النتائج</button>
+        <button class="btn btn-ghost" id="btnClear">مسح</button>
+      </div>
 
+      <div class="file-list" id="fileList"></div>
     </section>
+
+    <footer class="footer">
+      <p class="muted small">© وصلة المالية — بناء تدريجي خطوة بخطوة.</p>
+    </footer>
+
   </main>
 
+  <!-- ✅ ربط ملف JS الخارجي -->
+  <script src="assets/js/main.js"></script>
 </body>
 </html>
