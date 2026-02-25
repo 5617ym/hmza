@@ -1,33 +1,33 @@
 const fileInput = document.getElementById("fileInput");
-const fileList = document.getElementById("fileList");
-const btnStart = document.getElementById("btnStart");
-const dashboard = document.getElementById("dashboard");
+const fileHint = document.getElementById("fileHint");
+const btnShow = document.getElementById("btnShow");
+const btnClear = document.getElementById("btnClear");
+const results = document.getElementById("results");
 
-let uploadedFiles = [];
-
-fileInput.addEventListener("change", (e)=>{
-  uploadedFiles = Array.from(e.target.files);
-  renderFiles();
-});
-
-function renderFiles(){
-  fileList.innerHTML = "";
-
-  if(!uploadedFiles.length){
-    btnStart.disabled = true;
+function updateFileHint() {
+  const files = fileInput.files;
+  if (!files || files.length === 0) {
+    fileHint.textContent = "لم يتم اختيار أي ملف";
     return;
   }
-
-  uploadedFiles.forEach(f=>{
-    const div = document.createElement("div");
-    div.style.marginTop = "8px";
-    div.textContent = f.name;
-    fileList.appendChild(div);
-  });
-
-  btnStart.disabled = false;
+  if (files.length === 1) {
+    fileHint.textContent = `تم اختيار: ${files[0].name}`;
+  } else {
+    fileHint.textContent = `تم اختيار ${files.length} ملفات`;
+  }
 }
 
-btnStart.addEventListener("click", ()=>{
-  dashboard.classList.remove("is-hidden");
+fileInput.addEventListener("change", updateFileHint);
+
+btnShow.addEventListener("click", () => {
+  // إذا ما فيه ملفات، برضه نعرض النتائج (حسب رغبتك لاحقًا ممكن نجبر الرفع)
+  results.classList.remove("hidden");
+  // ننزل المستخدم تلقائياً للنتائج
+  results.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+btnClear.addEventListener("click", () => {
+  fileInput.value = "";
+  updateFileHint();
+  results.classList.add("hidden");
 });
