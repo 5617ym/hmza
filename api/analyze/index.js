@@ -1,5 +1,12 @@
+// /api/analyze/index.js
+// Azure Static Web Apps Function (Node.js)
+// Purpose: Receive PDF (base64), extract text, build meta + preview,
+// and extract key financial fields with sanity checks (Step 1) + better extraction (Step 2)
+
+const pdfParse = require("pdf-parse");
+
 // ===============================
-// Step 1: Number cleaning + sanity checks
+// Helpers: Number cleaning + sanity checks (Step 1)
 // ===============================
 
 function normalizeArabicDigits(s = "") {
@@ -12,29 +19,24 @@ function normalizeArabicDigits(s = "") {
 
 function looksLikeYear(n, periodYear) {
   if (!Number.isFinite(n)) return false;
-  // سنوات شائعة + سنة الفترة (مثلاً 2024)
   if (n >= 1990 && n <= 2090) return true;
   if (periodYear && Math.abs(n - periodYear) <= 1) return true;
   return false;
 }
 
-function parseMoneyFromSnippet(snippet) {
+function parseFirstMoneyLikeNumber(snippet) {
   if (!snippet) return null;
 
-  // طبعاً نطبع الأرقام العربية ونزيل المسافات الغريبة
   const s0 = normalizeArabicDigits(snippet)
     .replace(/\u00A0/g, " ")
+    .replace(/[٬]/g, ",") // Arabic thousands separator sometimes
     .replace(/\s+/g, " ");
 
-  // أهم جزء: نلتقط "رقم واحد" فقط (مع فواصل)
-  // مثال: 541,162,565
-  // ونرفض إذا جاء رقمين ملتصقين بدون فاصل منطقي
+  // grab first numeric token (supports commas)
   const m = s0.match(/-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/);
   if (!m) return null;
 
   const token = m[0];
-
-  // إزالة الفواصل وتحويله لرقم
   const num = Number(token.replace(/,/g, ""));
   if (!Number.isFinite(num)) return null;
 
@@ -42,34 +44,30 @@ function parseMoneyFromSnippet(snippet) {
 }
 
 function cleanField(field, opts = {}) {
-  // field expected shape: { value, snippet }
-  if (!field) return { value: null, snippet: null };
-
   const periodYear = opts.periodYear ?? null;
+
+  if (!field) return { value: null, snippet: null };
 
   let v = field.value;
 
-  // إذا القيمة نص أو null، نحاول نقرأها من snippet
+  // try parse from snippet if needed
   if (!Number.isFinite(v)) {
-    v = parseMoneyFromSnippet(field.snippet);
+    v = parseFirstMoneyLikeNumber(field.snippet);
   }
 
-  // فلترة: سنة؟ أو رقم صغير جداً غير منطقي؟
   if (!Number.isFinite(v)) return { value: null, snippet: field.snippet ?? null };
 
-  // 1) امنع السنوات
+  // block years
   if (looksLikeYear(v, periodYear)) {
     return { value: null, snippet: field.snippet ?? null };
   }
 
-  // 2) امنع قيم “مضحكة” مثل -23 في قوائم مالية سنوية
-  // (تقدر تشددها لاحقاً، الآن نخليها بسيطة)
+  // block tiny values that are usually wrong for annual statements
   if (Math.abs(v) < 1000) {
     return { value: null, snippet: field.snippet ?? null };
   }
 
-  // 3) منع الأرقام الضخمة غير المنطقية الناتجة من “دمج رقمين”
-  // إذا أكبر من 10^13 غالباً صار دمج أو قراءة خاطئة (حسب شركتك ممكن تعدل)
+  // block absurdly large values (often merged numbers)
   if (Math.abs(v) > 1e13) {
     return { value: null, snippet: field.snippet ?? null };
   }
@@ -84,9 +82,9 @@ function postProcessExtracted(extracted, meta) {
     return m ? Number(m[1]) : null;
   })();
 
-  const out = structuredClone(extracted || {});
+  // clone-safe
+  const out = JSON.parse(JSON.stringify(extracted || {}));
 
-  // Income statement
   if (out.incomeStatement) {
     out.incomeStatement.revenue = cleanField(out.incomeStatement.revenue, { periodYear });
     out.incomeStatement.grossProfit = cleanField(out.incomeStatement.grossProfit, { periodYear });
@@ -94,14 +92,12 @@ function postProcessExtracted(extracted, meta) {
     out.incomeStatement.netIncome = cleanField(out.incomeStatement.netIncome, { periodYear });
   }
 
-  // Balance sheet
   if (out.balanceSheet) {
     out.balanceSheet.totalAssets = cleanField(out.balanceSheet.totalAssets, { periodYear });
     out.balanceSheet.totalLiabilities = cleanField(out.balanceSheet.totalLiabilities, { periodYear });
     out.balanceSheet.totalEquity = cleanField(out.balanceSheet.totalEquity, { periodYear });
   }
 
-  // Cashflow
   if (out.cashFlow) {
     out.cashFlow.cfo = cleanField(out.cashFlow.cfo, { periodYear });
     out.cashFlow.cfi = cleanField(out.cashFlow.cfi, { periodYear });
@@ -109,7 +105,6 @@ function postProcessExtracted(extracted, meta) {
     out.cashFlow.capex = cleanField(out.cashFlow.capex, { periodYear });
   }
 
-  // Shares
   if (out.shares) {
     out.shares.weightedShares = cleanField(out.shares.weightedShares, { periodYear });
     out.shares.epsBasic = cleanField(out.shares.epsBasic, { periodYear });
@@ -119,278 +114,236 @@ function postProcessExtracted(extracted, meta) {
   return out;
 }
 
-const pdfParse = require("pdf-parse");
+// ===============================
+// Step 2: Better extraction from text context
+// - Search for Arabic labels, take a window around it,
+// - pick best "money-like" number from that window
+// ===============================
 
-// ---------- Helpers ----------
-function normalizeText(raw) {
-  if (!raw) return "";
-  // توحيد الأرقام العربية-الهندية إلى أرقام لاتينية
-  const map = {
-    "٠": "0","١": "1","٢": "2","٣": "3","٤": "4","٥": "5","٦": "6","٧": "7","٨": "8","٩": "9",
-    "۰": "0","۱": "1","۲": "2","۳": "3","۴": "4","۵": "5","۶": "6","۷": "7","۸": "8","۹": "9",
-    "٬": ",", "٫": ".", "،": ","
-  };
-  let t = raw.replace(/[٠-٩۰-۹٬٫،]/g, (c) => map[c] ?? c);
-  // تقليل الفراغات
-  t = t.replace(/\r/g, "\n");
-  t = t.replace(/[ \t]+/g, " ");
-  t = t.replace(/\n{3,}/g, "\n\n");
-  return t.trim();
+function takeWindow(text, idx, radius = 350) {
+  const start = Math.max(0, idx - radius);
+  const end = Math.min(text.length, idx + radius);
+  return text.slice(start, end);
 }
 
-function toNumber(s) {
-  if (s == null) return null;
-  const str = String(s).trim();
-  if (!str) return null;
+function extractBestNumberNearLabel(fullText, labels = []) {
+  if (!fullText || !labels.length) return { value: null, snippet: null };
 
-  // يسمح بصيغ مثل: (1,234) أو -1,234 أو 1,234.56
-  const isParenNeg = /^\(.*\)$/.test(str);
-  const cleaned = str
-    .replace(/[()]/g, "")
-    .replace(/[, ]/g, "")
-    .replace(/[^\d.\-]/g, "");
+  const t = normalizeArabicDigits(fullText).replace(/\u00A0/g, " ").replace(/[٬]/g, ",");
+  const lower = t.toLowerCase();
 
-  if (!cleaned || cleaned === "-" || cleaned === ".") return null;
+  // find earliest occurrence among labels (prefer statements)
+  let bestIdx = -1;
+  let bestLabel = null;
 
-  const n = Number(cleaned);
-  if (Number.isNaN(n)) return null;
-  return isParenNeg ? -Math.abs(n) : n;
-}
-
-function pickFirstMatch(text, patterns) {
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return m;
-  }
-  return null;
-}
-
-function findValueNearLabel(text, labelRegexes) {
-  // نحاول نلقط رقم قريب من السطر نفسه (أفضل حل عملي كبداية)
-  // مثال سطر: "الإيرادات  12,345  11,222"
-  // نأخذ أول رقم كبير يظهر بعد العنوان
-  for (const r of labelRegexes) {
-    const idx = text.search(r);
-    if (idx === -1) continue;
-
-    const window = text.slice(idx, idx + 500); // نافذة بعد العنوان
-    const numMatch = window.match(/(\(?-?\d[\d, ]{2,}\)?(?:\.\d+)?)/);
-    if (numMatch) {
-      return {
-        value: toNumber(numMatch[1]),
-        snippet: window.slice(0, 180).trim()
-      };
+  for (const lab of labels) {
+    const i = lower.indexOf(normalizeArabicDigits(lab).toLowerCase());
+    if (i !== -1 && (bestIdx === -1 || i < bestIdx)) {
+      bestIdx = i;
+      bestLabel = lab;
     }
   }
-  return { value: null, snippet: null };
+
+  if (bestIdx === -1) return { value: null, snippet: null };
+
+  const snippet = takeWindow(t, bestIdx, 500);
+
+  // collect all money-like tokens in that snippet
+  const tokens = snippet.match(/-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/g);
+  if (!tokens || !tokens.length) return { value: null, snippet };
+
+  // rank tokens: prefer ones with commas (usually real amounts), and larger magnitudes
+  const candidates = tokens
+    .map((tok) => {
+      const num = Number(tok.replace(/,/g, ""));
+      return { tok, num };
+    })
+    .filter((x) => Number.isFinite(x.num));
+
+  if (!candidates.length) return { value: null, snippet };
+
+  candidates.sort((a, b) => {
+    const aComma = a.tok.includes(",") ? 1 : 0;
+    const bComma = b.tok.includes(",") ? 1 : 0;
+    if (bComma !== aComma) return bComma - aComma;
+    return Math.abs(b.num) - Math.abs(a.num);
+  });
+
+  // take top candidate
+  return { value: candidates[0].num, snippet };
 }
 
-function extractMeta(text) {
-  // اسم الشركة (تقريبي)
-  const companyMatch = pickFirstMatch(text, [
-    /شركة\s+([^\n]{2,80})/i,
-    /([^\n]{2,80})\s+شركة/i
-  ]);
-  const company = companyMatch ? (companyMatch[0] || "").trim() : null;
+function extractFinancialsFromText(fullText) {
+  // Income statement
+  const revenue = extractBestNumberNearLabel(fullText, ["الإيرادات", "إيرادات", "Revenue"]);
+  const grossProfit = extractBestNumberNearLabel(fullText, ["مجمل الربح", "Gross profit"]);
+  const operatingProfit = extractBestNumberNearLabel(fullText, ["الربح التشغيلي", "Operating profit", "الربح من العمليات"]);
+  const netIncome = extractBestNumberNearLabel(fullText, ["صافي الربح", "صافي (الربح", "Net income", "Profit for the year"]);
 
-  // تاريخ/فترة (تقريبي)
-  const periodMatch = pickFirstMatch(text, [
-    /للسنة\s+المنتهية\s+في\s+(\d{1,2}\s+\S+\s+\d{4})/i,
-    /للفترة\s+المنتهية\s+في\s+(\d{1,2}\s+\S+\s+\d{4})/i,
-    /(31)\s*(?:ديسمبر|December)\s*(\d{4})/i,
-    /(\d{4})\s*\/\s*(\d{2})\s*\/\s*(\d{2})/
-  ]);
+  // Balance sheet
+  const totalAssets = extractBestNumberNearLabel(fullText, ["إجمالي الأصول", "Total assets"]);
+  const totalLiabilities = extractBestNumberNearLabel(fullText, ["إجمالي المطلوبات", "Total liabilities", "إجمالي الالتزامات"]);
+  const totalEquity = extractBestNumberNearLabel(fullText, ["إجمالي حقوق الملكية", "Total equity"]);
 
-  const currencyMatch = pickFirstMatch(text, [
-    /بالريال\s+السعودي/i,
-    /ريال\s+سعودي/i,
-    /Saudi\s+Riyal/i,
-    /\bSAR\b/i
-  ]);
+  // Cashflow
+  const cfo = extractBestNumberNearLabel(fullText, ["صافي النقد من الأنشطة التشغيلية", "التدفقات النقدية من الأنشطة التشغيلية", "CFO"]);
+  const cfi = extractBestNumberNearLabel(fullText, ["صافي النقد من الأنشطة الاستثمارية", "CFI"]);
+  const cff = extractBestNumberNearLabel(fullText, ["صافي النقد من الأنشطة التمويلية", "CFF"]);
+  const capex = extractBestNumberNearLabel(fullText, ["الإنفاق الرأسمالي", "مشتريات ممتلكات", "CAPEX"]);
 
-  const currency = currencyMatch ? "SAR" : null;
-
-  return { company, currency, periodHint: periodMatch ? periodMatch[0] : null };
-}
-
-function extractStatements(text) {
-  // -------- Income Statement --------
-  const revenue = findValueNearLabel(text, [
-    /الإيرادات/i,
-    /صافي\s+المبيعات/i,
-    /Revenue/i,
-    /Net\s+Sales/i
-  ]);
-
-  const grossProfit = findValueNearLabel(text, [
-    /مجمل\s+الربح/i,
-    /Gross\s+Profit/i
-  ]);
-
-  const operatingProfit = findValueNearLabel(text, [
-    /الربح\s+التشغيلي/i,
-    /دخل\s+تشغيلي/i,
-    /Operating\s+Profit/i,
-    /Operating\s+Income/i
-  ]);
-
-  const netIncome = findValueNearLabel(text, [
-    /صافي\s+الربح/i,
-    /صافي\s+الدخل/i,
-    /Net\s+Income/i,
-    /Profit\s+for\s+the\s+period/i
-  ]);
-
-  // -------- Balance Sheet --------
-  const totalAssets = findValueNearLabel(text, [
-    /إجمالي\s+الأصول/i,
-    /Total\s+Assets/i
-  ]);
-
-  const totalLiabilities = findValueNearLabel(text, [
-    /إجمالي\s+الالتزامات/i,
-    /Total\s+Liabilities/i
-  ]);
-
-  const totalEquity = findValueNearLabel(text, [
-    /إجمالي\s+حقوق\s+الملكية/i,
-    /إجمالي\s+حقوق\s+المساهمين/i,
-    /Total\s+Equity/i
-  ]);
-
-  // -------- Cash Flow --------
-  const cfo = findValueNearLabel(text, [
-    /صافي\s+النقد\s+من\s+الأنشطة\s+التشغيلية/i,
-    /Net\s+cash\s+from\s+operating\s+activities/i
-  ]);
-
-  const cfi = findValueNearLabel(text, [
-    /صافي\s+النقد\s+من\s+الأنشطة\s+الاستثمارية/i,
-    /Net\s+cash\s+from\s+investing\s+activities/i
-  ]);
-
-  const cff = findValueNearLabel(text, [
-    /صافي\s+النقد\s+من\s+الأنشطة\s+التمويلية/i,
-    /Net\s+cash\s+from\s+financing\s+activities/i
-  ]);
-
-  const capex = findValueNearLabel(text, [
-    /ممتلكات\s+ومعدات/i,
-    /إنفاق\s+رأسمالي/i,
-    /Purchases?\s+of\s+property/i,
-    /Capital\s+expenditure/i
-  ]);
-
-  // -------- Shares / EPS --------
-  const epsBasic = findValueNearLabel(text, [
-    /ربحية\s+السهم\s+الأساسية/i,
-    /Basic\s+EPS/i
-  ]);
-
-  const epsDiluted = findValueNearLabel(text, [
-    /ربحية\s+السهم\s+المخفضة/i,
-    /Diluted\s+EPS/i
-  ]);
-
-  const weightedShares = findValueNearLabel(text, [
-    /المتوسط\s+المرجح\s+لعدد\s+الأسهم/i,
-    /Weighted\s+average\s+number\s+of\s+shares/i
-  ]);
+  // Shares/EPS
+  const weightedShares = extractBestNumberNearLabel(fullText, ["متوسط عدد الأسهم", "Weighted average number of shares"]);
+  const epsBasic = extractBestNumberNearLabel(fullText, ["ربحية السهم الأساسية", "EPS (Basic)", "Basic EPS"]);
+  const epsDiluted = extractBestNumberNearLabel(fullText, ["ربحية السهم المخففة", "EPS (Diluted)", "Diluted EPS"]);
 
   return {
-    incomeStatement: {
-      revenue,
-      grossProfit,
-      operatingProfit,
-      netIncome
-    },
-    balanceSheet: {
-      totalAssets,
-      totalLiabilities,
-      totalEquity
-    },
-    cashFlow: {
-      cfo,
-      cfi,
-      cff,
-      capex
-    },
-    shares: {
-      weightedShares,
-      epsBasic,
-      epsDiluted
-    }
+    incomeStatement: { revenue, grossProfit, operatingProfit, netIncome },
+    balanceSheet: { totalAssets, totalLiabilities, totalEquity },
+    cashFlow: { cfo, cfi, cff, capex },
+    shares: { weightedShares, epsBasic, epsDiluted },
   };
 }
 
-// ---------- Azure Function ----------
+// ===============================
+// Meta + preview
+// ===============================
+
+function buildMetaFromText(text) {
+  const t = (text || "").replace(/\u00A0/g, " ");
+  const meta = {};
+
+  // company (very naive but useful)
+  // take first non-empty line as candidate company name
+  const lines = t.split("\n").map((x) => x.trim()).filter(Boolean);
+  if (lines.length) meta.company = lines[0].slice(0, 120);
+
+  // currency
+  if (/SAR|ريال|ر\.س/i.test(t)) meta.currency = "SAR";
+
+  // period hint
+  const m = t.match(/للسنة\s+المنتهية\s+في[\s\S]{0,40}(20\d{2})/);
+  if (m) meta.periodHint = `للسنة المنتهية في ${m[1]}`;
+
+  // also try: "31 ديسمبر 2024"
+  const m2 = t.match(/31\s+ديسمبر\s+(20\d{2})/);
+  if (!meta.periodHint && m2) meta.periodHint = `للسنة المنتهية في 31 ديسمبر ${m2[1]}`;
+
+  return meta;
+}
+
+function buildPreview(text, maxChars = 1800) {
+  if (!text) return "";
+  const t = text.replace(/\u00A0/g, " ").replace(/\s+\n/g, "\n");
+  return t.slice(0, maxChars);
+}
+
+// ===============================
+// Azure Function handler
+// ===============================
+
 module.exports = async function (context, req) {
   try {
-    if ((req.method || "").toUpperCase() === "GET") {
-      context.res = {
-        status: 200,
-        headers: { "content-type": "application/json; charset=utf-8" },
-        body: { message: "API شغالة بنجاح 🚀", timestamp: new Date().toISOString() }
-      };
+    // CORS (adjust if needed)
+    context.res = context.res || {};
+    context.res.headers = {
+      ...(context.res.headers || {}),
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
+
+    if (req.method === "OPTIONS") {
+      context.res.status = 204;
+      context.res.body = "";
+      return;
+    }
+
+    if (req.method !== "POST") {
+      context.res.status = 405;
+      context.res.body = { ok: false, error: "Method not allowed. Use POST." };
       return;
     }
 
     const body = req.body || {};
-    const fileName = body.fileName || "uploaded.pdf";
-    const fileBase64 = body.fileBase64;
+    const fileName = body.fileName || "file.pdf";
+    let fileBase64 = body.fileBase64;
 
-    if (!fileBase64 || typeof fileBase64 !== "string") {
-      context.res = {
-        status: 400,
-        headers: { "content-type": "application/json; charset=utf-8" },
-        body: { ok: false, error: "لم يتم إرسال fileBase64" }
-      };
+    if (!fileBase64 || typeof fileBase64 !== "string" || fileBase64.length < 50) {
+      context.res.status = 400;
+      context.res.body = { ok: false, error: "API error 400: لم يتم إرسال fileBase64" };
       return;
     }
 
-    const cleaned = fileBase64.includes("base64,")
-      ? fileBase64.split("base64,")[1]
-      : fileBase64;
+    // Strip data URL prefix if present
+    const commaIdx = fileBase64.indexOf(",");
+    if (fileBase64.startsWith("data:") && commaIdx !== -1) {
+      fileBase64 = fileBase64.slice(commaIdx + 1);
+    }
 
-    const buffer = Buffer.from(cleaned, "base64");
-    const parsed = await pdfParse(buffer);
-    const text = normalizeText(parsed.text || "");
+    let pdfBuffer;
+    try {
+      pdfBuffer = Buffer.from(fileBase64, "base64");
+    } catch (e) {
+      context.res.status = 400;
+      context.res.body = { ok: false, error: "API error 400: fileBase64 غير صالح" };
+      return;
+    }
 
-    const meta = extractMeta(text);
-    const extracted = extractStatements(text);
+    // Parse PDF
+    const parsed = await pdfParse(pdfBuffer);
+    const text = parsed.text || "";
+    const pages = Number.isFinite(parsed.numpages) ? parsed.numpages : null;
+    const textLength = text.length;
 
-    // درجة بسيطة للنجاح: كم قيمة أساسية قدرنا نجيبها
-    const keyValues = [
-      extracted.incomeStatement.revenue.value,
-      extracted.incomeStatement.netIncome.value,
-      extracted.balanceSheet.totalAssets.value,
-      extracted.cashFlow.cfo.value
-    ];
-    const foundCount = keyValues.filter(v => typeof v === "number").length;
+    const meta = buildMetaFromText(text);
+    const preview = buildPreview(text);
 
-    context.res = {
-      status: 200,
-      headers: { "content-type": "application/json; charset=utf-8" },
-      body: {
-        ok: true,
-        fileName,
-        pages: parsed.numpages,
-        textLength: text.length,
-        meta,
-        extracted,
-        extractionScore: {
-          foundCount,
-          totalChecked: keyValues.length
-        },
-        // نعرض مقطع صغير فقط للتأكد (بدون إغراق)
-        preview: text.slice(0, 800)
-      }
+    // Extract (Step 2)
+    let extracted = extractFinancialsFromText(text);
+
+    // Score (how many fields have values before/after cleaning)
+    const totalChecked = 4; // revenue, grossProfit, operatingProfit, netIncome (simple score)
+    const foundCountRaw = [
+      extracted?.incomeStatement?.revenue?.value,
+      extracted?.incomeStatement?.grossProfit?.value,
+      extracted?.incomeStatement?.operatingProfit?.value,
+      extracted?.incomeStatement?.netIncome?.value,
+    ].filter((v) => Number.isFinite(v)).length;
+
+    // Post-process (Step 1)
+    extracted = postProcessExtracted(extracted, meta);
+
+    const foundCountClean = [
+      extracted?.incomeStatement?.revenue?.value,
+      extracted?.incomeStatement?.grossProfit?.value,
+      extracted?.incomeStatement?.operatingProfit?.value,
+      extracted?.incomeStatement?.netIncome?.value,
+    ].filter((v) => Number.isFinite(v)).length;
+
+    const extractionScore = {
+      foundCount: foundCountClean,
+      totalChecked,
+      foundCountRaw,
+    };
+
+    context.res.status = 200;
+    context.res.body = {
+      ok: true,
+      fileName,
+      pages,
+      textLength,
+      meta,
+      extracted,
+      extractionScore,
+      preview,
     };
   } catch (err) {
-    context.res = {
-      status: 500,
-      headers: { "content-type": "application/json; charset=utf-8" },
-      body: { ok: false, error: err?.message || "خطأ غير معروف" }
+    context.res.status = 500;
+    context.res.body = {
+      ok: false,
+      error: "Server error",
+      details: String(err && err.message ? err.message : err),
     };
   }
 };
