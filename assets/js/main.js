@@ -1,33 +1,34 @@
-const fileInput = document.getElementById("fileInput");
-const fileHint = document.getElementById("fileHint");
-const btnShow = document.getElementById("btnShow");
-const btnClear = document.getElementById("btnClear");
-const results = document.getElementById("results");
+const fileInput = document.querySelector('input[type="file"]');
+const showBtn = document.querySelector('.btn-primary');
+const clearBtn = document.querySelector('.btn-ghost');
 
-function updateFileHint() {
-  const files = fileInput.files;
-  if (!files || files.length === 0) {
-    fileHint.textContent = "لم يتم اختيار أي ملف";
-    return;
-  }
-  if (files.length === 1) {
-    fileHint.textContent = `تم اختيار: ${files[0].name}`;
-  } else {
-    fileHint.textContent = `تم اختيار ${files.length} ملفات`;
-  }
-}
+let selectedFiles = [];
 
-fileInput.addEventListener("change", updateFileHint);
+/* عند اختيار ملف */
+fileInput.addEventListener('change', function () {
+    selectedFiles = Array.from(this.files);
 
-btnShow.addEventListener("click", () => {
-  // إذا ما فيه ملفات، برضه نعرض النتائج (حسب رغبتك لاحقًا ممكن نجبر الرفع)
-  results.classList.remove("hidden");
-  // ننزل المستخدم تلقائياً للنتائج
-  results.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (selectedFiles.length > 0) {
+        console.log("تم اختيار ملفات:");
+        selectedFiles.forEach(file => console.log(file.name));
+        alert(`تم اختيار ${selectedFiles.length} ملف`);
+    }
 });
 
-btnClear.addEventListener("click", () => {
-  fileInput.value = "";
-  updateFileHint();
-  results.classList.add("hidden");
+/* عرض النتائج */
+showBtn.addEventListener('click', function () {
+
+    if (selectedFiles.length === 0) {
+        alert("⚠️ الرجاء اختيار ملف أولاً");
+        return;
+    }
+
+    alert("✅ تم رفع الملف بنجاح (حالياً محاكاة فقط)");
+});
+
+/* مسح */
+clearBtn.addEventListener('click', function () {
+    fileInput.value = "";
+    selectedFiles = [];
+    alert("تم مسح الملفات");
 });
