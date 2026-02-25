@@ -1,38 +1,59 @@
 :root{
   --bg:#061017;
   --panel:#0F1722;
-  --panel-soft:#121D2B;
   --text:#EAF2F7;
   --muted:#9BB0C2;
-  --line:rgba(255,255,255,0.08);
 
   /* ألوان قريبة من اللوقو */
   --blue:#0B4E8A;
   --cyan:#12B3E6;
   --green:#31D07A;
 
-  --good:#31D07A;
-  --warn:#F59E0B;
-
   --shadow: 0 18px 55px rgba(0,0,0,0.48);
 }
 
 *{ box-sizing:border-box; }
+
+html, body{ height:100%; }
 
 body{
   margin:0;
   font-family:'Tajawal', sans-serif;
   color: var(--text);
 
-  /* ✅ تمازج ممتد للصفحة كاملة (بدون خطوط فاصلة) */
+  /* ✅ تمازج ممتد للصفحة كاملة (أوضح من السابق) */
   background:
-    radial-gradient(1200px 750px at 18% 8%, rgba(11,78,138,0.30), transparent 62%),
-    radial-gradient(1050px 720px at 72% 12%, rgba(18,179,230,0.24), transparent 64%),
-    radial-gradient(1000px 760px at 90% 38%, rgba(49,208,122,0.18), transparent 66%),
-    radial-gradient(1100px 820px at 35% 88%, rgba(18,179,230,0.14), transparent 70%),
-    radial-gradient(1200px 900px at 85% 92%, rgba(49,208,122,0.10), transparent 72%),
+    radial-gradient(1200px 750px at 18% 8%, rgba(11,78,138,0.34), transparent 62%),
+    radial-gradient(1100px 760px at 70% 12%, rgba(18,179,230,0.28), transparent 64%),
+    radial-gradient(1200px 900px at 92% 40%, rgba(49,208,122,0.22), transparent 66%),
+    radial-gradient(1200px 900px at 28% 92%, rgba(18,179,230,0.16), transparent 70%),
+    radial-gradient(1200px 900px at 86% 96%, rgba(49,208,122,0.14), transparent 72%),
     #061017;
 }
+
+/* ✅ طبقة تمازج سفلية “ثابتة” تظهر حتى لو ما فيه main/container */
+body::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:-1;
+
+  /* خلي الجزء السفلي أغمق + فيه هالة ألوان اللوقو */
+  background:
+    linear-gradient(to bottom,
+      transparent 0%,
+      rgba(6,16,23,0.00) 35%,
+      rgba(6,16,23,0.35) 55%,
+      rgba(6,16,23,0.70) 78%,
+      rgba(6,16,23,0.92) 100%
+    ),
+    radial-gradient(900px 520px at 22% 78%, rgba(11,78,138,0.20), transparent 68%),
+    radial-gradient(900px 520px at 70% 80%, rgba(18,179,230,0.18), transparent 70%),
+    radial-gradient(900px 520px at 90% 88%, rgba(49,208,122,0.16), transparent 72%);
+}
+
+/* ================== LAYOUT ================== */
 
 .container{
   max-width:1150px;
@@ -44,17 +65,17 @@ body{
 
 .site-header{
   position:relative;
-  min-height: 385px;
+  min-height: 410px;
   display:flex;
   align-items:center;
   justify-content:center;
   overflow:hidden;
 
-  /* ✅ تدرج ناعم جدًا بدون أي فاصل */
+  /* ✅ تدرج ناعم جدًا */
   background:
-    radial-gradient(circle at 18% 15%, rgba(11,78,138,0.55), transparent 60%),
-    radial-gradient(circle at 55% 10%, rgba(18,179,230,0.50), transparent 62%),
-    radial-gradient(circle at 88% 18%, rgba(49,208,122,0.42), transparent 66%),
+    radial-gradient(circle at 18% 15%, rgba(11,78,138,0.58), transparent 60%),
+    radial-gradient(circle at 55% 10%, rgba(18,179,230,0.52), transparent 62%),
+    radial-gradient(circle at 88% 18%, rgba(49,208,122,0.44), transparent 66%),
     linear-gradient(140deg,
       #0B4E8A 0%,
       #126CA6 28%,
@@ -64,6 +85,7 @@ body{
     );
 }
 
+/* هذا هو بلوك العنوان اللي في النص */
 .hero-center{
   position:relative;
   z-index:1;
@@ -71,26 +93,28 @@ body{
   flex-direction:column;
   align-items:center;
   text-align:center;
-  gap:8px;
-  padding: 20px 0;
+  gap:6px;
+  padding: 10px 0;
 }
 
 /* ===== اللوقو ===== */
-
 .logo-wrap{
   position:relative;
   display:flex;
   align-items:center;
   justify-content:center;
-  margin-bottom:-6px; /* قرب إضافي من الاسم */
+
+  /* ✅ نزّل المجموعة كلها شوي */
+  margin-top: 22px;
+  margin-bottom: -18px; /* ✅ يقرب من الاسم */
 }
 
 .logo-img{
-  width: 340px;
+  width: 410px;         /* ✅ أكبر 3 درجات تقريبًا */
   height:auto;
 
-  /* ✅ نزول أكثر شوي */
-  transform: translateY(20px);
+  /* ✅ نزّل اللوقو نفسه شوي */
+  transform: translateY(26px);
 
   filter:
     drop-shadow(0 25px 55px rgba(0,0,0,0.42))
@@ -100,8 +124,8 @@ body{
 
 .logo-glow{
   position:absolute;
-  width: 460px;
-  height: 460px;
+  width: 520px;
+  height: 520px;
   border-radius:50%;
   background:
     radial-gradient(circle,
@@ -113,10 +137,26 @@ body{
   z-index:-1;
 }
 
-/* ===== النص ===== */
+/* ✅ احتياط: لو HTML عندك ما يستخدم logo-img
+   هذا يستهدف أي صورة داخل الهيدر ويطبق نفس الحركة */
+.site-header img{
+  /* لا نخرب صور ثانية إن وجدت، لكن غالبًا عندك صورة لوقو واحدة */
+  max-width: 410px;
+  height:auto;
+}
 
+/* نخلي صورة اللوقو تحديدًا إذا كانت داخل .hero-center */
+.hero-center img{
+  transform: translateY(26px);
+  filter:
+    drop-shadow(0 25px 55px rgba(0,0,0,0.42))
+    drop-shadow(0 0 30px rgba(18,179,230,0.28))
+    drop-shadow(0 0 24px rgba(49,208,122,0.24));
+}
+
+/* ===== النص ===== */
 .brand-title{
-  margin-top:12px; /* ✅ نترك مسافة صغيرة بعد نزول اللوقو */
+  margin-top: 14px;   /* ✅ يقرب من اللوقو بعد نزوله */
   font-size:44px;
   font-weight:800;
   letter-spacing:0.2px;
@@ -124,16 +164,9 @@ body{
 
 .brand-subtitle{
   margin:0;
-
-  /* ✅ تفاوت القوة (أوضح من قبل، لكن ناعم) */
   font-size:17px;
-  color: rgba(255,255,255,0.90);
+  color: rgba(255,255,255,0.88);
 }
-
-.muted{ color: rgba(255,255,255,0.72); }
-.small{ font-size:12px; }
-
-/* ================= BADGES ================= */
 
 .header-badges{
   display:flex;
@@ -164,8 +197,6 @@ body{
   border:1px solid rgba(255,255,255,0.08);
 }
 
-.card-large{ margin-top:34px; }
-
 .card-head{
   display:flex;
   justify-content:space-between;
@@ -183,53 +214,18 @@ body{
 
 .pill-good{
   background:rgba(49,208,122,0.16);
-  color:var(--good);
+  color:var(--green);
 }
 
 .pill-warn{
   background:rgba(245,158,11,0.14);
-  color:var(--warn);
+  color:#F59E0B;
 }
 
-/* ✅ تحسين المنطقة التحتيّة لتتمازج مع ألوان اللوقو */
-main.container{
-  position:relative;
-}
-
-main.container::before{
-  content:"";
-  position:absolute;
-  inset:-60px 0 auto 0;
-  height: 520px;
-  pointer-events:none;
-
-  /* تلوين خفيف جدًا خلف الكروت */
-  background:
-    radial-gradient(900px 520px at 25% 30%, rgba(11,78,138,0.14), transparent 65%),
-    radial-gradient(900px 520px at 75% 40%, rgba(18,179,230,0.12), transparent 68%),
-    radial-gradient(900px 520px at 85% 78%, rgba(49,208,122,0.10), transparent 70%);
-  filter: blur(2px);
-  opacity: 0.9;
-  z-index:0;
-}
-
-main.container > *{
-  position:relative;
-  z-index:1;
-}
-
-/* ================= GRID ================= */
-
-.grid{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:18px;
-  margin-top:22px;
-}
+/* ================= RESPONSIVE ================= */
 
 @media(max-width:950px){
-  .grid{ grid-template-columns:1fr; }
-  .logo-img{ width:260px; transform: translateY(16px); }
-  .logo-glow{ width:340px; height:340px; }
-  .brand-title{ font-size:50px; }
+  .logo-img{ width:300px; transform: translateY(22px); }
+  .logo-glow{ width:380px; height:380px; }
+  .brand-title{ font-size:36px; }
 }
