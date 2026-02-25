@@ -1,349 +1,219 @@
-// /api/analyze/index.js
-// Azure Static Web Apps Function (Node.js)
-// Purpose: Receive PDF (base64), extract text, build meta + preview,
-// and extract key financial fields with sanity checks (Step 1) + better extraction (Step 2)
-
 const pdfParse = require("pdf-parse");
 
-// ===============================
-// Helpers: Number cleaning + sanity checks (Step 1)
-// ===============================
+/* =========================
+   Step 1: Lexicon + Normalization + Section Detection
+   (No advanced extraction yet)
+========================= */
 
-function normalizeArabicDigits(s = "") {
-  const map = {
-    "٠": "0","١":"1","٢":"2","٣":"3","٤":"4","٥":"5","٦":"6","٧":"7","٨":"8","٩":"9",
-    "۰": "0","۱":"1","۲":"2","۳":"3","۴":"4","۵":"5","۶":"6","۷":"7","۸":"8","۹":"9",
-  };
-  return String(s).replace(/[٠-٩۰-۹]/g, (d) => map[d] ?? d);
+function normalizeText(s = "") {
+  return String(s)
+    .toLowerCase()
+    // إزالة التشكيل
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    // توحيد الهمزات
+    .replace(/[إأآٱ]/g, "ا")
+    // توحيد حروف شائعة
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ـ/g, "")
+    // توحيد الفواصل
+    .replace(/[٬،]/g, ",")
+    // تنظيف الرموز
+    .replace(/[^\u0600-\u06FFa-z0-9\s&/().-]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function looksLikeYear(n, periodYear) {
-  if (!Number.isFinite(n)) return false;
-  if (n >= 1990 && n <= 2090) return true;
-  if (periodYear && Math.abs(n - periodYear) <= 1) return true;
-  return false;
-}
+const LEXICON = {
+  sections: {
+    balanceSheet: [
+      "قائمة المركز المالي",
+      "المركز المالي",
+      "الميزانية",
+      "الميزانية العمومية",
+      "قائمة الوضع المالي",
+      "statement of financial position",
+      "financial position",
+    ],
+    incomeStatement: [
+      "قائمة الدخل",
+      "قائمة الربح والخسارة",
+      "قائمة الأرباح والخسائر",
+      "قائمة النتائج",
+      "بيان الأرباح",
+      "income statement",
+      "profit & loss statement",
+      "profit and loss statement",
+      "p&l",
+      "p l",
+      "قائمة الربح او الخسارة", // بدون همزة/تشكيل
+      "قائمة الربح أو الخسارة",
+    ],
+    comprehensiveIncome: [
+      "قائمة الدخل الشامل",
+      "الدخل الشامل",
+      "الدخل الشامل الاخر",
+      "الدخل الشامل الآخر",
+      "قائمة الربح أو الخسارة والدخل الشامل",
+      "قائمة الربح او الخسارة والدخل الشامل",
+      "comprehensive income",
+      "other comprehensive income",
+    ],
+    cashFlow: [
+      "قائمة التدفقات النقدية",
+      "بيان التدفقات النقدية",
+      "قائمة حركة النقد",
+      "cash flow statement",
+      "statement of cash flows",
+    ],
+    equityChanges: [
+      "قائمة التغيرات في حقوق الملكية",
+      "بيان التغير في حقوق المساهمين",
+      "statement of changes in equity",
+      "statement of shareholders equity",
+      "statement of shareholders' equity",
+    ],
+  },
+};
 
-function parseFirstMoneyLikeNumber(snippet) {
-  if (!snippet) return null;
+// يبحث عن أول ظهور لأي عنوان من عناوين القسم، ويرجع 3 أسطر حوله كتأكيد
+function findSectionTitles(rawText, sectionKey) {
+  const titles = LEXICON.sections[sectionKey] || [];
+  const norm = normalizeText(rawText);
 
-  const s0 = normalizeArabicDigits(snippet)
-    .replace(/\u00A0/g, " ")
-    .replace(/[٬]/g, ",") // Arabic thousands separator sometimes
-    .replace(/\s+/g, " ");
-
-  // grab first numeric token (supports commas)
-  const m = s0.match(/-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/);
-  if (!m) return null;
-
-  const token = m[0];
-  const num = Number(token.replace(/,/g, ""));
-  if (!Number.isFinite(num)) return null;
-
-  return num;
-}
-
-function cleanField(field, opts = {}) {
-  const periodYear = opts.periodYear ?? null;
-
-  if (!field) return { value: null, snippet: null };
-
-  let v = field.value;
-
-  // try parse from snippet if needed
-  if (!Number.isFinite(v)) {
-    v = parseFirstMoneyLikeNumber(field.snippet);
-  }
-
-  if (!Number.isFinite(v)) return { value: null, snippet: field.snippet ?? null };
-
-  // block years
-  if (looksLikeYear(v, periodYear)) {
-    return { value: null, snippet: field.snippet ?? null };
-  }
-
-  // block tiny values that are usually wrong for annual statements
-  if (Math.abs(v) < 1000) {
-    return { value: null, snippet: field.snippet ?? null };
-  }
-
-  // block absurdly large values (often merged numbers)
-  if (Math.abs(v) > 1e13) {
-    return { value: null, snippet: field.snippet ?? null };
-  }
-
-  return { value: v, snippet: field.snippet ?? null };
-}
-
-function postProcessExtracted(extracted, meta) {
-  const periodYear = (() => {
-    const h = meta?.periodHint || "";
-    const m = normalizeArabicDigits(h).match(/(20\d{2})/);
-    return m ? Number(m[1]) : null;
-  })();
-
-  // clone-safe
-  const out = JSON.parse(JSON.stringify(extracted || {}));
-
-  if (out.incomeStatement) {
-    out.incomeStatement.revenue = cleanField(out.incomeStatement.revenue, { periodYear });
-    out.incomeStatement.grossProfit = cleanField(out.incomeStatement.grossProfit, { periodYear });
-    out.incomeStatement.operatingProfit = cleanField(out.incomeStatement.operatingProfit, { periodYear });
-    out.incomeStatement.netIncome = cleanField(out.incomeStatement.netIncome, { periodYear });
-  }
-
-  if (out.balanceSheet) {
-    out.balanceSheet.totalAssets = cleanField(out.balanceSheet.totalAssets, { periodYear });
-    out.balanceSheet.totalLiabilities = cleanField(out.balanceSheet.totalLiabilities, { periodYear });
-    out.balanceSheet.totalEquity = cleanField(out.balanceSheet.totalEquity, { periodYear });
-  }
-
-  if (out.cashFlow) {
-    out.cashFlow.cfo = cleanField(out.cashFlow.cfo, { periodYear });
-    out.cashFlow.cfi = cleanField(out.cashFlow.cfi, { periodYear });
-    out.cashFlow.cff = cleanField(out.cashFlow.cff, { periodYear });
-    out.cashFlow.capex = cleanField(out.cashFlow.capex, { periodYear });
-  }
-
-  if (out.shares) {
-    out.shares.weightedShares = cleanField(out.shares.weightedShares, { periodYear });
-    out.shares.epsBasic = cleanField(out.shares.epsBasic, { periodYear });
-    out.shares.epsDiluted = cleanField(out.shares.epsDiluted, { periodYear });
-  }
-
-  return out;
-}
-
-// ===============================
-// Step 2: Better extraction from text context
-// - Search for Arabic labels, take a window around it,
-// - pick best "money-like" number from that window
-// ===============================
-
-function takeWindow(text, idx, radius = 350) {
-  const start = Math.max(0, idx - radius);
-  const end = Math.min(text.length, idx + radius);
-  return text.slice(start, end);
-}
-
-function extractBestNumberNearLabel(fullText, labels = []) {
-  if (!fullText || !labels.length) return { value: null, snippet: null };
-
-  const t = normalizeArabicDigits(fullText).replace(/\u00A0/g, " ").replace(/[٬]/g, ",");
-  const lower = t.toLowerCase();
-
-  // find earliest occurrence among labels (prefer statements)
-  let bestIdx = -1;
-  let bestLabel = null;
-
-  for (const lab of labels) {
-    const i = lower.indexOf(normalizeArabicDigits(lab).toLowerCase());
-    if (i !== -1 && (bestIdx === -1 || i < bestIdx)) {
-      bestIdx = i;
-      bestLabel = lab;
+  const found = [];
+  for (const title of titles) {
+    const tNorm = normalizeText(title);
+    const idx = norm.indexOf(tNorm);
+    if (idx !== -1) {
+      // لإرجاع سياق مفيد: نبحث في النص الخام حول هذا العنوان (تقريباً)
+      // (نستخدم rawText بدل norm عشان المستخدم يشوف النص كما هو)
+      const approx = Math.max(0, Math.min(rawText.length - 1, idx));
+      const window = rawText.slice(Math.max(0, approx - 250), Math.min(rawText.length, approx + 500));
+      found.push({
+        match: title,
+        contextPreview: window.replace(/\s+/g, " ").trim().slice(0, 260),
+      });
     }
   }
 
-  if (bestIdx === -1) return { value: null, snippet: null };
+  // إزالة التكرار (قد تظهر صيغة قريبة)
+  const uniq = [];
+  const seen = new Set();
+  for (const f of found) {
+    const k = normalizeText(f.match);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    uniq.push(f);
+  }
 
-  const snippet = takeWindow(t, bestIdx, 500);
-
-  // collect all money-like tokens in that snippet
-  const tokens = snippet.match(/-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/g);
-  if (!tokens || !tokens.length) return { value: null, snippet };
-
-  // rank tokens: prefer ones with commas (usually real amounts), and larger magnitudes
-  const candidates = tokens
-    .map((tok) => {
-      const num = Number(tok.replace(/,/g, ""));
-      return { tok, num };
-    })
-    .filter((x) => Number.isFinite(x.num));
-
-  if (!candidates.length) return { value: null, snippet };
-
-  candidates.sort((a, b) => {
-    const aComma = a.tok.includes(",") ? 1 : 0;
-    const bComma = b.tok.includes(",") ? 1 : 0;
-    if (bComma !== aComma) return bComma - aComma;
-    return Math.abs(b.num) - Math.abs(a.num);
-  });
-
-  // take top candidate
-  return { value: candidates[0].num, snippet };
+  return uniq;
 }
 
-function extractFinancialsFromText(fullText) {
-  // Income statement
-  const revenue = extractBestNumberNearLabel(fullText, ["الإيرادات", "إيرادات", "Revenue"]);
-  const grossProfit = extractBestNumberNearLabel(fullText, ["مجمل الربح", "Gross profit"]);
-  const operatingProfit = extractBestNumberNearLabel(fullText, ["الربح التشغيلي", "Operating profit", "الربح من العمليات"]);
-  const netIncome = extractBestNumberNearLabel(fullText, ["صافي الربح", "صافي (الربح", "Net income", "Profit for the year"]);
+function detectSections(rawText) {
+  const result = {
+    balanceSheet: false,
+    incomeStatement: false,
+    comprehensiveIncome: false,
+    cashFlow: false,
+    equityChanges: false,
+  };
 
-  // Balance sheet
-  const totalAssets = extractBestNumberNearLabel(fullText, ["إجمالي الأصول", "Total assets"]);
-  const totalLiabilities = extractBestNumberNearLabel(fullText, ["إجمالي المطلوبات", "Total liabilities", "إجمالي الالتزامات"]);
-  const totalEquity = extractBestNumberNearLabel(fullText, ["إجمالي حقوق الملكية", "Total equity"]);
+  for (const key of Object.keys(result)) {
+    const hits = findSectionTitles(rawText, key);
+    if (hits.length) result[key] = true;
+  }
+  return result;
+}
 
-  // Cashflow
-  const cfo = extractBestNumberNearLabel(fullText, ["صافي النقد من الأنشطة التشغيلية", "التدفقات النقدية من الأنشطة التشغيلية", "CFO"]);
-  const cfi = extractBestNumberNearLabel(fullText, ["صافي النقد من الأنشطة الاستثمارية", "CFI"]);
-  const cff = extractBestNumberNearLabel(fullText, ["صافي النقد من الأنشطة التمويلية", "CFF"]);
-  const capex = extractBestNumberNearLabel(fullText, ["الإنفاق الرأسمالي", "مشتريات ممتلكات", "CAPEX"]);
+function buildMeta(text) {
+  const lines = (text || "").split("\n").map((x) => x.trim()).filter(Boolean);
 
-  // Shares/EPS
-  const weightedShares = extractBestNumberNearLabel(fullText, ["متوسط عدد الأسهم", "Weighted average number of shares"]);
-  const epsBasic = extractBestNumberNearLabel(fullText, ["ربحية السهم الأساسية", "EPS (Basic)", "Basic EPS"]);
-  const epsDiluted = extractBestNumberNearLabel(fullText, ["ربحية السهم المخففة", "EPS (Diluted)", "Diluted EPS"]);
+  // الشركة: أول سطر يحتوي "شركة" غالباً
+  const companyLine = lines.find((l) => l.includes("شركة")) || null;
+
+  const currency = /SAR|ر\.س|ريال|﷼/i.test(text) ? "SAR" : null;
+
+  const periodMatch =
+    text.match(/للسنة\s+المنتهية\s+في[\s\S]{0,60}\d{4}/) ||
+    text.match(/للفترة\s+المنتهية\s+في[\s\S]{0,60}\d{4}/);
 
   return {
-    incomeStatement: { revenue, grossProfit, operatingProfit, netIncome },
-    balanceSheet: { totalAssets, totalLiabilities, totalEquity },
-    cashFlow: { cfo, cfi, cff, capex },
-    shares: { weightedShares, epsBasic, epsDiluted },
+    company: companyLine,
+    currency,
+    periodHint: periodMatch ? periodMatch[0].replace(/\s+/g, " ").trim() : null,
   };
 }
-
-// ===============================
-// Meta + preview
-// ===============================
-
-function buildMetaFromText(text) {
-  const t = (text || "").replace(/\u00A0/g, " ");
-  const meta = {};
-
-  // company (very naive but useful)
-  // take first non-empty line as candidate company name
-  const lines = t.split("\n").map((x) => x.trim()).filter(Boolean);
-  if (lines.length) meta.company = lines[0].slice(0, 120);
-
-  // currency
-  if (/SAR|ريال|ر\.س/i.test(t)) meta.currency = "SAR";
-
-  // period hint
-  const m = t.match(/للسنة\s+المنتهية\s+في[\s\S]{0,40}(20\d{2})/);
-  if (m) meta.periodHint = `للسنة المنتهية في ${m[1]}`;
-
-  // also try: "31 ديسمبر 2024"
-  const m2 = t.match(/31\s+ديسمبر\s+(20\d{2})/);
-  if (!meta.periodHint && m2) meta.periodHint = `للسنة المنتهية في 31 ديسمبر ${m2[1]}`;
-
-  return meta;
-}
-
-function buildPreview(text, maxChars = 1800) {
-  if (!text) return "";
-  const t = text.replace(/\u00A0/g, " ").replace(/\s+\n/g, "\n");
-  return t.slice(0, maxChars);
-}
-
-// ===============================
-// Azure Function handler
-// ===============================
 
 module.exports = async function (context, req) {
   try {
-    // CORS (adjust if needed)
-    context.res = context.res || {};
-    context.res.headers = {
-      ...(context.res.headers || {}),
-      "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    };
-
-    if (req.method === "OPTIONS") {
-      context.res.status = 204;
-      context.res.body = "";
-      return;
-    }
-
-    if (req.method !== "POST") {
-      context.res.status = 405;
-      context.res.body = { ok: false, error: "Method not allowed. Use POST." };
+    // GET للتأكد فقط
+    if ((req.method || "").toUpperCase() === "GET") {
+      context.res = {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: { message: "API شغال بنجاح 🚀", timestamp: new Date().toISOString() },
+      };
       return;
     }
 
     const body = req.body || {};
-    const fileName = body.fileName || "file.pdf";
-    let fileBase64 = body.fileBase64;
+    const fileName = body.fileName || "uploaded.pdf";
+    const fileBase64 = body.fileBase64;
 
-    if (!fileBase64 || typeof fileBase64 !== "string" || fileBase64.length < 50) {
-      context.res.status = 400;
-      context.res.body = { ok: false, error: "API error 400: لم يتم إرسال fileBase64" };
+    if (!fileBase64 || typeof fileBase64 !== "string") {
+      context.res = {
+        status: 400,
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: { ok: false, error: "لم يتم إرسال fileBase64" },
+      };
       return;
     }
 
-    // Strip data URL prefix if present
-    const commaIdx = fileBase64.indexOf(",");
-    if (fileBase64.startsWith("data:") && commaIdx !== -1) {
-      fileBase64 = fileBase64.slice(commaIdx + 1);
-    }
+    // لو جاء data url نفصله
+    const cleaned = fileBase64.includes("base64,")
+      ? fileBase64.split("base64,")[1]
+      : fileBase64;
 
-    let pdfBuffer;
-    try {
-      pdfBuffer = Buffer.from(fileBase64, "base64");
-    } catch (e) {
-      context.res.status = 400;
-      context.res.body = { ok: false, error: "API error 400: fileBase64 غير صالح" };
-      return;
-    }
+    const buffer = Buffer.from(cleaned, "base64");
 
-    // Parse PDF
-    const parsed = await pdfParse(pdfBuffer);
-    const text = parsed.text || "";
-    const pages = Number.isFinite(parsed.numpages) ? parsed.numpages : null;
-    const textLength = text.length;
+    const parsed = await pdfParse(buffer);
+    const rawText = (parsed.text || "").replace(/\r/g, "\n");
+    const text = rawText.replace(/\n{3,}/g, "\n\n").trim();
 
-    const meta = buildMetaFromText(text);
-    const preview = buildPreview(text);
+    const meta = buildMeta(text);
 
-    // Extract (Step 2)
-    let extracted = extractFinancialsFromText(text);
+    const detectedSections = detectSections(text);
 
-    // Score (how many fields have values before/after cleaning)
-    const totalChecked = 4; // revenue, grossProfit, operatingProfit, netIncome (simple score)
-    const foundCountRaw = [
-      extracted?.incomeStatement?.revenue?.value,
-      extracted?.incomeStatement?.grossProfit?.value,
-      extracted?.incomeStatement?.operatingProfit?.value,
-      extracted?.incomeStatement?.netIncome?.value,
-    ].filter((v) => Number.isFinite(v)).length;
-
-    // Post-process (Step 1)
-    extracted = postProcessExtracted(extracted, meta);
-
-    const foundCountClean = [
-      extracted?.incomeStatement?.revenue?.value,
-      extracted?.incomeStatement?.grossProfit?.value,
-      extracted?.incomeStatement?.operatingProfit?.value,
-      extracted?.incomeStatement?.netIncome?.value,
-    ].filter((v) => Number.isFinite(v)).length;
-
-    const extractionScore = {
-      foundCount: foundCountClean,
-      totalChecked,
-      foundCountRaw,
+    const sectionTitlesFound = {
+      balanceSheet: findSectionTitles(text, "balanceSheet"),
+      incomeStatement: findSectionTitles(text, "incomeStatement"),
+      comprehensiveIncome: findSectionTitles(text, "comprehensiveIncome"),
+      cashFlow: findSectionTitles(text, "cashFlow"),
+      equityChanges: findSectionTitles(text, "equityChanges"),
     };
 
-    context.res.status = 200;
-    context.res.body = {
-      ok: true,
-      fileName,
-      pages,
-      textLength,
-      meta,
-      extracted,
-      extractionScore,
-      preview,
+    context.res = {
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: {
+        ok: true,
+        fileName,
+        pages: parsed.numpages,
+        textLength: text.length,
+        meta,
+        detectedSections,
+        sectionTitlesFound,
+        preview: text.slice(0, 900),
+      },
     };
   } catch (err) {
-    context.res.status = 500;
-    context.res.body = {
-      ok: false,
-      error: "Server error",
-      details: String(err && err.message ? err.message : err),
+    context.res = {
+      status: 500,
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: { ok: false, error: err?.message || "خطأ غير معروف" },
     };
   }
 };
