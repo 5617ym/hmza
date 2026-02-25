@@ -2,7 +2,6 @@ const pdfParse = require("pdf-parse");
 
 /* =========================
    Step 1: Lexicon + Normalization + Section Detection
-   (No advanced extraction yet)
 ========================= */
 
 function normalizeText(s = "") {
@@ -48,7 +47,7 @@ const LEXICON = {
       "profit and loss statement",
       "p&l",
       "p l",
-      "قائمة الربح او الخسارة", // بدون همزة/تشكيل
+      "قائمة الربح او الخسارة",
       "قائمة الربح أو الخسارة",
     ],
     comprehensiveIncome: [
@@ -78,7 +77,7 @@ const LEXICON = {
   },
 };
 
-// يبحث عن أول ظهور لأي عنوان من عناوين القسم، ويرجع 3 أسطر حوله كتأكيد
+// يرجع سياق حول العنوان كتأكيد
 function findSectionTitles(rawText, sectionKey) {
   const titles = LEXICON.sections[sectionKey] || [];
   const norm = normalizeText(rawText);
@@ -88,8 +87,6 @@ function findSectionTitles(rawText, sectionKey) {
     const tNorm = normalizeText(title);
     const idx = norm.indexOf(tNorm);
     if (idx !== -1) {
-      // لإرجاع سياق مفيد: نبحث في النص الخام حول هذا العنوان (تقريباً)
-      // (نستخدم rawText بدل norm عشان المستخدم يشوف النص كما هو)
       const approx = Math.max(0, Math.min(rawText.length - 1, idx));
       const window = rawText.slice(
         Math.max(0, approx - 250),
@@ -102,7 +99,7 @@ function findSectionTitles(rawText, sectionKey) {
     }
   }
 
-  // إزالة التكرار (قد تظهر صيغة قريبة)
+  // إزالة التكرار
   const uniq = [];
   const seen = new Set();
   for (const f of found) {
@@ -137,9 +134,7 @@ function buildMeta(text) {
     .map((x) => x.trim())
     .filter(Boolean);
 
-  // الشركة: أول سطر يحتوي "شركة" غالباً
   const companyLine = lines.find((l) => l.includes("شركة")) || null;
-
   const currency = /SAR|ر\.س|ريال|﷼/i.test(text) ? "SAR" : null;
 
   const periodMatch =
@@ -154,32 +149,27 @@ function buildMeta(text) {
 }
 
 /* =========================
-   Step 2: Section Extraction (simple, text-based)
-   - Find real section start (skip TOC)
-   - Slice from this section to the next
+   Step 2: Section Extraction (text-based)
+   - Normalize + Map
+   - Choose best title by scoring (table-like content)
+   - Slice from best start to next section start
 ========================= */
 
 function normalizeChar(ch) {
-  // إزالة التشكيل
-  if (/[\u064B-\u065F\u0670]/.test(ch)) return "";
+  if (/[\u064B-\u065F\u0670]/.test(ch)) return ""; // تشكيل
 
-  // توحيد الهمزات
   if (/[إأآٱ]/.test(ch)) return "ا";
 
-  // توحيد حروف شائعة
   if (ch === "ى") return "ي";
   if (ch === "ة") return "ه";
   if (ch === "ؤ") return "و";
   if (ch === "ئ") return "ي";
   if (ch === "ـ") return "";
 
-  // توحيد الفواصل العربية
   if (ch === "٬" || ch === "،") return ",";
 
-  // أبقِ العربي/الإنجليزي/الأرقام/المسافات وبعض الرموز
   if (/[\u0600-\u06FFa-zA-Z0-9\s&/().-]/.test(ch)) return ch.toLowerCase();
 
-  // أي شيء آخر نحوله لمسافة
   return " ";
 }
 
@@ -194,15 +184,26 @@ function normalizeWithMap(raw = "") {
       map.push(i);
     }
   }
-  // ملاحظة: لن نضغط المسافات هنا لتجنب تعقيد الـ map
   return { norm, map };
+}
+
+function scoreCandidate(rawText, rawIdx) {
+  const look = rawText.slice(rawIdx, Math.min(rawText.length, rawIdx + 2200));
+
+  const digits = (look.match(/\d/g) || []).length;
+  const lines = look.split("\n").length;
+  const moneyHints = (look.match(/SAR|ر\.س|﷼|ريال/gi) || []).length;
+  const tableHints = (look.match(/[|]|—|–|[-]{2,}/g) || []).length;
+
+  // الأرقام أهم شيء + الأسطر + تلميحات عملة/جداول
+  return digits * 1.0 + lines * 2.0 + moneyHints * 20 + tableHints * 5;
 }
 
 function findBestSectionStart(rawText, sectionKey) {
   const titles = LEXICON.sections[sectionKey] || [];
   const { norm, map } = normalizeWithMap(rawText);
 
-  let best = null;
+  const candidates = [];
 
   for (const title of titles) {
     const tNorm = normalizeText(title);
@@ -214,30 +215,28 @@ function findBestSectionStart(rawText, sectionKey) {
 
       const rawIdx = map[idx] ?? 0;
 
-      // سياق حول التطابق لاستبعاد "الفهرس"
       const ctx = rawText
-        .slice(Math.max(0, rawIdx - 200), Math.min(rawText.length, rawIdx + 300))
+        .slice(Math.max(0, rawIdx - 200), Math.min(rawText.length, rawIdx + 350))
         .replace(/\s+/g, " ");
 
+      // استبعاد الفهرس
       const looksLikeTOC =
         /الفهرس/.test(ctx) ||
         (/صفحة/.test(ctx) && /تقرير مراجع الحسابات/.test(ctx));
 
-      // لو تطابق داخل الفهرس، نتجاوزه
-      if (looksLikeTOC) {
-        from = idx + tNorm.length;
-        continue;
+      if (!looksLikeTOC) {
+        const score = scoreCandidate(rawText, rawIdx);
+        candidates.push({ rawIdx, match: title, score });
       }
-
-      // اختر أول تطابق معقول، وفضّل التطابق الأبعد (غالبًا الحقيقي داخل القوائم)
-      best = best || { rawIdx, match: title };
-      if (rawIdx > best.rawIdx) best = { rawIdx, match: title };
 
       from = idx + tNorm.length;
     }
   }
 
-  return best; // { rawIdx, match } أو null
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => b.score - a.score);
+  return { rawIdx: candidates[0].rawIdx, match: candidates[0].match };
 }
 
 function buildSectionsText(rawText) {
@@ -250,13 +249,11 @@ function buildSectionsText(rawText) {
   ];
 
   const starts = [];
-
   for (const key of sectionKeys) {
     const found = findBestSectionStart(rawText, key);
     if (found) starts.push({ key, ...found });
   }
 
-  // ترتيب حسب الظهور في الملف
   starts.sort((a, b) => a.rawIdx - b.rawIdx);
 
   const sectionsText = {};
@@ -312,7 +309,6 @@ module.exports = async function (context, req) {
       return;
     }
 
-    // لو جاء data url نفصله
     const cleaned = fileBase64.includes("base64,")
       ? fileBase64.split("base64,")[1]
       : fileBase64;
@@ -324,7 +320,6 @@ module.exports = async function (context, req) {
     const text = rawText.replace(/\n{3,}/g, "\n\n").trim();
 
     const meta = buildMeta(text);
-
     const detectedSections = detectSections(text);
 
     const sectionTitlesFound = {
@@ -335,7 +330,6 @@ module.exports = async function (context, req) {
       equityChanges: findSectionTitles(text, "equityChanges"),
     };
 
-    // ✅ استخراج نص كل قسم (كتلة نصية بين العناوين)
     const { sectionsText, sectionsInfo } = buildSectionsText(text);
 
     context.res = {
