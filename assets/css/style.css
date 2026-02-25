@@ -23,7 +23,7 @@ body{
   overflow:hidden;
 }
 
-/* عمل “مزج” للأسفل بحيث يختفي أي خط فاصل */
+/* مزج للأسفل بحيث يختفي أي خط فاصل */
 .hero::after{
   content:"";
   position:absolute;
@@ -38,24 +38,27 @@ body{
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap: 10px;
+  gap: 6px; /* تقارب عام */
 }
 
+/* ✅ (1) تكبير اللوجو 5 أضعاف + قربه من الاسم */
 .hero-logo{
-  width: 170px;         /* كبر/صغر هنا */
+  width: 520px;          /* خمس أضعاف تقريباً */
   height: auto;
-  margin-top: 10px;     /* نزول بسيط */
-  filter: drop-shadow(0 14px 30px rgba(0,0,0,0.35));
+  margin-top: 0px;       /* لا تحتاج نزول */
+  margin-bottom: -12px;  /* يقربه جدًا من الاسم */
+  filter: drop-shadow(0 16px 36px rgba(0,0,0,0.40));
 }
 
+/* ✅ (2) رفع الاسم والعبارة لتكون قريبة من اللوجو */
 .hero-title{
-  margin: 6px 0 0;
+  margin: -8px 0 0;      /* رفع الاسم */
   font-size: 44px;
   letter-spacing: 0.2px;
 }
 
 .hero-subtitle{
-  margin: 6px 0 0;
+  margin: 2px 0 0;       /* رفع العبارة */
   font-size: 16px;
   opacity: 0.92;
 }
@@ -81,7 +84,7 @@ body{
 
 /* ====== Content wrapper (يمتزج مع الهيرو) ====== */
 .content{
-  margin-top: -40px; /* يطلع فوق شوي عشان المزج */
+  margin-top: -40px;
   padding-bottom: 40px;
 }
 
@@ -115,19 +118,23 @@ body{
   margin-top: 10px;
 }
 
+/* ✅ (3) نقل عنوان "ابدأ برفع الملفات" إلى اليمين */
 .card-head{
   display:flex;
   align-items:center;
-  justify-content: space-between;
+  justify-content: flex-end;  /* يخلي العنوان يمين */
   gap: 14px;
   margin-bottom: 8px;
 }
 
+/* ترتيب العناصر داخل الهيدر: العنوان أولاً يمين ثم البيل */
 .card-title{
   margin:0;
   font-size: 22px;
+  text-align: right;
 }
 
+/* نخلي البيل (الخطوة 1) يجي يسار العنوان بدل ما يزاحمه */
 .pill{
   display:inline-flex;
   align-items:center;
@@ -135,13 +142,14 @@ body{
   border-radius: 999px;
   font-size: 12px;
   border: 1px solid rgba(255,255,255,0.10);
+  margin-left: auto; /* يدفعه لليسار */
 }
 
 .pill-good{ background: rgba(46,204,113,0.16); color:#b9f7cf; }
 .pill-warn{ background: rgba(241,196,15,0.14); color:#ffe9a6; }
 .pill-step{ background: rgba(46,204,113,0.18); color:#b9f7cf; }
 
-/* ====== Form rows (مثل الصورة) ====== */
+/* ====== Form rows ====== */
 .row{
   margin-top: 14px;
   display:flex;
@@ -174,7 +182,7 @@ input[type="file"]:focus{
   border-color: rgba(35,185,124,0.40);
 }
 
-/* ====== File box (شكل المربع الأصفر) ====== */
+/* ====== File box ====== */
 .file-row{ width:100%; }
 
 .file-box{
@@ -252,9 +260,10 @@ input[type="file"]:focus{
   gap: 14px;
 }
 
+/* ✅ موبايل: نقلل حجم اللوجو حتى ما يطلع برا الشاشة */
 @media (max-width: 980px){
   .hero-title{ font-size: 36px; }
-  .hero-logo{ width: 150px; }
+  .hero-logo{ width: 260px; margin-bottom: -10px; }
   .grid{ grid-template-columns: 1fr; }
 }
 
