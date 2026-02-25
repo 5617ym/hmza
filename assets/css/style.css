@@ -32,32 +32,32 @@ body{
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:0;
 }
 
-/* 🔥 اللوجو كبير جداً وقريب */
+/* ✅ اللوجو + تقارب العناصر */
 .hero-logo{
   width:520px;
-  margin-bottom:-45px;
+  margin-bottom:-10px;   /* أقرب للعنوان */
   filter: drop-shadow(0 18px 40px rgba(0,0,0,0.45));
 }
 
-/* الاسم قريب جداً */
+/* ✅ رفع الاسم/العبارة قرب اللوجو */
 .hero-title{
   margin:0;
+  margin-top:-10px;      /* يرفع العنوان للأعلى */
   font-size:46px;
-  line-height:1.05;
+  line-height:1.1;
 }
 
-/* العبارة قريبة */
+/* ✅ (3) مساحة أكبر بين الاسم والعبارة */
 .hero-subtitle{
-  margin-top:1px;
+  margin-top:14px;       /* كبرنا المسافة */
   font-size:16px;
   opacity:0.9;
 }
 
 .hero-badges{
-  margin-top:8px;
+  margin-top:10px;
   display:flex;
   gap:10px;
 }
@@ -69,7 +69,6 @@ body{
   border:1px solid rgba(255,255,255,0.25);
   font-size:12px;
 }
-
 .badge-muted{opacity:0.8;}
 
 /* CONTENT */
@@ -93,12 +92,16 @@ body{
   backdrop-filter:blur(12px);
 }
 
-/* 🔥 نقل العنوان يمين */
+/* ✅ (1) نقل العنوان يمين */
 .card-head{
   display:flex;
-  justify-content:flex-end;
   align-items:center;
-  gap:15px;
+  gap:12px;
+}
+
+/* هذا الكلاس يضمن إن العنوان والبادج جهة اليمين */
+.card-head-right{
+  justify-content:flex-end;
 }
 
 .card-title{
@@ -113,6 +116,7 @@ body{
   background:rgba(46,204,113,0.18);
   font-size:12px;
 }
+.pill-step{ background: rgba(46,204,113,0.18); }
 
 /* FIELDS */
 .row{
@@ -122,8 +126,15 @@ body{
   flex-wrap:wrap;
 }
 
-.field{
+.two .field{
   flex:1;
+  min-width:260px;
+}
+
+.field label{
+  display:block;
+  margin-bottom:8px;
+  opacity:0.9;
 }
 
 select,input{
@@ -136,9 +147,14 @@ select,input{
 }
 
 .file-box{
+  width:100%;
   background:rgba(15,23,36,0.6);
   border-radius:14px;
   padding:14px;
+}
+.file-box-title{
+  font-weight:700;
+  margin-bottom:10px;
 }
 
 .actions{
@@ -169,6 +185,7 @@ select,input{
 
 /* موبايل */
 @media(max-width:900px){
-  .hero-logo{width:20px;margin-bottom:-60px;}
-  .hero-title{font-size:34px;}
+  .hero-logo{width:260px;margin-bottom:-6px;}
+  .hero-title{font-size:34px;margin-top:-6px;}
+  .hero-subtitle{margin-top:12px;}
 }
