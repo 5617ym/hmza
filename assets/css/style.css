@@ -1,5 +1,4 @@
 :root{
-  /* ألوان أقرب للوقو */
   --bg:#061017;
   --panel:#0F1722;
   --panel-soft:#121D2B;
@@ -7,6 +6,7 @@
   --muted:#9BB0C2;
   --line:rgba(255,255,255,0.08);
 
+  /* ألوان قريبة من اللوقو */
   --blue:#0B4E8A;
   --cyan:#12B3E6;
   --green:#31D07A;
@@ -23,11 +23,15 @@ body{
   margin:0;
   font-family:'Tajawal', sans-serif;
   color: var(--text);
+
+  /* ✅ تمازج ممتد للصفحة كاملة (بدون خطوط فاصلة) */
   background:
-    radial-gradient(1100px 700px at 20% 8%, rgba(18,179,230,0.18), transparent 60%),
-    radial-gradient(900px 600px at 85% 18%, rgba(49,208,122,0.14), transparent 55%),
-    radial-gradient(900px 700px at 55% 70%, rgba(11,78,138,0.10), transparent 60%),
-    var(--bg);
+    radial-gradient(1200px 750px at 18% 8%, rgba(11,78,138,0.30), transparent 62%),
+    radial-gradient(1050px 720px at 72% 12%, rgba(18,179,230,0.24), transparent 64%),
+    radial-gradient(1000px 760px at 90% 38%, rgba(49,208,122,0.18), transparent 66%),
+    radial-gradient(1100px 820px at 35% 88%, rgba(18,179,230,0.14), transparent 70%),
+    radial-gradient(1200px 900px at 85% 92%, rgba(49,208,122,0.10), transparent 72%),
+    #061017;
 }
 
 .container{
@@ -36,39 +40,30 @@ body{
   padding:30px 20px;
 }
 
-/* =============== HEADER (Centered Hero) =============== */
+/* ================= HEADER ================= */
 
 .site-header{
   position:relative;
-  min-height: 360px;              /* يجعل الهيدر “Hero” واضح */
+  min-height: 385px;
   display:flex;
-  align-items:center;             /* عموديًا بالمنتصف */
-  justify-content:center;         /* أفقيًا بالمنتصف */
+  align-items:center;
+  justify-content:center;
   overflow:hidden;
-  border-bottom:1px solid rgba(255,255,255,0.10);
 
-  /* تدرج متناسق مع ألوان اللوقو */
+  /* ✅ تدرج ناعم جدًا بدون أي فاصل */
   background:
-    radial-gradient(900px 450px at 50% 20%, rgba(255,255,255,0.10), transparent 55%),
-    linear-gradient(135deg,
-      rgba(11,78,138,0.95) 0%,
-      rgba(18,179,230,0.72) 45%,
-      rgba(49,208,122,0.45) 100%
+    radial-gradient(circle at 18% 15%, rgba(11,78,138,0.55), transparent 60%),
+    radial-gradient(circle at 55% 10%, rgba(18,179,230,0.50), transparent 62%),
+    radial-gradient(circle at 88% 18%, rgba(49,208,122,0.42), transparent 66%),
+    linear-gradient(140deg,
+      #0B4E8A 0%,
+      #126CA6 28%,
+      #149ED2 52%,
+      #1EBE9A 74%,
+      #1E7F4E 100%
     );
 }
 
-/* طبقة ملمس خفيف */
-.site-header::after{
-  content:"";
-  position:absolute;
-  inset:0;
-  background:
-    radial-gradient(700px 450px at 20% 30%, rgba(0,0,0,0.10), transparent 60%),
-    radial-gradient(900px 600px at 80% 20%, rgba(0,0,0,0.12), transparent 60%);
-  pointer-events:none;
-}
-
-/* محتوى الهيرو */
 .hero-center{
   position:relative;
   z-index:1;
@@ -76,94 +71,97 @@ body{
   flex-direction:column;
   align-items:center;
   text-align:center;
-  gap:10px;
+  gap:8px;
   padding: 20px 0;
 }
+
+/* ===== اللوقو ===== */
 
 .logo-wrap{
   position:relative;
   display:flex;
   align-items:center;
   justify-content:center;
-  margin-bottom: 6px;
+  margin-bottom:-6px; /* قرب إضافي من الاسم */
 }
 
-/* ✅ اللوقو أكبر */
 .logo-img{
-  width: 280px;
-  height: auto;
+  width: 340px;
+  height:auto;
 
-  /* “منغمس” بدون حدود */
+  /* ✅ نزول أكثر شوي */
+  transform: translateY(20px);
+
   filter:
-    drop-shadow(0 18px 45px rgba(0,0,0,0.45))
-    drop-shadow(0 0 22px rgba(18,179,230,0.25))
-    drop-shadow(0 0 18px rgba(49,208,122,0.18));
+    drop-shadow(0 25px 55px rgba(0,0,0,0.42))
+    drop-shadow(0 0 30px rgba(18,179,230,0.28))
+    drop-shadow(0 0 24px rgba(49,208,122,0.24));
 }
 
-/* Glow خلف اللوقو */
 .logo-glow{
   position:absolute;
-  width: 360px;
-  height: 360px;
-  border-radius: 50%;
+  width: 460px;
+  height: 460px;
+  border-radius:50%;
   background:
     radial-gradient(circle,
-      rgba(255,255,255,0.18) 0%,
-      rgba(18,179,230,0.10) 30%,
-      rgba(49,208,122,0.08) 45%,
-      transparent 70%
+      rgba(255,255,255,0.16) 0%,
+      rgba(18,179,230,0.14) 35%,
+      rgba(49,208,122,0.10) 58%,
+      transparent 78%
     );
   z-index:-1;
-  transform: translateY(8px);
 }
 
+/* ===== النص ===== */
+
 .brand-title{
-  margin:0;
-  font-size:42px;
+  margin-top:12px; /* ✅ نترك مسافة صغيرة بعد نزول اللوقو */
+  font-size:44px;
   font-weight:800;
   letter-spacing:0.2px;
 }
 
 .brand-subtitle{
   margin:0;
-  font-size:16px;
-  color: rgba(255,255,255,0.92);
+
+  /* ✅ تفاوت القوة (أوضح من قبل، لكن ناعم) */
+  font-size:17px;
+  color: rgba(255,255,255,0.90);
 }
+
+.muted{ color: rgba(255,255,255,0.72); }
+.small{ font-size:12px; }
+
+/* ================= BADGES ================= */
 
 .header-badges{
   display:flex;
   gap:10px;
   flex-wrap:wrap;
   justify-content:center;
-  margin-top:6px;
+  margin-top:10px;
 }
 
 .badge{
   font-size:12px;
   padding:6px 10px;
   border-radius:999px;
-  border:1px solid rgba(255,255,255,0.25);
-  background:rgba(0,0,0,0.12);
+  border:1px solid rgba(255,255,255,0.22);
+  background:rgba(0,0,0,0.14);
 }
 
 .badge-muted{ opacity:0.78; }
 
-@media(max-width:950px){
-  .site-header{ min-height: 320px; }
-  .logo-img{ width: 220px; }
-  .logo-glow{ width: 300px; height: 300px; }
-  .brand-title{ font-size: 34px; }
-}
-
 /* ================= CARDS ================= */
 
 .card{
-  background: linear-gradient(180deg, rgba(15,23,34,0.95), rgba(15,23,34,0.80));
+  background: linear-gradient(180deg, rgba(15,23,34,0.94), rgba(15,23,34,0.78));
   border-radius:18px;
   padding:22px;
   margin-top:25px;
   box-shadow: var(--shadow);
-  border:1px solid var(--line);
+  border:1px solid rgba(255,255,255,0.08);
 }
 
 .card-large{ margin-top:34px; }
@@ -193,8 +191,32 @@ body{
   color:var(--warn);
 }
 
-.muted{ color:var(--muted); }
-.small{ font-size:12px; }
+/* ✅ تحسين المنطقة التحتيّة لتتمازج مع ألوان اللوقو */
+main.container{
+  position:relative;
+}
+
+main.container::before{
+  content:"";
+  position:absolute;
+  inset:-60px 0 auto 0;
+  height: 520px;
+  pointer-events:none;
+
+  /* تلوين خفيف جدًا خلف الكروت */
+  background:
+    radial-gradient(900px 520px at 25% 30%, rgba(11,78,138,0.14), transparent 65%),
+    radial-gradient(900px 520px at 75% 40%, rgba(18,179,230,0.12), transparent 68%),
+    radial-gradient(900px 520px at 85% 78%, rgba(49,208,122,0.10), transparent 70%);
+  filter: blur(2px);
+  opacity: 0.9;
+  z-index:0;
+}
+
+main.container > *{
+  position:relative;
+  z-index:1;
+}
 
 /* ================= GRID ================= */
 
@@ -207,143 +229,7 @@ body{
 
 @media(max-width:950px){
   .grid{ grid-template-columns:1fr; }
-}
-
-/* ================= FORM ================= */
-
-.controls-grid{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:18px;
-  margin-top:18px;
-}
-
-.control-wide{ grid-column: span 3; }
-
-@media(max-width:950px){
-  .controls-grid{ grid-template-columns:1fr; }
-  .control-wide{ grid-column: span 1; }
-}
-
-.control-label{
-  display:block;
-  margin-bottom:6px;
-  font-weight:700;
-}
-
-.control-input,
-.control-input-file,
-input,
-select{
-  width:100%;
-  padding:11px 12px;
-  border-radius:12px;
-  border:1px solid var(--line);
-  background:rgba(18,29,43,0.85);
-  color:white;
-  font-family:inherit;
-  outline:none;
-}
-
-.control-input:focus,
-.control-input-file:focus{
-  border-color: rgba(18,179,230,0.60);
-  box-shadow: 0 0 0 3px rgba(18,179,230,0.16);
-}
-
-.control-input-file{ cursor:pointer; }
-
-.actions-row{
-  margin-top:20px;
-  display:flex;
-  gap:12px;
-  flex-wrap:wrap;
-}
-
-.btn{
-  background: linear-gradient(90deg, rgba(18,179,230,0.78), rgba(49,208,122,0.62));
-  color:white;
-  padding:10px 18px;
-  border:none;
-  border-radius:12px;
-  cursor:pointer;
-  font-weight:800;
-  transition:0.25s;
-}
-
-.btn:hover{
-  transform:translateY(-2px);
-  filter: brightness(1.06);
-}
-
-.btn-secondary{
-  background:transparent;
-  border:1px solid var(--line);
-}
-
-.btn:disabled{
-  opacity:0.5;
-  cursor:not-allowed;
-  transform:none;
-}
-
-/* ================= MINI ================= */
-
-.mini{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-top:10px;
-}
-
-.mini-item{
-  background:rgba(18,29,43,0.65);
-  padding:10px 12px;
-  border-radius:12px;
-  border:1px solid var(--line);
-  min-width:120px;
-}
-
-.mini-label{
-  font-size:12px;
-  color:var(--muted);
-}
-
-.mini-value{
-  font-weight:800;
-  margin-top:3px;
-}
-
-/* ================= FILE LIST ================= */
-
-.file-list{
-  margin-top:14px;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
-
-.file-item{
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  padding:10px 12px;
-  border-radius:12px;
-  background:rgba(18,29,43,0.60);
-  border:1px solid var(--line);
-}
-
-.file-name{ font-weight:700; }
-.file-size{ color:var(--muted); font-size:12px; }
-
-/* ================= RESULTS HIDDEN ================= */
-
-.results-hidden{ display:none; }
-
-/* ================= FOOTER ================= */
-
-.footer{
-  margin-top:18px;
-  text-align:center;
-  opacity:0.9;
+  .logo-img{ width:260px; transform: translateY(16px); }
+  .logo-glow{ width:340px; height:340px; }
+  .brand-title{ font-size:36px; }
 }
