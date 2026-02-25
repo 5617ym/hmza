@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>وصلة المالية</title>
 
-  <!-- خط Tajawal -->
+  <!-- خط رسمي وجميل -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
 
   <!-- CSS -->
   <link rel="stylesheet" href="assets/css/style.css" />
@@ -16,37 +16,33 @@
 
 <body>
 
+  <!-- HEADER -->
   <header class="site-header">
     <div class="container header-inner">
 
-      <!-- Brand -->
-      <div class="brand">
-        <div class="brand-row">
-          <!-- اللوجو (بدون حدود + أكبر + منغمس) -->
-          <div class="logo-wrap" aria-label="Wasla logo">
-            <img src="assets/images/logo.png" alt="W Logo" class="logo-img">
-            <span class="logo-glow" aria-hidden="true"></span>
-          </div>
-
-          <div class="brand-text">
-            <h1>وصلة المالية</h1>
-            <p>نتحدث مع الارقام وتخبرنا ما نخبركم عن الاداء</p>
-          </div>
+      <!-- اللوقو بالمنتصف -->
+      <div class="brand-center">
+        <div class="logo-wrap">
+          <span class="logo-glow"></span>
+          <img class="logo-img" src="assets/images/logo.png" alt="W Logo" />
         </div>
-      </div>
 
-      <!-- Badges -->
-      <div class="header-badges">
-        <span class="badge">نسخة تجريبية</span>
-        <span class="badge badge-muted">RTL</span>
+        <h1 class="brand-title">وصلة المالية</h1>
+        <p class="brand-subtitle">حوّل ملفاتك إلى مؤشرات مالية واضحة خلال دقائق</p>
+
+        <div class="header-badges">
+          <span class="badge">نسخة تجريبية</span>
+          <span class="badge badge-muted">RTL</span>
+        </div>
       </div>
 
     </div>
   </header>
 
+  <!-- MAIN -->
   <main class="container">
 
-    <!-- صفحة البداية: رفع الملفات + الفترة + المقارنة فقط -->
+    <!-- بطاقة البداية (رفع الملفات + الفترة + المقارنة فقط) -->
     <section class="card card-large">
       <div class="card-head">
         <h3>ابدأ برفع الملفات</h3>
@@ -54,53 +50,50 @@
       </div>
 
       <p class="muted">
-        ارفع ملفاتك أولاً (PDF / Excel / CSV / صور). بعد الرفع اضغط “عرض النتائج”
-        وستظهر البطاقات والنتائج تلقائيًا.
+        ارفع ملفاتك أولاً (PDF / Excel / CSV / صور). بعد الرفع اضغط <b>عرض النتائج</b> لتظهر البطاقات تلقائيًا.
       </p>
 
       <div class="controls-grid">
 
-        <div class="control">
-          <label class="control-label">الفترة</label>
-          <select id="periodSelect" class="control-input">
-            <option value="annual" selected>سنوي</option>
-            <option value="quarterly">ربعي</option>
+        <div>
+          <label class="control-label" for="periodSelect">الفترة</label>
+          <select class="control-input" id="periodSelect">
+            <option value="yearly" selected>سنوي</option>
+            <option value="quarterly">ربع سنوي</option>
             <option value="monthly">شهري</option>
           </select>
         </div>
 
-        <div class="control">
-          <label class="control-label">المقارنة</label>
-          <select id="compareSelect" class="control-input">
+        <div>
+          <label class="control-label" for="compareSelect">المقارنة</label>
+          <select class="control-input" id="compareSelect">
             <option value="none" selected>بدون مقارنة</option>
-            <option value="yoy">مقارنة سنوية (YoY)</option>
-            <option value="qoq">مقارنة ربع سنوية (QoQ)</option>
+            <option value="yoy">سنة بسنة (YoY)</option>
+            <option value="qoq">ربع بربع (QoQ)</option>
           </select>
         </div>
 
-        <div class="control control-wide">
-          <label class="control-label">رفع الملفات</label>
-          <input id="fileInput" type="file" multiple class="control-input-file" />
-          <div class="file-meta">
-            <span class="muted small">يمكنك رفع عدة ملفات دفعة واحدة.</span>
-          </div>
+        <div class="control-wide">
+          <label class="control-label" for="fileInput">رفع الملفات</label>
+          <input class="control-input-file" id="fileInput" type="file" multiple />
+          <div class="muted small" style="margin-top:8px;">يمكنك رفع عدة ملفات دفعة واحدة.</div>
         </div>
 
       </div>
 
       <div class="actions-row">
-        <button class="btn" id="btnShowResults" disabled>عرض النتائج</button>
+        <button class="btn" id="btnShow">عرض النتائج</button>
         <button class="btn btn-secondary" id="btnClear">مسح</button>
       </div>
 
       <div class="file-list" id="fileList"></div>
     </section>
 
-    <!-- النتائج (مخفية بالبداية) -->
+    <!-- النتائج (مخفية حتى تضغط عرض النتائج) -->
     <section id="resultsSection" class="results-hidden">
 
-      <!-- ✅ البطاقات (Cards) -->
       <section class="grid">
+
         <article class="card">
           <div class="card-head">
             <h3>جودة الربح</h3>
@@ -146,37 +139,7 @@
             </div>
           </div>
         </article>
-      </section>
 
-      <!-- ✅ تحليل جودة الربح -->
-      <section class="card card-large">
-        <div class="card-head">
-          <h3>تحليل جودة الربح</h3>
-          <span class="pill pill-good">جاهز</span>
-        </div>
-
-        <div class="split">
-          <div class="form">
-            <label for="netProfit">صافي الربح</label>
-            <input type="number" id="netProfit" placeholder="أدخل الرقم" inputmode="decimal" />
-
-            <label for="cashFlow">التدفق النقدي التشغيلي</label>
-            <input type="number" id="cashFlow" placeholder="أدخل الرقم" inputmode="decimal" />
-
-            <button class="btn" id="btnAnalyze">تحليل</button>
-
-            <div class="result" id="result"></div>
-          </div>
-
-          <div class="hint">
-            <h4>ماذا يعني هذا المؤشر؟</h4>
-            <ul>
-              <li>إذا كان التدفق النقدي قريب/أعلى من الربح: غالبًا الربح مدعوم بنقد.</li>
-              <li>إذا كان أقل بكثير: قد يكون الربح محاسبي ويحتاج فحص.</li>
-            </ul>
-            <p class="muted small">* قراءة أولية وليست توصية استثمارية.</p>
-          </div>
-        </div>
       </section>
 
       <footer class="footer">
