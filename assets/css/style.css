@@ -169,6 +169,6 @@ select,input{
 
 /* موبايل */
 @media(max-width:900px){
-  .hero-logo{width:400px;margin-bottom:-200px;}
+  .hero-logo{width:200px;margin-bottom:-200px;}
   .hero-title{font-size:34px;}
 }
