@@ -1,68 +1,134 @@
-const fileInput = document.getElementById("fileInput");
-const btnShow = document.getElementById("btnShow");
-const btnClear = document.getElementById("btnClear");
-const btnSample = document.getElementById("btnSample");
-const fileList = document.getElementById("fileList");
+(function () {
+  const fileInput = document.getElementById("fileInput");
+  const fileList = document.getElementById("fileList");
+  const btnClear = document.getElementById("btnClear");
+  const btnShow = document.getElementById("btnShow");
+  const status = document.getElementById("status");
 
-let selectedFiles = [];
+  const results = document.getElementById("results");
+  const cards = document.getElementById("cards");
 
-function renderFiles() {
-  if (!fileList) return;
-
-  if (selectedFiles.length === 0) {
-    fileList.innerHTML = `<p class="muted small">لم يتم اختيار أي ملف.</p>`;
-    return;
+  function formatBytes(bytes) {
+    if (!bytes && bytes !== 0) return "";
+    const units = ["B", "KB", "MB", "GB"];
+    let i = 0;
+    let v = bytes;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
   }
 
-  fileList.innerHTML = selectedFiles.map(f => {
-    const sizeKB = (f.size / 1024).toFixed(1);
-    return `
-      <div class="file-item">
-        <strong>${f.name}</strong>
-        <div class="muted small">النوع: ${f.type || "غير معروف"} — الحجم: ${sizeKB} KB</div>
-      </div>
+  function detectType(file) {
+    const name = (file.name || "").toLowerCase();
+    const type = (file.type || "").toLowerCase();
+
+    if (type.includes("pdf") || name.endsWith(".pdf")) return "PDF";
+    if (type.includes("spreadsheet") || name.endsWith(".xlsx") || name.endsWith(".xls")) return "Excel";
+    if (type.includes("csv") || name.endsWith(".csv")) return "CSV";
+    if (type.includes("word") || name.endsWith(".doc") || name.endsWith(".docx")) return "Word";
+    if (type.startsWith("image/") || /\.(png|jpg|jpeg|webp|gif)$/i.test(name)) return "صورة";
+    return "ملف";
+  }
+
+  function renderFileList(files) {
+    fileList.innerHTML = "";
+    if (!files || files.length === 0) {
+      status.textContent = "لم يتم اختيار أي ملفات.";
+      btnShow.disabled = true;
+      results.classList.add("hidden");
+      return;
+    }
+
+    status.textContent = `تم اختيار ${files.length} ملف/ملفات. الآن اضغط "عرض النتائج" للانتقال للخطوة التالية.`;
+    btnShow.disabled = false;
+
+    [...files].forEach((f) => {
+      const item = document.createElement("div");
+      item.className = "file-item";
+
+      const left = document.createElement("div");
+      left.className = "file-left";
+
+      const name = document.createElement("div");
+      name.className = "file-name";
+      name.textContent = f.name;
+
+      const meta = document.createElement("div");
+      meta.className = "file-meta";
+      meta.textContent = `${detectType(f)} • ${formatBytes(f.size)}${f.type ? " • " + f.type : ""}`;
+
+      left.appendChild(name);
+      left.appendChild(meta);
+
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = "جاهز";
+
+      item.appendChild(left);
+      item.appendChild(tag);
+
+      fileList.appendChild(item);
+    });
+  }
+
+  function showResults(files) {
+    results.classList.remove("hidden");
+    cards.innerHTML = "";
+
+    // حاليا: فقط بطاقات “تم استلام الملفات”
+    const card1 = document.createElement("div");
+    card1.className = "card";
+    card1.innerHTML = `
+      <div style="font-weight:800; margin-bottom:6px;">تم استلام الملفات</div>
+      <div class="muted">عدد الملفات: ${files.length}</div>
+      <div class="muted">الخطوة القادمة: استخراج البيانات حسب نوع الملف (PDF / Excel / CSV / صور)</div>
     `;
-  }).join("");
-}
+    cards.appendChild(card1);
 
-fileInput?.addEventListener("change", () => {
-  selectedFiles = Array.from(fileInput.files || []);
-  renderFiles();
-});
+    const kinds = {};
+    [...files].forEach((f) => {
+      const k = detectType(f);
+      kinds[k] = (kinds[k] || 0) + 1;
+    });
 
-btnShow?.addEventListener("click", () => {
-  if (selectedFiles.length === 0) {
-    alert("⚠️ اختر ملف أولاً");
-    return;
+    const card2 = document.createElement("div");
+    card2.className = "card";
+    card2.innerHTML = `
+      <div style="font-weight:800; margin-bottom:6px;">توزيع الأنواع</div>
+      <div class="muted">${Object.entries(kinds).map(([k,v]) => `${k}: ${v}`).join("<br>")}</div>
+    `;
+    cards.appendChild(card2);
+
+    const card3 = document.createElement("div");
+    card3.className = "card";
+    card3.innerHTML = `
+      <div style="font-weight:800; margin-bottom:6px;">مهم</div>
+      <div class="muted">اختر أي ملف عندك الآن (حتى لو صورة لقائمة مالية أو PDF). بعد الرفع قلّي نوع الملف وسأضيف قارئه داخل الموقع خطوة بخطوة.</div>
+    `;
+    cards.appendChild(card3);
   }
-  alert("✅ تم رفع الملفات (حالياً عرض أسماء الملفات فقط). الخطوة القادمة: تحليل CSV/Excel.");
-});
 
-btnClear?.addEventListener("click", () => {
-  if (fileInput) fileInput.value = "";
-  selectedFiles = [];
-  renderFiles();
-});
+  // Events
+  fileInput.addEventListener("change", () => {
+    renderFileList(fileInput.files);
+  });
 
-btnSample?.addEventListener("click", () => {
-  const csv = [
-    "Year,NetProfit,OperatingCashFlow",
-    "2022,100,120",
-    "2023,110,105",
-    "2024,130,150"
-  ].join("\n");
+  btnClear.addEventListener("click", () => {
+    fileInput.value = "";
+    renderFileList([]);
+  });
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
+  btnShow.addEventListener("click", () => {
+    const files = fileInput.files;
+    if (!files || files.length === 0) {
+      status.textContent = "ارفع ملف واحد على الأقل.";
+      return;
+    }
+    showResults(files);
+  });
 
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "wasla_sample.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  URL.revokeObjectURL(url);
-});
-
-renderFiles();
+  // Initial
+  renderFileList([]);
+})();
