@@ -1,5 +1,5 @@
 /* assets/js/main.js
-   UI renderer for /api/analyze results (Arabic-friendly)
+   Sends PDF as Base64 JSON to /api/analyze + renders extracted results.
 */
 
 console.log("main.js loaded ✅");
@@ -12,10 +12,14 @@ const statusEl = document.getElementById("status");
 const resultsSection = document.getElementById("results");
 const cardsEl = document.getElementById("cards");
 
+// (اختياري) إن كانت موجودة في الصفحة
+const periodEl = document.getElementById("period");
+const compareEl = document.getElementById("compare");
+
 let selectedFiles = [];
+let injected = false;
 
 function setStatus(msg, type = "info") {
-  // type: info | ok | warn | err
   statusEl.textContent = msg || "";
   statusEl.classList.remove("ok", "warn", "err");
   if (type === "ok") statusEl.classList.add("ok");
@@ -52,21 +56,29 @@ function formatNumber(n) {
   }
 }
 
-// لو القيمة “غريبة جدًا” (مثل 5e17) نحاول نلتقط رقم منطقي من النص
+// تحويل الملف إلى Base64 (بدون مقدمة data:...)
+// يرجع فقط النص بعد "base64,"
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("فشل قراءة الملف"));
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const idx = result.indexOf("base64,");
+      if (idx === -1) return reject(new Error("تعذر استخراج base64 من الملف"));
+      resolve(result.slice(idx + "base64,".length));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function parseBestNumberFromSnippet(snippet) {
   if (!snippet) return null;
-
-  // أمثلة: 1,249,440,428  | (149,968,457) | 541,162,565
-  const cleaned = String(snippet).replace(/\u200f|\u200e/g, ""); // remove RTL/LTR marks
-
-  // التقط أكبر رقم “مجمّع” بالـ commas
+  const cleaned = String(snippet).replace(/\u200f|\u200e/g, "");
   const matches = cleaned.match(/\(?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?/g);
   if (!matches || !matches.length) return null;
-
-  // نختار الرقم الأطول (غالباً هو الأهم)
   matches.sort((a, b) => b.length - a.length);
   const raw = matches[0];
-
   const isParenNeg = raw.startsWith("(") && raw.endsWith(")");
   const numStr = raw.replace(/[(),]/g, "");
   const num = Number(numStr);
@@ -75,17 +87,13 @@ function parseBestNumberFromSnippet(snippet) {
 }
 
 function pickValue(fieldObj) {
-  // fieldObj: { value, snippet }
   if (!fieldObj) return { ok: false, value: null, from: "none" };
-
   const v = fieldObj.value;
 
-  // لو value رقم معقول (مثلاً أقل من 1e13) نستخدمه
   if (Number.isFinite(v) && Math.abs(v) > 0 && Math.abs(v) < 1e13) {
     return { ok: true, value: v, from: "value" };
   }
 
-  // غير كذا نقرأ من snippet
   const sn = parseBestNumberFromSnippet(fieldObj.snippet);
   if (Number.isFinite(sn) && Math.abs(sn) < 1e13) {
     return { ok: true, value: sn, from: "snippet" };
@@ -126,90 +134,6 @@ function buildMetricRow(label, fieldObj, currency = "SAR") {
   `;
 }
 
-function renderResults(data) {
-  // اعرض القسم
-  resultsSection?.classList.remove("hidden");
-  cardsEl.innerHTML = "";
-
-  const meta = data?.meta || {};
-  const currency = meta.currency || "SAR";
-
-  const score = data?.extractionScore || {};
-  const found = Number.isFinite(score.foundCount) ? score.foundCount : "-";
-  const total = Number.isFinite(score.totalChecked) ? score.totalChecked : "-";
-
-  const headerCard = `
-    <div class="card">
-      <div class="card-title">ملخص الملف</div>
-      <div class="grid">
-        <div><span class="muted">اسم الملف:</span> ${escapeHtml(data?.fileName || "-")}</div>
-        <div><span class="muted">عدد الصفحات:</span> ${escapeHtml(data?.pages ?? "-")}</div>
-        <div><span class="muted">الشركة:</span> ${escapeHtml(meta.company || "-")}</div>
-        <div><span class="muted">الفترة:</span> ${escapeHtml(meta.periodHint || "-")}</div>
-        <div><span class="muted">نسبة الاستخراج:</span> ${escapeHtml(found)} / ${escapeHtml(total)}</div>
-      </div>
-    </div>
-  `;
-
-  const inc = data?.extracted?.incomeStatement || {};
-  const bs = data?.extracted?.balanceSheet || {};
-  const cf = data?.extracted?.cashFlow || {};
-  const sh = data?.extracted?.shares || {};
-
-  const incomeCard = `
-    <div class="card">
-      <div class="card-title">قائمة الربح أو الخسارة</div>
-      <div class="metrics">
-        ${buildMetricRow("الإيرادات", inc.revenue, currency)}
-        ${buildMetricRow("مجمل الربح", inc.grossProfit, currency)}
-        ${buildMetricRow("الربح التشغيلي", inc.operatingProfit, currency)}
-        ${buildMetricRow("صافي الربح", inc.netIncome, currency)}
-      </div>
-    </div>
-  `;
-
-  const balanceCard = `
-    <div class="card">
-      <div class="card-title">قائمة المركز المالي</div>
-      <div class="metrics">
-        ${buildMetricRow("إجمالي الأصول", bs.totalAssets, currency)}
-        ${buildMetricRow("إجمالي المطلوبات", bs.totalLiabilities, currency)}
-        ${buildMetricRow("إجمالي حقوق الملكية", bs.totalEquity, currency)}
-      </div>
-    </div>
-  `;
-
-  const cashCard = `
-    <div class="card">
-      <div class="card-title">التدفقات النقدية</div>
-      <div class="metrics">
-        ${buildMetricRow("التدفق النقدي من التشغيل (CFO)", cf.cfo, currency)}
-        ${buildMetricRow("التدفق النقدي من الاستثمار (CFI)", cf.cfi, currency)}
-        ${buildMetricRow("التدفق النقدي من التمويل (CFF)", cf.cff, currency)}
-        ${buildMetricRow("الإنفاق الرأسمالي (CAPEX)", cf.capex, currency)}
-      </div>
-      <div class="muted small">ملاحظة: إذا كانت هذه البنود “غير متوفر”، فهذا يعني أن الـ API لم يلتقط أرقامها من الـ PDF بعد.</div>
-    </div>
-  `;
-
-  const sharesCard = `
-    <div class="card">
-      <div class="card-title">الأسهم وربحية السهم</div>
-      <div class="metrics">
-        ${buildMetricRow("متوسط الأسهم (Weighted Shares)", sh.weightedShares, "Share")}
-        ${buildMetricRow("ربحية السهم الأساسية (EPS Basic)", sh.epsBasic, currency)}
-        ${buildMetricRow("ربحية السهم المخففة (EPS Diluted)", sh.epsDiluted, currency)}
-      </div>
-    </div>
-  `;
-
-  cardsEl.insertAdjacentHTML("beforeend", headerCard + incomeCard + balanceCard + cashCard + sharesCard);
-
-  // CSS بسيط داخل JS (بدون ما تلمس ملفات CSS)
-  injectMiniStyles();
-}
-
-let injected = false;
 function injectMiniStyles() {
   if (injected) return;
   injected = true;
@@ -295,25 +219,84 @@ function injectMiniStyles() {
   document.head.appendChild(style);
 }
 
-async function analyzeSingleFile(file) {
-  const fd = new FormData();
+function renderResults(data) {
+  resultsSection?.classList.remove("hidden");
+  cardsEl.innerHTML = "";
+  injectMiniStyles();
 
-  // حاولنا دعم أكثر من اسم للحقل لتفادي اختلافات السيرفر:
-  // لو السيرفر يتوقع "file" أو "files"
-  fd.append("file", file);
-  fd.append("files", file);
+  const meta = data?.meta || {};
+  const currency = meta.currency || "SAR";
 
-  const res = await fetch("/api/analyze", {
-    method: "POST",
-    body: fd,
-  });
+  const score = data?.extractionScore || {};
+  const found = Number.isFinite(score.foundCount) ? score.foundCount : "-";
+  const total = Number.isFinite(score.totalChecked) ? score.totalChecked : "-";
 
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`API error ${res.status}: ${txt || "unknown"}`);
-  }
+  const headerCard = `
+    <div class="card">
+      <div class="card-title">ملخص الملف</div>
+      <div class="grid">
+        <div><span class="muted">اسم الملف:</span> ${escapeHtml(data?.fileName || "-")}</div>
+        <div><span class="muted">عدد الصفحات:</span> ${escapeHtml(data?.pages ?? "-")}</div>
+        <div><span class="muted">الشركة:</span> ${escapeHtml(meta.company || "-")}</div>
+        <div><span class="muted">الفترة:</span> ${escapeHtml(meta.periodHint || "-")}</div>
+        <div><span class="muted">نسبة الاستخراج:</span> ${escapeHtml(found)} / ${escapeHtml(total)}</div>
+      </div>
+    </div>
+  `;
 
-  return res.json();
+  const inc = data?.extracted?.incomeStatement || {};
+  const bs = data?.extracted?.balanceSheet || {};
+  const cf = data?.extracted?.cashFlow || {};
+  const sh = data?.extracted?.shares || {};
+
+  const incomeCard = `
+    <div class="card">
+      <div class="card-title">قائمة الربح أو الخسارة</div>
+      <div class="metrics">
+        ${buildMetricRow("الإيرادات", inc.revenue, currency)}
+        ${buildMetricRow("مجمل الربح", inc.grossProfit, currency)}
+        ${buildMetricRow("الربح التشغيلي", inc.operatingProfit, currency)}
+        ${buildMetricRow("صافي الربح", inc.netIncome, currency)}
+      </div>
+    </div>
+  `;
+
+  const balanceCard = `
+    <div class="card">
+      <div class="card-title">قائمة المركز المالي</div>
+      <div class="metrics">
+        ${buildMetricRow("إجمالي الأصول", bs.totalAssets, currency)}
+        ${buildMetricRow("إجمالي المطلوبات", bs.totalLiabilities, currency)}
+        ${buildMetricRow("إجمالي حقوق الملكية", bs.totalEquity, currency)}
+      </div>
+    </div>
+  `;
+
+  const cashCard = `
+    <div class="card">
+      <div class="card-title">التدفقات النقدية</div>
+      <div class="metrics">
+        ${buildMetricRow("التدفق النقدي من التشغيل (CFO)", cf.cfo, currency)}
+        ${buildMetricRow("التدفق النقدي من الاستثمار (CFI)", cf.cfi, currency)}
+        ${buildMetricRow("التدفق النقدي من التمويل (CFF)", cf.cff, currency)}
+        ${buildMetricRow("الإنفاق الرأسمالي (CAPEX)", cf.capex, currency)}
+      </div>
+      <div class="muted small">إذا كانت البنود “غير متوفر”، فهذا يعني أن الـ API لم يلتقط أرقامها من الـ PDF.</div>
+    </div>
+  `;
+
+  const sharesCard = `
+    <div class="card">
+      <div class="card-title">الأسهم وربحية السهم</div>
+      <div class="metrics">
+        ${buildMetricRow("متوسط الأسهم (Weighted Shares)", sh.weightedShares, "Share")}
+        ${buildMetricRow("ربحية السهم الأساسية (EPS Basic)", sh.epsBasic, currency)}
+        ${buildMetricRow("ربحية السهم المخففة (EPS Diluted)", sh.epsDiluted, currency)}
+      </div>
+    </div>
+  `;
+
+  cardsEl.insertAdjacentHTML("beforeend", headerCard + incomeCard + balanceCard + cashCard + sharesCard);
 }
 
 function renderSelectedFiles() {
@@ -329,12 +312,37 @@ function renderSelectedFiles() {
       (f) => `
         <div class="file-item">
           <span>${escapeHtml(f.name)}</span>
-          <span class="muted small">${formatNumber(f.size) || f.size} bytes</span>
+          <span class="muted small">bytes ${formatNumber(f.size) || f.size}</span>
         </div>`
     )
     .join("");
 
   fileListEl.innerHTML = items;
+}
+
+async function analyzeSingleFileAsBase64(file) {
+  const fileBase64 = await fileToBase64(file);
+
+  const payload = {
+    fileName: file.name,
+    fileBase64,
+    // خيارات إضافية إن كانت موجودة في الصفحة (لن تضر لو الـ API يتجاهلها)
+    period: periodEl?.value || null,
+    compare: compareEl?.value || null,
+  };
+
+  const res = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`API error ${res.status}: ${txt || "unknown"}`);
+  }
+
+  return res.json();
 }
 
 fileInput?.addEventListener("change", () => {
@@ -361,16 +369,15 @@ btnShow?.addEventListener("click", async () => {
   }
 
   btnShow.disabled = true;
-  setStatus("جاري رفع الملف وتحليل البيانات...", "info");
+  setStatus("جاري تجهيز الملف (Base64) ثم التحليل...", "info");
 
   try {
-    // حاليا نعالج أول ملف فقط (حسب تصميمك). لو تبغى متعدد نوسعها بعدين.
-    const data = await analyzeSingleFile(selectedFiles[0]);
+    const data = await analyzeSingleFileAsBase64(selectedFiles[0]);
 
     console.log("API Response:", data);
 
     if (!data?.ok) {
-      setStatus("الـ API رجّع نتيجة غير متوقعة.", "err");
+      setStatus(`الـ API رجّع خطأ: ${data?.error || "غير معروف"}`, "err");
       return;
     }
 
@@ -384,5 +391,5 @@ btnShow?.addEventListener("click", async () => {
   }
 });
 
-// اول تحميل
+// أول تحميل
 clearUI();
