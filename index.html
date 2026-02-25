@@ -5,144 +5,139 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>وصلة المالية</title>
 
-  <!-- خط رسمي -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
-
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 
 <body>
 
-  <!-- HEADER -->
-  <header class="site-header">
-    <div class="hero-center container">
-
-      <div class="logo-wrap">
-        <span class="logo-glow"></span>
-        <img class="logo-img" src="assets/images/logo.png" alt="W Logo" />
-      </div>
-
-      <h1 class="brand-title">وصلة المالية</h1>
-
-      <!-- ✅ اكتب عبارتك التي تعجبك هنا -->
-      <p class="brand-subtitle">تتحدث مع الأرقام وتخبرنا عن الأداء</p>
-
-      <div class="header-badges">
+  <!-- HERO -->
+  <header class="hero">
+    <div class="hero-inner">
+      <img class="hero-logo" src="assets/images/logo.png" alt="W Logo" />
+      <h1 class="hero-title">وصلة المالية</h1>
+      <p class="hero-subtitle">نتحدث مع الأرقام ونخبرك عن الأداء</p>
+      <div class="hero-badges">
         <span class="badge">نسخة تجريبية</span>
         <span class="badge badge-muted">RTL</span>
       </div>
-
     </div>
   </header>
 
-  <!-- MAIN -->
-  <main class="container">
+  <!-- CONTENT WRAP (يمتزج مع الهيرو بدون فاصل) -->
+  <main class="content">
 
-    <section class="card card-large">
-      <div class="card-head">
-        <h3>ابدأ برفع الملفات</h3>
-        <span class="pill pill-good">الخطوة 1</span>
-      </div>
-
-      <p class="muted">
-        ارفع ملفاتك أولاً (PDF / Excel / CSV / صور). بعد الرفع اضغط <b>عرض النتائج</b> لتظهر البطاقات تلقائيًا.
-      </p>
-
-      <div class="controls-grid">
-
-        <div>
-          <label class="control-label" for="periodSelect">الفترة</label>
-          <select class="control-input" id="periodSelect">
-            <option value="yearly" selected>سنوي</option>
-            <option value="quarterly">ربع سنوي</option>
-            <option value="monthly">شهري</option>
-          </select>
+    <section class="container">
+      <section class="card upload-card">
+        <div class="card-head">
+          <span class="pill pill-step">الخطوة 1</span>
+          <h2 class="card-title">ابدأ برفع الملفات</h2>
         </div>
 
-        <div>
-          <label class="control-label" for="compareSelect">المقارنة</label>
-          <select class="control-input" id="compareSelect">
-            <option value="none" selected>بدون مقارنة</option>
-            <option value="yoy">سنة بسنة (YoY)</option>
-            <option value="qoq">ربع بربع (QoQ)</option>
-          </select>
+        <p class="muted">
+          ارفع ملفاتك أولاً (PDF / Excel / CSV / صور). بعد الرفع اضغط “عرض النتائج” لتظهر البطاقات تلقائيًا.
+        </p>
+
+        <!-- ROW 1: الفترة + المقارنة -->
+        <div class="row two">
+          <div class="field">
+            <label for="periodSelect">الفترة</label>
+            <select id="periodSelect">
+              <option value="yearly" selected>سنوي</option>
+              <option value="quarterly">ربع سنوي</option>
+              <option value="monthly">شهري</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="compareSelect">المقارنة</label>
+            <select id="compareSelect">
+              <option value="none" selected>بدون مقارنة</option>
+              <option value="yoy">سنة بسنة</option>
+              <option value="qoq">ربع بربع</option>
+            </select>
+          </div>
         </div>
 
-        <div class="control-wide">
-          <label class="control-label" for="fileInput">رفع الملفات</label>
-          <input class="control-input-file" id="fileInput" type="file" multiple />
-          <div class="muted small" style="margin-top:8px;">يمكنك رفع عدة ملفات دفعة واحدة.</div>
+        <!-- ROW 2: رفع الملفات (شكل مشابه للصورة) -->
+        <div class="row file-row">
+          <div class="file-box">
+            <div class="file-box-title">رفع الملفات</div>
+
+            <div class="file-input-wrap">
+              <input id="fileInput" type="file" multiple />
+              <span class="file-hint" id="fileHint">لم يتم اختيار أي ملف</span>
+            </div>
+
+            <div class="file-note muted small">يمكنك رفع عدة ملفات دفعة واحدة.</div>
+          </div>
         </div>
 
-      </div>
-
-      <div class="actions-row">
-        <button class="btn" id="btnShow">عرض النتائج</button>
-        <button class="btn btn-secondary" id="btnClear">مسح</button>
-      </div>
-
-      <div class="file-list" id="fileList"></div>
-    </section>
-
-    <section id="resultsSection" class="results-hidden">
-
-      <section class="grid">
-
-        <article class="card">
-          <div class="card-head">
-            <h3>جودة الربح</h3>
-            <span class="pill pill-good">جاهز</span>
-          </div>
-          <p class="muted">مقارنة صافي الربح بالتدفق النقدي التشغيلي لقياس هل الربح نقدي أم ورقي.</p>
-          <div class="mini">
-            <div class="mini-item">
-              <span class="mini-label">مستوى جيد</span>
-              <span class="mini-value">≥ 80%</span>
-            </div>
-            <div class="mini-item">
-              <span class="mini-label">تحذير</span>
-              <span class="mini-value">أقل من 60%</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="card-head">
-            <h3>السيولة التشغيلية</h3>
-            <span class="pill pill-warn">قريبًا</span>
-          </div>
-          <p class="muted">قياس قدرة النشاط على توليد نقد من التشغيل واتساقه عبر السنوات.</p>
-          <div class="mini">
-            <div class="mini-item">
-              <span class="mini-label">ملاحظة</span>
-              <span class="mini-value">يحتاج بيانات سنوات</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="card-head">
-            <h3>نسبة التداول</h3>
-            <span class="pill pill-warn">قريبًا</span>
-          </div>
-          <p class="muted">قدرة الشركة على تغطية الالتزامات قصيرة الأجل (Current Ratio).</p>
-          <div class="mini">
-            <div class="mini-item">
-              <span class="mini-label">مستوى مريح</span>
-              <span class="mini-value">1.5+</span>
-            </div>
-          </div>
-        </article>
+        <!-- ACTIONS -->
+        <div class="actions">
+          <button class="btn btn-ghost" id="btnClear" type="button">مسح</button>
+          <button class="btn btn-primary" id="btnShow" type="button">عرض النتائج</button>
+        </div>
 
       </section>
 
-      <footer class="footer">
-        <p class="muted small">© وصلة المالية — بناء تدريجي خطوة بخطوة.</p>
-      </footer>
+      <!-- RESULTS (مخفية إلى أن تضغط عرض النتائج) -->
+      <section id="results" class="results hidden">
+
+        <section class="grid">
+          <article class="card">
+            <div class="card-head">
+              <h3>جودة الربح</h3>
+              <span class="pill pill-good">جاهز</span>
+            </div>
+            <p class="muted">مقارنة صافي الربح بالتدفق النقدي التشغيلي لمعرفة هل الربح نقدي أم ورقي.</p>
+            <div class="mini">
+              <div class="mini-item">
+                <span class="mini-label">مستوى جيد</span>
+                <span class="mini-value">≥ 80%</span>
+              </div>
+              <div class="mini-item">
+                <span class="mini-label">تحذير</span>
+                <span class="mini-value">أقل من 60%</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <h3>السيولة التشغيلية</h3>
+              <span class="pill pill-warn">قريبًا</span>
+            </div>
+            <p class="muted">قياس قدرة النشاط على توليد نقد من التشغيل واتساقه عبر السنوات.</p>
+            <div class="mini">
+              <div class="mini-item">
+                <span class="mini-label">ملاحظة</span>
+                <span class="mini-value">يحتاج بيانات سنوات</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <h3>نسبة التداول</h3>
+              <span class="pill pill-warn">قريبًا</span>
+            </div>
+            <p class="muted">قدرة الشركة على تغطية الالتزامات قصيرة الأجل (Current Ratio).</p>
+            <div class="mini">
+              <div class="mini-item">
+                <span class="mini-label">مستوى مريح</span>
+                <span class="mini-value">1.5+</span>
+              </div>
+            </div>
+          </article>
+        </section>
+
+      </section>
 
     </section>
+
+    <footer class="footer">
+      <p class="muted small">© وصلة المالية — بناء تدريجي خطوة بخطوة.</p>
+    </footer>
 
   </main>
 
