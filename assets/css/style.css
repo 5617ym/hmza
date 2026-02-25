@@ -1,231 +1,147 @@
-:root{
-  --bg:#061017;
-  --panel:#0F1722;
-  --text:#EAF2F7;
-  --muted:#9BB0C2;
+/* =========================
+   ✅ تنسيق المدخلات (السابق)
+   للصناديق بالأسفل: الفترة/المقارنة/رفع الملفات/الأزرار
+   ========================= */
 
-  /* ألوان قريبة من اللوقو */
-  --blue:#0B4E8A;
-  --cyan:#12B3E6;
-  --green:#31D07A;
-
-  --shadow: 0 18px 55px rgba(0,0,0,0.48);
+/* شبكة الحقول داخل بطاقة الرفع */
+.upload-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:18px 18px;
+  align-items:end;
 }
 
-*{ box-sizing:border-box; }
+@media (max-width: 900px){
+  .upload-grid{ grid-template-columns: 1fr; }
+}
 
-html, body{ height:100%; }
+/* عنوان الحقل */
+.field-label{
+  display:block;
+  font-weight:700;
+  margin-bottom:10px;
+  color: rgba(255,255,255,0.92);
+}
 
-body{
-  margin:0;
-  font-family:'Tajawal', sans-serif;
+/* الحقول العامة */
+.card input[type="text"],
+.card input[type="number"],
+.card input[type="file"],
+.card select{
+  width:100%;
+  height:44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
   color: var(--text);
-
-  /* ✅ تمازج ممتد للصفحة كاملة (أوضح من السابق) */
-  background:
-    radial-gradient(1200px 750px at 18% 8%, rgba(11,78,138,0.34), transparent 62%),
-    radial-gradient(1100px 760px at 70% 12%, rgba(18,179,230,0.28), transparent 64%),
-    radial-gradient(1200px 900px at 92% 40%, rgba(49,208,122,0.22), transparent 66%),
-    radial-gradient(1200px 900px at 28% 92%, rgba(18,179,230,0.16), transparent 70%),
-    radial-gradient(1200px 900px at 86% 96%, rgba(49,208,122,0.14), transparent 72%),
-    #061017;
+  outline:none;
+  transition: 0.2s ease;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.20);
 }
 
-/* ✅ طبقة تمازج سفلية “ثابتة” تظهر حتى لو ما فيه main/container */
-body::after{
-  content:"";
-  position:fixed;
-  inset:0;
-  pointer-events:none;
-  z-index:-1;
-
-  /* خلي الجزء السفلي أغمق + فيه هالة ألوان اللوقو */
-  background:
-    linear-gradient(to bottom,
-      transparent 0%,
-      rgba(6,16,23,0.00) 35%,
-      rgba(6,16,23,0.35) 55%,
-      rgba(6,16,23,0.70) 78%,
-      rgba(6,16,23,0.92) 100%
-    ),
-    radial-gradient(900px 520px at 22% 78%, rgba(11,78,138,0.20), transparent 68%),
-    radial-gradient(900px 520px at 70% 80%, rgba(18,179,230,0.18), transparent 70%),
-    radial-gradient(900px 520px at 90% 88%, rgba(49,208,122,0.16), transparent 72%);
+/* placeholder */
+.card input::placeholder{
+  color: rgba(255,255,255,0.35);
 }
 
-/* ================== LAYOUT ================== */
-
-.container{
-  max-width:1150px;
-  margin:auto;
-  padding:30px 20px;
+/* تركيز */
+.card input:focus,
+.card select:focus{
+  border-color: rgba(18,179,230,0.55);
+  box-shadow:
+    0 0 0 4px rgba(18,179,230,0.12),
+    inset 0 0 0 1px rgba(0,0,0,0.20);
 }
 
-/* ================= HEADER ================= */
-
-.site-header{
-  position:relative;
-  min-height: 410px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  overflow:hidden;
-
-  /* ✅ تدرج ناعم جدًا */
-  background:
-    radial-gradient(circle at 18% 15%, rgba(11,78,138,0.58), transparent 60%),
-    radial-gradient(circle at 55% 10%, rgba(18,179,230,0.52), transparent 62%),
-    radial-gradient(circle at 88% 18%, rgba(49,208,122,0.44), transparent 66%),
-    linear-gradient(140deg,
-      #0B4E8A 0%,
-      #126CA6 28%,
-      #149ED2 52%,
-      #1EBE9A 74%,
-      #1E7F4E 100%
-    );
+/* select سهم واضح */
+.card select{
+  appearance:none;
+  -webkit-appearance:none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(255,255,255,0.6) 50%),
+    linear-gradient(135deg, rgba(255,255,255,0.6) 50%, transparent 50%);
+  background-position:
+    16px calc(50% - 2px),
+    10px calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat:no-repeat;
+  padding-left: 42px; /* لأن RTL */
 }
 
-/* هذا هو بلوك العنوان اللي في النص */
-.hero-center{
-  position:relative;
-  z-index:1;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  text-align:center;
-  gap:6px;
-  padding: 10px 0;
-}
-
-/* ===== اللوقو ===== */
-.logo-wrap{
-  position:relative;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-
-  /* ✅ نزّل المجموعة كلها شوي */
-  margin-top: 22px;
-  margin-bottom: -18px; /* ✅ يقرب من الاسم */
-}
-
-.logo-img{
-  width: 410px;         /* ✅ أكبر 3 درجات تقريبًا */
+/* input file تنسيق "قديم" أنيق */
+.card input[type="file"]{
+  padding: 10px 14px;
   height:auto;
-
-  /* ✅ نزّل اللوقو نفسه شوي */
-  transform: translateY(26px);
-
-  filter:
-    drop-shadow(0 25px 55px rgba(0,0,0,0.42))
-    drop-shadow(0 0 30px rgba(18,179,230,0.28))
-    drop-shadow(0 0 24px rgba(49,208,122,0.24));
+  min-height:44px;
 }
 
-.logo-glow{
-  position:absolute;
-  width: 520px;
-  height: 520px;
-  border-radius:50%;
-  background:
-    radial-gradient(circle,
-      rgba(255,255,255,0.16) 0%,
-      rgba(18,179,230,0.14) 35%,
-      rgba(49,208,122,0.10) 58%,
-      transparent 78%
-    );
-  z-index:-1;
+.card input[type="file"]::file-selector-button{
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.18);
+  color: rgba(255,255,255,0.92);
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor:pointer;
+  margin-left: 10px; /* RTL */
+  transition: 0.2s ease;
 }
 
-/* ✅ احتياط: لو HTML عندك ما يستخدم logo-img
-   هذا يستهدف أي صورة داخل الهيدر ويطبق نفس الحركة */
-.site-header img{
-  /* لا نخرب صور ثانية إن وجدت، لكن غالبًا عندك صورة لوقو واحدة */
-  max-width: 410px;
-  height:auto;
+.card input[type="file"]::file-selector-button:hover{
+  background: rgba(0,0,0,0.28);
 }
 
-/* نخلي صورة اللوقو تحديدًا إذا كانت داخل .hero-center */
-.hero-center img{
-  transform: translateY(26px);
-  filter:
-    drop-shadow(0 25px 55px rgba(0,0,0,0.42))
-    drop-shadow(0 0 30px rgba(18,179,230,0.28))
-    drop-shadow(0 0 24px rgba(49,208,122,0.24));
+/* ملاحظة تحت الحقل */
+.field-help{
+  margin-top:8px;
+  font-size:12px;
+  color: rgba(255,255,255,0.45);
 }
 
-/* ===== النص ===== */
-.brand-title{
-  margin-top: 14px;   /* ✅ يقرب من اللوقو بعد نزوله */
-  font-size:44px;
+/* صف الأزرار داخل بطاقة الرفع */
+.actions-row{
+  display:flex;
+  gap:12px;
+  justify-content:flex-end;
+  margin-top:16px;
+  flex-wrap:wrap;
+}
+
+/* أزرار */
+.btn{
+  height:42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.92);
+  cursor:pointer;
+  transition: 0.2s ease;
+}
+
+.btn:hover{
+  background: rgba(255,255,255,0.10);
+}
+
+.btn-primary{
+  border: none;
+  background: linear-gradient(90deg, rgba(18,179,230,0.95), rgba(49,208,122,0.95));
+  color:#061017;
   font-weight:800;
-  letter-spacing:0.2px;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.25);
 }
 
-.brand-subtitle{
-  margin:0;
-  font-size:17px;
+.btn-primary:hover{
+  filter: brightness(1.05);
+}
+
+/* زر ثانوي (مسح) */
+.btn-ghost{
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
   color: rgba(255,255,255,0.88);
 }
 
-.header-badges{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  justify-content:center;
-  margin-top:10px;
-}
-
-.badge{
-  font-size:12px;
-  padding:6px 10px;
-  border-radius:999px;
-  border:1px solid rgba(255,255,255,0.22);
-  background:rgba(0,0,0,0.14);
-}
-
-.badge-muted{ opacity:0.78; }
-
-/* ================= CARDS ================= */
-
-.card{
-  background: linear-gradient(180deg, rgba(15,23,34,0.94), rgba(15,23,34,0.78));
-  border-radius:18px;
-  padding:22px;
-  margin-top:25px;
-  box-shadow: var(--shadow);
-  border:1px solid rgba(255,255,255,0.08);
-}
-
-.card-head{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  margin-bottom:10px;
-}
-
-.pill{
-  font-size:12px;
-  padding:6px 12px;
-  border-radius:999px;
-  background:rgba(255,255,255,0.07);
-  border:1px solid rgba(255,255,255,0.10);
-}
-
-.pill-good{
-  background:rgba(49,208,122,0.16);
-  color:var(--green);
-}
-
-.pill-warn{
-  background:rgba(245,158,11,0.14);
-  color:#F59E0B;
-}
-
-/* ================= RESPONSIVE ================= */
-
-@media(max-width:950px){
-  .logo-img{ width:300px; transform: translateY(22px); }
-  .logo-glow{ width:380px; height:380px; }
-  .brand-title{ font-size:36px; }
+.btn-ghost:hover{
+  background: rgba(255,255,255,0.06);
 }
