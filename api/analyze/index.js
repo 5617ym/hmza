@@ -1,3 +1,124 @@
+// ===============================
+// Step 1: Number cleaning + sanity checks
+// ===============================
+
+function normalizeArabicDigits(s = "") {
+  const map = {
+    "٠": "0","١":"1","٢":"2","٣":"3","٤":"4","٥":"5","٦":"6","٧":"7","٨":"8","٩":"9",
+    "۰": "0","۱":"1","۲":"2","۳":"3","۴":"4","۵":"5","۶":"6","۷":"7","۸":"8","۹":"9",
+  };
+  return String(s).replace(/[٠-٩۰-۹]/g, (d) => map[d] ?? d);
+}
+
+function looksLikeYear(n, periodYear) {
+  if (!Number.isFinite(n)) return false;
+  // سنوات شائعة + سنة الفترة (مثلاً 2024)
+  if (n >= 1990 && n <= 2090) return true;
+  if (periodYear && Math.abs(n - periodYear) <= 1) return true;
+  return false;
+}
+
+function parseMoneyFromSnippet(snippet) {
+  if (!snippet) return null;
+
+  // طبعاً نطبع الأرقام العربية ونزيل المسافات الغريبة
+  const s0 = normalizeArabicDigits(snippet)
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ");
+
+  // أهم جزء: نلتقط "رقم واحد" فقط (مع فواصل)
+  // مثال: 541,162,565
+  // ونرفض إذا جاء رقمين ملتصقين بدون فاصل منطقي
+  const m = s0.match(/-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+
+  const token = m[0];
+
+  // إزالة الفواصل وتحويله لرقم
+  const num = Number(token.replace(/,/g, ""));
+  if (!Number.isFinite(num)) return null;
+
+  return num;
+}
+
+function cleanField(field, opts = {}) {
+  // field expected shape: { value, snippet }
+  if (!field) return { value: null, snippet: null };
+
+  const periodYear = opts.periodYear ?? null;
+
+  let v = field.value;
+
+  // إذا القيمة نص أو null، نحاول نقرأها من snippet
+  if (!Number.isFinite(v)) {
+    v = parseMoneyFromSnippet(field.snippet);
+  }
+
+  // فلترة: سنة؟ أو رقم صغير جداً غير منطقي؟
+  if (!Number.isFinite(v)) return { value: null, snippet: field.snippet ?? null };
+
+  // 1) امنع السنوات
+  if (looksLikeYear(v, periodYear)) {
+    return { value: null, snippet: field.snippet ?? null };
+  }
+
+  // 2) امنع قيم “مضحكة” مثل -23 في قوائم مالية سنوية
+  // (تقدر تشددها لاحقاً، الآن نخليها بسيطة)
+  if (Math.abs(v) < 1000) {
+    return { value: null, snippet: field.snippet ?? null };
+  }
+
+  // 3) منع الأرقام الضخمة غير المنطقية الناتجة من “دمج رقمين”
+  // إذا أكبر من 10^13 غالباً صار دمج أو قراءة خاطئة (حسب شركتك ممكن تعدل)
+  if (Math.abs(v) > 1e13) {
+    return { value: null, snippet: field.snippet ?? null };
+  }
+
+  return { value: v, snippet: field.snippet ?? null };
+}
+
+function postProcessExtracted(extracted, meta) {
+  const periodYear = (() => {
+    const h = meta?.periodHint || "";
+    const m = normalizeArabicDigits(h).match(/(20\d{2})/);
+    return m ? Number(m[1]) : null;
+  })();
+
+  const out = structuredClone(extracted || {});
+
+  // Income statement
+  if (out.incomeStatement) {
+    out.incomeStatement.revenue = cleanField(out.incomeStatement.revenue, { periodYear });
+    out.incomeStatement.grossProfit = cleanField(out.incomeStatement.grossProfit, { periodYear });
+    out.incomeStatement.operatingProfit = cleanField(out.incomeStatement.operatingProfit, { periodYear });
+    out.incomeStatement.netIncome = cleanField(out.incomeStatement.netIncome, { periodYear });
+  }
+
+  // Balance sheet
+  if (out.balanceSheet) {
+    out.balanceSheet.totalAssets = cleanField(out.balanceSheet.totalAssets, { periodYear });
+    out.balanceSheet.totalLiabilities = cleanField(out.balanceSheet.totalLiabilities, { periodYear });
+    out.balanceSheet.totalEquity = cleanField(out.balanceSheet.totalEquity, { periodYear });
+  }
+
+  // Cashflow
+  if (out.cashFlow) {
+    out.cashFlow.cfo = cleanField(out.cashFlow.cfo, { periodYear });
+    out.cashFlow.cfi = cleanField(out.cashFlow.cfi, { periodYear });
+    out.cashFlow.cff = cleanField(out.cashFlow.cff, { periodYear });
+    out.cashFlow.capex = cleanField(out.cashFlow.capex, { periodYear });
+  }
+
+  // Shares
+  if (out.shares) {
+    out.shares.weightedShares = cleanField(out.shares.weightedShares, { periodYear });
+    out.shares.epsBasic = cleanField(out.shares.epsBasic, { periodYear });
+    out.shares.epsDiluted = cleanField(out.shares.epsDiluted, { periodYear });
+  }
+
+  return out;
+}
+
 const pdfParse = require("pdf-parse");
 
 // ---------- Helpers ----------
