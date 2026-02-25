@@ -91,7 +91,10 @@ function findSectionTitles(rawText, sectionKey) {
       // لإرجاع سياق مفيد: نبحث في النص الخام حول هذا العنوان (تقريباً)
       // (نستخدم rawText بدل norm عشان المستخدم يشوف النص كما هو)
       const approx = Math.max(0, Math.min(rawText.length - 1, idx));
-      const window = rawText.slice(Math.max(0, approx - 250), Math.min(rawText.length, approx + 500));
+      const window = rawText.slice(
+        Math.max(0, approx - 250),
+        Math.min(rawText.length, approx + 500)
+      );
       found.push({
         match: title,
         contextPreview: window.replace(/\s+/g, " ").trim().slice(0, 260),
@@ -129,7 +132,10 @@ function detectSections(rawText) {
 }
 
 function buildMeta(text) {
-  const lines = (text || "").split("\n").map((x) => x.trim()).filter(Boolean);
+  const lines = (text || "")
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
   // الشركة: أول سطر يحتوي "شركة" غالباً
   const companyLine = lines.find((l) => l.includes("شركة")) || null;
@@ -145,6 +151,140 @@ function buildMeta(text) {
     currency,
     periodHint: periodMatch ? periodMatch[0].replace(/\s+/g, " ").trim() : null,
   };
+}
+
+/* =========================
+   Step 2: Section Extraction (simple, text-based)
+   - Find real section start (skip TOC)
+   - Slice from this section to the next
+========================= */
+
+function normalizeChar(ch) {
+  // إزالة التشكيل
+  if (/[\u064B-\u065F\u0670]/.test(ch)) return "";
+
+  // توحيد الهمزات
+  if (/[إأآٱ]/.test(ch)) return "ا";
+
+  // توحيد حروف شائعة
+  if (ch === "ى") return "ي";
+  if (ch === "ة") return "ه";
+  if (ch === "ؤ") return "و";
+  if (ch === "ئ") return "ي";
+  if (ch === "ـ") return "";
+
+  // توحيد الفواصل العربية
+  if (ch === "٬" || ch === "،") return ",";
+
+  // أبقِ العربي/الإنجليزي/الأرقام/المسافات وبعض الرموز
+  if (/[\u0600-\u06FFa-zA-Z0-9\s&/().-]/.test(ch)) return ch.toLowerCase();
+
+  // أي شيء آخر نحوله لمسافة
+  return " ";
+}
+
+function normalizeWithMap(raw = "") {
+  let norm = "";
+  const map = []; // map[normIndex] = rawIndex
+  for (let i = 0; i < raw.length; i++) {
+    const out = normalizeChar(raw[i]);
+    if (!out) continue;
+    for (let k = 0; k < out.length; k++) {
+      norm += out[k];
+      map.push(i);
+    }
+  }
+  // ملاحظة: لن نضغط المسافات هنا لتجنب تعقيد الـ map
+  return { norm, map };
+}
+
+function findBestSectionStart(rawText, sectionKey) {
+  const titles = LEXICON.sections[sectionKey] || [];
+  const { norm, map } = normalizeWithMap(rawText);
+
+  let best = null;
+
+  for (const title of titles) {
+    const tNorm = normalizeText(title);
+    let from = 0;
+
+    while (true) {
+      const idx = norm.indexOf(tNorm, from);
+      if (idx === -1) break;
+
+      const rawIdx = map[idx] ?? 0;
+
+      // سياق حول التطابق لاستبعاد "الفهرس"
+      const ctx = rawText
+        .slice(Math.max(0, rawIdx - 200), Math.min(rawText.length, rawIdx + 300))
+        .replace(/\s+/g, " ");
+
+      const looksLikeTOC =
+        /الفهرس/.test(ctx) ||
+        (/صفحة/.test(ctx) && /تقرير مراجع الحسابات/.test(ctx));
+
+      // لو تطابق داخل الفهرس، نتجاوزه
+      if (looksLikeTOC) {
+        from = idx + tNorm.length;
+        continue;
+      }
+
+      // اختر أول تطابق معقول، وفضّل التطابق الأبعد (غالبًا الحقيقي داخل القوائم)
+      best = best || { rawIdx, match: title };
+      if (rawIdx > best.rawIdx) best = { rawIdx, match: title };
+
+      from = idx + tNorm.length;
+    }
+  }
+
+  return best; // { rawIdx, match } أو null
+}
+
+function buildSectionsText(rawText) {
+  const sectionKeys = [
+    "balanceSheet",
+    "incomeStatement",
+    "comprehensiveIncome",
+    "cashFlow",
+    "equityChanges",
+  ];
+
+  const starts = [];
+
+  for (const key of sectionKeys) {
+    const found = findBestSectionStart(rawText, key);
+    if (found) starts.push({ key, ...found });
+  }
+
+  // ترتيب حسب الظهور في الملف
+  starts.sort((a, b) => a.rawIdx - b.rawIdx);
+
+  const sectionsText = {};
+  const sectionsInfo = {};
+
+  for (let i = 0; i < starts.length; i++) {
+    const cur = starts[i];
+    const next = starts[i + 1];
+
+    const start = cur.rawIdx;
+    const end = next ? next.rawIdx : rawText.length;
+
+    const chunk = rawText
+      .slice(start, end)
+      .replace(/\r/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    sectionsText[cur.key] = chunk;
+    sectionsInfo[cur.key] = {
+      titleMatched: cur.match,
+      start,
+      end,
+      length: chunk.length,
+    };
+  }
+
+  return { sectionsText, sectionsInfo };
 }
 
 module.exports = async function (context, req) {
@@ -195,6 +335,9 @@ module.exports = async function (context, req) {
       equityChanges: findSectionTitles(text, "equityChanges"),
     };
 
+    // ✅ استخراج نص كل قسم (كتلة نصية بين العناوين)
+    const { sectionsText, sectionsInfo } = buildSectionsText(text);
+
     context.res = {
       status: 200,
       headers: { "content-type": "application/json; charset=utf-8" },
@@ -206,6 +349,8 @@ module.exports = async function (context, req) {
         meta,
         detectedSections,
         sectionTitlesFound,
+        sectionsInfo,
+        sectionsText,
         preview: text.slice(0, 900),
       },
     };
