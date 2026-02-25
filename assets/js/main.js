@@ -1,3 +1,5 @@
+console.log("main.js loaded ✅");
+
 const fileInput = document.getElementById("fileInput");
 const btnShow = document.getElementById("btnShow");
 
