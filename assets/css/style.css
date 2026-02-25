@@ -231,5 +231,5 @@ main.container > *{
   .grid{ grid-template-columns:1fr; }
   .logo-img{ width:260px; transform: translateY(16px); }
   .logo-glow{ width:340px; height:340px; }
-  .brand-title{ font-size:36px; }
+  .brand-title{ font-size:40px; }
 }
