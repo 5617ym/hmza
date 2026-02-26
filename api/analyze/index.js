@@ -17,7 +17,15 @@ module.exports = async function (context, req) {
 
     const body = req.body || {};
     const fileName = body.fileName || body.name || "unknown.pdf";
-    const sectionsText = body.sectionsText || {};
+let sectionsText = body.sectionsText || null;
+
+// لو جاء PDF Base64 من الواجهة
+const fileBase64 = body.fileBase64 || null;
+
+if (!sectionsText && fileBase64) {
+  const extractedText = await extractTextFromPdfBase64(fileBase64);
+  sectionsText = { preview: extractedText };
+}
 
     const hasAnySection =
       sectionsText &&
