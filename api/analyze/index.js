@@ -72,17 +72,17 @@ export default async function handler(req, res) {
 
     const debug = {
       found: {
-        revenue: !!income.revenue,
-        grossProfit: !!income.grossProfit,
-        operatingProfit: !!income.operatingProfit,
-        netIncome: !!income.netIncome,
-        cfo: !!cashflow.cfo,
-        cfi: !!cashflow.cfi,
-        cff: !!cashflow.cff,
-        capex: !!cashflow.capex,
-        weightedShares: !!shares.weightedAvgSharesBasic,
-        epsBasic: !!shares.epsBasic,
-        epsDiluted: !!shares.epsDiluted,
+        revenue: income.revenue !== null && income.revenue !== undefined,
+        grossProfit: income.grossProfit !== null && income.grossProfit !== undefined,
+        operatingProfit: income.operatingProfit !== null && income.operatingProfit !== undefined,
+        netIncome: income.netIncome !== null && income.netIncome !== undefined,
+        cfo: cashflow.cfo !== null && cashflow.cfo !== undefined,
+        cfi: cashflow.cfi !== null && cashflow.cfi !== undefined,
+        cff: cashflow.cff !== null && cashflow.cff !== undefined,
+        capex: cashflow.capex !== null && cashflow.capex !== undefined,
+        weightedShares: shares.weightedAvgSharesBasic !== null && shares.weightedAvgSharesBasic !== undefined,
+        epsBasic: shares.epsBasic !== null && shares.epsBasic !== undefined,
+        epsDiluted: shares.epsDiluted !== null && shares.epsDiluted !== undefined,
       },
       sampleLines: {
         revenueLine: income._lineRevenue || null,
@@ -99,12 +99,11 @@ export default async function handler(req, res) {
   } catch (err) {
     // ✅ رجّع خطأ واضح دائمًا
     const message =
-      (err && (err.message || err.toString && err.toString())) || "Unhandled server error";
+      (err && (err.message || (err.toString && err.toString()))) || "Unhandled server error";
 
     return send(500, {
       ok: false,
       error: message,
-      // مفيد جدًا عشان ما يرجع unknown
       stack: err?.stack || null,
     });
   }
@@ -114,32 +113,111 @@ export default async function handler(req, res) {
    Helpers
    ========================= */
 
+function normalizeArabicDigits(s) {
+  const map = {
+    "٠": "0",
+    "١": "1",
+    "٢": "2",
+    "٣": "3",
+    "٤": "4",
+    "٥": "5",
+    "٦": "6",
+    "٧": "7",
+    "٨": "8",
+    "٩": "9",
+    "۰": "0",
+    "۱": "1",
+    "۲": "2",
+    "۳": "3",
+    "۴": "4",
+    "۵": "5",
+    "۶": "6",
+    "۷": "7",
+    "۸": "8",
+    "۹": "9",
+    "٫": ".",
+    "٬": ",",
+  };
+  return String(s).replace(/[٠-٩۰-۹٫٬]/g, (ch) => map[ch] ?? ch);
+}
+
 function normalizeText(s) {
   if (!s) return "";
   let t = String(s);
+
+  // لو جايك كنص فيه \n
   t = t.replace(/\\n/g, "\n");
+
+  // مسافات غير قابلة للكسر
   t = t.replace(/\u00A0/g, " ");
-  t = t.replace(/[ \t]+/g, " ");
-  t = t.replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+
+  // احذف رموز اتجاه RTL/LTR
+  t = t.replace(/[\u200E\u200F\u202A-\u202E]/g, "");
+
+  // وحّد أرقام عربية + فواصل عربية
+  t = normalizeArabicDigits(t);
+
+  // احذف التشكيل
   t = t.replace(/[\u064B-\u0652]/g, "");
+
+  // خفف تكدس المسافات
+  t = t.replace(/[ \t]+/g, " ");
+
   return t.trim();
+}
+
+function parseFinancialNumber(raw) {
+  if (raw == null) return null;
+
+  let s = normalizeArabicDigits(raw);
+
+  // احذف رموز اتجاه النص RTL/LTR
+  s = s.replace(/[\u200E\u200F\u202A-\u202E]/g, "").trim();
+
+  // سالب بالأقواس
+  let isNeg = false;
+  if (/^\(.*\)$/.test(s)) {
+    isNeg = true;
+    s = s.slice(1, -1).trim();
+  }
+
+  // إشارات سالب مختلفة
+  if (/^[\-−–—]/.test(s)) {
+    isNeg = true;
+    s = s.replace(/^[\-−–—]+/, "");
+  }
+
+  // خلي فقط أرقام + فواصل + نقطة
+  s = s.replace(/[^\d.,]/g, "");
+  if (!s) return null;
+
+  const dots = (s.match(/\./g) || []).length;
+  const commas = (s.match(/,/g) || []).length;
+
+  // لو صيغة 123,45 (فاصلة عشرية)
+  if (dots === 0 && commas === 1) {
+    const [a, b] = s.split(",");
+    if (b && b.length <= 2) s = a + "." + b;
+    else s = s.replace(/,/g, "");
+  } else {
+    // اعتبر الفواصل آلاف
+    s = s.replace(/,/g, "");
+  }
+
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+
+  return isNeg ? -Math.abs(n) : n;
 }
 
 function parseNumberFromLine(line) {
   if (!line) return null;
-  const m = line.match(
-    /(\(?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?|\(?-?\d+(?:\.\d+)?\)?)/
-  );
+
+  // يلتقط الأرقام سواء عربية/إنجليزية + فواصل عربية/إنجليزية + أقواس + سالب
+  const m = String(line).match(/[\(]?[\-−–—]?\s*[\d٠-٩۰-۹][\d٠-٩۰-۹\s,٬\.٫]*[\)]?/);
   if (!m) return null;
 
-  let raw = m[0].trim();
-  const negativeByParens = raw.startsWith("(") && raw.endsWith(")");
-  raw = raw.replace(/[(),]/g, "");
-
-  let n = Number(raw);
-  if (!Number.isFinite(n)) return null;
-  if (negativeByParens) n = -Math.abs(n);
-  return n;
+  return parseFinancialNumber(m[0]);
 }
 
 function pickBestLine(text, keywords, opts = {}) {
