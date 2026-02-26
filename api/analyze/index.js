@@ -312,3 +312,9 @@ function buildSharesMetrics(t) {
     _lineEPSDiluted: epsDilutedLine || null,
   };
 }
+async function extractTextFromPdfBase64(...) { ... }
+
+
+
+
+
