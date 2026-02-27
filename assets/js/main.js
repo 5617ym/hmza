@@ -1,5 +1,58 @@
+console.log("main.js loaded ✅");
+
+const fileInput = document.getElementById("fileInput");
+const fileListEl = document.getElementById("fileList");
+const btnShow = document.getElementById("btnShow");
+const btnClear = document.getElementById("btnClear");
+const statusEl = document.getElementById("status");
+const resultsSection = document.getElementById("results");
+const cardsEl = document.getElementById("cards");
+
+const periodEl = document.getElementById("period");
+const compareEl = document.getElementById("compare");
+
+let selectedFiles = [];
+
+function setStatus(msg, type = "info") {
+  statusEl.textContent = msg || "";
+  statusEl.className = "";
+  if (type === "ok") statusEl.classList.add("ok");
+  if (type === "warn") statusEl.classList.add("warn");
+  if (type === "err") statusEl.classList.add("err");
+}
+
+function clearUI() {
+  selectedFiles = [];
+  fileInput.value = "";
+  if (fileListEl) fileListEl.innerHTML = "";
+  if (cardsEl) cardsEl.innerHTML = "";
+  resultsSection?.classList.add("hidden");
+  btnShow.disabled = true;
+  setStatus("");
+}
+
+function renderSelectedFiles() {
+  if (!fileListEl) return;
+
+  if (!selectedFiles.length) {
+    fileListEl.innerHTML = `<div>لم يتم اختيار أي ملف.</div>`;
+    return;
+  }
+
+  fileListEl.innerHTML = selectedFiles
+    .map(
+      (f) =>
+        `<div>${f.name} - ${f.size.toLocaleString()} bytes</div>`
+    )
+    .join("");
+}
+
+/* ==============================================
+   🚀  الرفع ثم التحليل عبر blobUrl
+   ============================================== */
+
 async function analyzeSingleFile(file) {
-  // 1) get uploadUrl + blobUrl
+  // 1️⃣ طلب uploadUrl + blobUrl
   const r1 = await fetch("/api/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -11,12 +64,12 @@ async function analyzeSingleFile(file) {
     }),
   });
 
-  const j1 = await r1.json().catch(() => null);
+  const j1 = await r1.json();
   if (!r1.ok || !j1?.ok) {
-    throw new Error(`upload-url failed: ${r1.status} ${JSON.stringify(j1)}`);
+    throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
   }
 
-  // 2) PUT to Azure Blob via SAS
+  // 2️⃣ رفع الملف إلى Azure Blob
   const put = await fetch(j1.uploadUrl, {
     method: "PUT",
     headers: {
@@ -31,7 +84,7 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // 3) analyze by blobUrl
+  // 3️⃣ تحليل الملف عبر blobUrl
   const r2 = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -43,10 +96,67 @@ async function analyzeSingleFile(file) {
     }),
   });
 
-  const j2 = await r2.json().catch(() => null);
+  const j2 = await r2.json();
   if (!r2.ok || !j2?.ok) {
-    throw new Error(`analyze failed: ${r2.status} ${JSON.stringify(j2)}`);
+    throw new Error(`analyze failed: ${JSON.stringify(j2)}`);
   }
 
   return j2;
 }
+
+/* ==============================================
+   🎯  Events
+   ============================================== */
+
+fileInput?.addEventListener("change", () => {
+  selectedFiles = Array.from(fileInput.files || []);
+  renderSelectedFiles();
+
+  if (selectedFiles.length) {
+    btnShow.disabled = false;
+    setStatus(`تم اختيار ${selectedFiles.length} ملف ✅`, "ok");
+  } else {
+    btnShow.disabled = true;
+    setStatus("لم يتم اختيار ملف.", "warn");
+  }
+});
+
+btnClear?.addEventListener("click", () => {
+  clearUI();
+});
+
+btnShow?.addEventListener("click", async () => {
+  if (!selectedFiles.length) {
+    setStatus("اختر ملف أولاً.", "warn");
+    return;
+  }
+
+  btnShow.disabled = true;
+  setStatus("جاري رفع الملف ثم التحليل...", "info");
+
+  try {
+    const data = await analyzeSingleFile(selectedFiles[0]);
+    console.log("API Response:", data);
+
+    if (!data?.ok) {
+      setStatus(`الـ API رجّع خطأ: ${data?.error || "غير معروف"}`, "err");
+      return;
+    }
+
+    resultsSection?.classList.remove("hidden");
+    cardsEl.innerHTML = `
+      <div>عدد الصفحات: ${data.pages}</div>
+      <div>عدد الجداول: ${data.tables}</div>
+      <div>طول النص: ${data.textLength}</div>
+    `;
+
+    setStatus("تم استخراج البيانات بنجاح ✅", "ok");
+  } catch (e) {
+    console.error(e);
+    setStatus(`حدث خطأ: ${e.message}`, "err");
+  } finally {
+    btnShow.disabled = false;
+  }
+});
+
+clearUI();
