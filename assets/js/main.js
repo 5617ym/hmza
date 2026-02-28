@@ -13,17 +13,6 @@ const compareEl = document.getElementById("compare");
 
 let selectedFiles = [];
 
-// ✅ parser آمن حتى لو السيرفر رجّع نص/فارغ
-async function safeJson(res) {
-  const txt = await res.text().catch(() => "");
-  if (!txt) return { ok: false, error: `Empty response (HTTP ${res.status})` };
-  try {
-    return JSON.parse(txt);
-  } catch (e) {
-    return { ok: false, error: "Invalid JSON from server", details: txt.slice(0, 800) };
-  }
-}
-
 function setStatus(msg, type = "info") {
   if (!statusEl) return;
   statusEl.textContent = msg || "";
@@ -56,34 +45,38 @@ function renderSelectedFiles() {
     .join("");
 }
 
+// يضمن قراءة JSON حتى لو السيرفر رجّع HTML/نص
+async function safeJson(res) {
+  const text = await res.text().catch(() => "");
+  try {
+    return JSON.parse(text || "{}");
+  } catch (e) {
+    throw new Error(`Response is not JSON (status ${res.status}): ${text.slice(0, 200)}`);
+  }
+}
+
 /* ==============================================
-   🚀 upload-url -> PUT -> analyze(blobUrl)
+   🚀 رفع الملف إلى Blob ثم تحليل عبر blobUrl
    ============================================== */
 async function analyzeSingleFile(file) {
-  if (!file) throw new Error("لا يوجد ملف");
-
-  const fileName = file.name;
-  const contentType = file.type || "application/octet-stream";
-
   // 1) طلب uploadUrl + blobUrl
   const r1 = await fetch("/api/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      fileName,
-      contentType,
+      fileName: file.name,
+      contentType: file.type || "application/pdf",
       period: periodEl?.value || null,
       compare: compareEl?.value || null,
     }),
   });
 
   const j1 = await safeJson(r1);
-  if (!r1.ok || !j1?.ok) {
-    throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
-  }
+  window.lastUploadResult = j1;
+  console.log("UPLOAD-URL:", j1);
 
-  if (!j1.uploadUrl || !j1.blobUrl) {
-    throw new Error(`upload-url ناقص (uploadUrl/blobUrl): ${JSON.stringify(j1)}`);
+  if (!r1.ok || !j1?.ok || !j1.uploadUrl || !j1.blobUrl) {
+    throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
   }
 
   // 2) رفع الملف إلى Azure Blob
@@ -91,7 +84,7 @@ async function analyzeSingleFile(file) {
     method: "PUT",
     headers: {
       "x-ms-blob-type": "BlockBlob",
-      "Content-Type": contentType,
+      "Content-Type": file.type || "application/octet-stream",
     },
     body: file,
   });
@@ -101,26 +94,25 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // 3) تحليل الملف عبر blobUrl
+  // 3) تحليل الملف عبر /api/analyze
   const r2 = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      fileName,
+      fileName: file.name,
       blobUrl: j1.blobUrl,
     }),
   });
 
-  const j2 = await safeJson(r2);
+  const data = await safeJson(r2);
+  window.lastAnalyzeResult = data;
+  console.log("ANALYZE:", data);
 
-  // مفيد للتشخيص في console
-  window.lastUploadResult = { upload: j1, analyze: j2 };
-
-  if (!r2.ok || !j2?.ok) {
-    throw new Error(`analyze failed: ${JSON.stringify(j2)}`);
+  if (!r2.ok) {
+    throw new Error(`analyze http ${r2.status}: ${JSON.stringify(data)}`);
   }
 
-  return j2;
+  return data;
 }
 
 /* ==============================================
@@ -155,12 +147,22 @@ btnShow?.addEventListener("click", async () => {
   try {
     const data = await analyzeSingleFile(selectedFiles[0]);
 
+    if (!data?.ok) {
+      setStatus(`الـ API رجّع خطأ: ${data?.error || "غير معروف"}`, "err");
+      return;
+    }
+
+    // لا نسمح بـ undefined يظهر للمستخدم
+    const pages = Number.isFinite(data.pages) ? data.pages : 0;
+    const tables = Number.isFinite(data.tables) ? data.tables : 0;
+    const textLength = Number.isFinite(data.textLength) ? data.textLength : 0;
+
     resultsSection?.classList.remove("hidden");
     if (cardsEl) {
       cardsEl.innerHTML = `
-        <div>عدد الصفحات: ${data.pages}</div>
-        <div>عدد الجداول: ${data.tables}</div>
-        <div>طول النص: ${data.textLength}</div>
+        <div>عدد الصفحات: ${pages}</div>
+        <div>عدد الجداول: ${tables}</div>
+        <div>طول النص: ${textLength}</div>
       `;
     }
 
