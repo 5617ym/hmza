@@ -1,5 +1,4 @@
-// api/analyze/index.js
-
+// api/ingest/index.js
 module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
@@ -14,83 +13,53 @@ module.exports = async function (context, req) {
       return send(405, { ok: false, error: "Method not allowed" });
     }
 
-    const body = req.body || {};
-    const fileName = body.fileName || "unknown.pdf";
-    const blobUrl = body.blobUrl;
+    const { fileName, blobUrl, contentType } = req.body || {};
+    if (!blobUrl) return send(400, { ok: false, error: "blobUrl مطلوب" });
 
-    if (!blobUrl) {
-      return send(400, { ok: false, error: "blobUrl مطلوب" });
-    }
+    const name = (fileName || "").toLowerCase();
+    const ct = (contentType || "").toLowerCase();
 
-    const endpoint = process.env.DOCUMENT_INTELLIGENCE_ENDPOINT;
-    const key = process.env.DOCUMENT_INTELLIGENCE_KEY;
+    const isPdf = name.endsWith(".pdf") || ct.includes("pdf");
+    const isImage =
+      ct.startsWith("image/") ||
+      /\.(png|jpg|jpeg|webp|tiff|bmp)$/i.test(name);
 
-    if (!endpoint || !key) {
-      return send(500, { ok: false, error: "Document Intelligence غير مهيأ" });
-    }
+    const isCsv = name.endsWith(".csv") || ct.includes("csv");
+    const isXlsx =
+      /\.(xlsx|xls)$/i.test(name) ||
+      ct.includes("spreadsheet") ||
+      ct.includes("excel");
 
-    // 1️⃣ إرسال طلب التحليل
-    const analyzeResponse = await fetch(
-      `${endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2023-10-31-preview`,
-      {
-        method: "POST",
-        headers: {
-          "Ocp-Apim-Subscription-Key": key,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          urlSource: blobUrl,
-        }),
-      }
-    );
+    const isDocx =
+      name.endsWith(".docx") ||
+      ct.includes("wordprocessingml") ||
+      ct.includes("msword");
 
-    if (!analyzeResponse.ok) {
-      const t = await analyzeResponse.text();
-      return send(500, { ok: false, error: "فشل بدء التحليل", details: t });
-    }
-
-    const operationLocation = analyzeResponse.headers.get("operation-location");
-
-    if (!operationLocation) {
-      return send(500, { ok: false, error: "لم يتم إرجاع operation-location" });
-    }
-
-    // 2️⃣ انتظار اكتمال المعالجة
-    let result;
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-
-      const poll = await fetch(operationLocation, {
-        headers: { "Ocp-Apim-Subscription-Key": key },
+    // ✅ المرحلة الحالية: نوجّه فقط (نحلل PDF/صور بـ DI الآن)
+    if (isPdf || isImage) {
+      // استدعاء محلل الـPDF الحالي عندك
+      // نفس input المتوقع في /api/analyze
+      const analyzeUrl = "/api/analyze";
+      return send(200, {
+        ok: true,
+        route: "analyze",
+        next: analyzeUrl,
+        payload: { fileName, blobUrl },
+        note: "هذا توجيه فقط. استدعِ /api/analyze بنفس البيانات.",
       });
-
-      result = await poll.json();
-
-      if (result.status === "succeeded") break;
-      if (result.status === "failed") {
-        return send(500, { ok: false, error: "فشل التحليل", details: result });
-      }
     }
 
-    if (!result || result.status !== "succeeded") {
-      return send(500, { ok: false, error: "انتهت مهلة الانتظار" });
-    }
+    // الأنواع الأخرى (نفعّلها في الخطوة التالية بدون تشعب)
+    if (isCsv) return send(200, { ok: true, route: "csv", next: "/api/parse-csv" });
+    if (isXlsx) return send(200, { ok: true, route: "excel", next: "/api/parse-excel" });
+    if (isDocx) return send(200, { ok: true, route: "word", next: "/api/parse-word" });
 
-    const fullText = (result.analyzeResult.content || "").trim();
-
-    return send(200, {
-      ok: true,
-      fileName,
-      textLength: fullText.length,
-      tables: result.analyzeResult.tables?.length || 0,
-      pages: result.analyzeResult.pages?.length || 0,
-    });
-
-  } catch (err) {
-    return send(500, {
+    return send(400, {
       ok: false,
-      error: err.message || "Unhandled error",
-      stack: err.stack || null,
+      error: "نوع ملف غير مدعوم حالياً",
+      details: { fileName, contentType },
     });
+  } catch (err) {
+    return send(500, { ok: false, error: err.message || "Unhandled error" });
   }
 };
