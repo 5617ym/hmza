@@ -85,24 +85,38 @@ async function analyzeSingleFile(file) {
   }
 
   // 3️⃣ تحليل الملف عبر blobUrl
-  const r2 = await fetch("/api/analyze", {
+// بدل استدعاء /api/analyze مباشرة:
+const ingestRes = await fetch("/api/ingest", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    fileName,
+    blobUrl,
+    contentType: file?.type || "",
+  }),
+});
+
+const ingest = await ingestRes.json();
+console.log("INGEST:", ingest);
+
+if (!ingest.ok) {
+  throw new Error(ingest.error || "ingest failed");
+}
+
+// حاليا الـRouter يوجه PDF/Images إلى analyze
+if (ingest.route === "analyze") {
+  const r = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      fileName: file.name,
-      blobUrl: j1.blobUrl,
-      period: periodEl?.value || null,
-      compare: compareEl?.value || null,
-    }),
+    body: JSON.stringify(ingest.payload), // {fileName, blobUrl}
   });
-
-  const j2 = await r2.json();
-  if (!r2.ok || !j2?.ok) {
-    throw new Error(`analyze failed: ${JSON.stringify(j2)}`);
-  }
-
-  return j2;
+  const data = await r.json();
+  console.log("ANALYZE:", data);
+  return data;
 }
+
+// لاحقاً نفعّل المسارات الأخرى (csv/excel/word)
+throw new Error("Route not implemented yet: " + ingest.route);
 
 /* ==============================================
    🎯  Events
