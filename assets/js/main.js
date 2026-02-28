@@ -13,6 +13,17 @@ const compareEl = document.getElementById("compare");
 
 let selectedFiles = [];
 
+// ✅ parser آمن حتى لو السيرفر رجّع نص/فارغ
+async function safeJson(res) {
+  const txt = await res.text().catch(() => "");
+  if (!txt) return { ok: false, error: `Empty response (HTTP ${res.status})` };
+  try {
+    return JSON.parse(txt);
+  } catch (e) {
+    return { ok: false, error: "Invalid JSON from server", details: txt.slice(0, 800) };
+  }
+}
+
 function setStatus(msg, type = "info") {
   if (!statusEl) return;
   statusEl.textContent = msg || "";
@@ -46,33 +57,33 @@ function renderSelectedFiles() {
 }
 
 /* ==============================================
-   🚀  الرفع ثم التحليل عبر blobUrl
+   🚀 upload-url -> PUT -> analyze(blobUrl)
    ============================================== */
-
 async function analyzeSingleFile(file) {
+  if (!file) throw new Error("لا يوجد ملف");
+
+  const fileName = file.name;
+  const contentType = file.type || "application/octet-stream";
+
   // 1) طلب uploadUrl + blobUrl
   const r1 = await fetch("/api/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      fileName: file.name,
-      contentType: file.type || "application/pdf",
+      fileName,
+      contentType,
       period: periodEl?.value || null,
       compare: compareEl?.value || null,
     }),
   });
 
-  const j1 = await r1.json();
+  const j1 = await safeJson(r1);
   if (!r1.ok || !j1?.ok) {
     throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
   }
 
-  // مهم: هذه القيم نحتاجها لاحقاً
-  const blobUrl = j1.blobUrl;
-  const fileName = file.name;
-
-  if (!blobUrl) {
-    throw new Error("upload-url لم يرجع blobUrl");
+  if (!j1.uploadUrl || !j1.blobUrl) {
+    throw new Error(`upload-url ناقص (uploadUrl/blobUrl): ${JSON.stringify(j1)}`);
   }
 
   // 2) رفع الملف إلى Azure Blob
@@ -80,7 +91,7 @@ async function analyzeSingleFile(file) {
     method: "PUT",
     headers: {
       "x-ms-blob-type": "BlockBlob",
-      "Content-Type": file.type || "application/octet-stream",
+      "Content-Type": contentType,
     },
     body: file,
   });
@@ -90,45 +101,31 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // 3) Router: /api/ingest يقرر المسار المناسب للملف
-  const ingestRes = await fetch("/api/ingest", {
+  // 3) تحليل الملف عبر blobUrl
+  const r2 = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       fileName,
-      blobUrl,
-      contentType: file?.type || "",
+      blobUrl: j1.blobUrl,
     }),
   });
 
-  const ingest = await ingestRes.json();
-  console.log("INGEST:", ingest);
+  const j2 = await safeJson(r2);
 
-  if (!ingestRes.ok || !ingest?.ok) {
-    throw new Error(ingest?.error || "ingest failed");
+  // مفيد للتشخيص في console
+  window.lastUploadResult = { upload: j1, analyze: j2 };
+
+  if (!r2.ok || !j2?.ok) {
+    throw new Error(`analyze failed: ${JSON.stringify(j2)}`);
   }
 
-  // حاليا الـRouter يوجه PDF/Images إلى analyze
-  if (ingest.route === "analyze") {
-    const r = await fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(ingest.payload), // {fileName, blobUrl}
-    });
-
-    const data = await r.json();
-    console.log("ANALYZE:", data);
-    return data;
-  }
-
-  // لاحقاً نفعّل المسارات الأخرى (csv/excel/word)
-  throw new Error("Route not implemented yet: " + ingest.route);
+  return j2;
 }
 
 /* ==============================================
-   🎯  Events
+   🎯 Events
    ============================================== */
-
 fileInput?.addEventListener("change", () => {
   selectedFiles = Array.from(fileInput.files || []);
   renderSelectedFiles();
@@ -157,20 +154,13 @@ btnShow?.addEventListener("click", async () => {
 
   try {
     const data = await analyzeSingleFile(selectedFiles[0]);
-    console.log("API Response:", data);
-
-    if (!data?.ok) {
-      setStatus(`الـ API رجّع خطأ: ${data?.error || "غير معروف"}`, "err");
-      return;
-    }
 
     resultsSection?.classList.remove("hidden");
-
     if (cardsEl) {
       cardsEl.innerHTML = `
-        <div>عدد الصفحات: ${data.pages ?? "-"}</div>
-        <div>عدد الجداول: ${data.tables ?? "-"}</div>
-        <div>طول النص: ${data.textLength ?? "-"}</div>
+        <div>عدد الصفحات: ${data.pages}</div>
+        <div>عدد الجداول: ${data.tables}</div>
+        <div>طول النص: ${data.textLength}</div>
       `;
     }
 
