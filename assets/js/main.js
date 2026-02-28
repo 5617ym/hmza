@@ -14,6 +14,7 @@ const compareEl = document.getElementById("compare");
 let selectedFiles = [];
 
 function setStatus(msg, type = "info") {
+  if (!statusEl) return;
   statusEl.textContent = msg || "";
   statusEl.className = "";
   if (type === "ok") statusEl.classList.add("ok");
@@ -23,11 +24,11 @@ function setStatus(msg, type = "info") {
 
 function clearUI() {
   selectedFiles = [];
-  fileInput.value = "";
+  if (fileInput) fileInput.value = "";
   if (fileListEl) fileListEl.innerHTML = "";
   if (cardsEl) cardsEl.innerHTML = "";
   resultsSection?.classList.add("hidden");
-  btnShow.disabled = true;
+  if (btnShow) btnShow.disabled = true;
   setStatus("");
 }
 
@@ -40,10 +41,7 @@ function renderSelectedFiles() {
   }
 
   fileListEl.innerHTML = selectedFiles
-    .map(
-      (f) =>
-        `<div>${f.name} - ${f.size.toLocaleString()} bytes</div>`
-    )
+    .map((f) => `<div>${f.name} - ${f.size.toLocaleString()} bytes</div>`)
     .join("");
 }
 
@@ -52,7 +50,7 @@ function renderSelectedFiles() {
    ============================================== */
 
 async function analyzeSingleFile(file) {
-  // 1️⃣ طلب uploadUrl + blobUrl
+  // 1) طلب uploadUrl + blobUrl
   const r1 = await fetch("/api/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -69,7 +67,15 @@ async function analyzeSingleFile(file) {
     throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
   }
 
-  // 2️⃣ رفع الملف إلى Azure Blob
+  // مهم: هذه القيم نحتاجها لاحقاً
+  const blobUrl = j1.blobUrl;
+  const fileName = file.name;
+
+  if (!blobUrl) {
+    throw new Error("upload-url لم يرجع blobUrl");
+  }
+
+  // 2) رفع الملف إلى Azure Blob
   const put = await fetch(j1.uploadUrl, {
     method: "PUT",
     headers: {
@@ -84,39 +90,40 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // 3️⃣ تحليل الملف عبر blobUrl
-// بدل استدعاء /api/analyze مباشرة:
-const ingestRes = await fetch("/api/ingest", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    fileName,
-    blobUrl,
-    contentType: file?.type || "",
-  }),
-});
-
-const ingest = await ingestRes.json();
-console.log("INGEST:", ingest);
-
-if (!ingest.ok) {
-  throw new Error(ingest.error || "ingest failed");
-}
-
-// حاليا الـRouter يوجه PDF/Images إلى analyze
-if (ingest.route === "analyze") {
-  const r = await fetch("/api/analyze", {
+  // 3) Router: /api/ingest يقرر المسار المناسب للملف
+  const ingestRes = await fetch("/api/ingest", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(ingest.payload), // {fileName, blobUrl}
+    body: JSON.stringify({
+      fileName,
+      blobUrl,
+      contentType: file?.type || "",
+    }),
   });
-  const data = await r.json();
-  console.log("ANALYZE:", data);
-  return data;
-}
 
-// لاحقاً نفعّل المسارات الأخرى (csv/excel/word)
-throw new Error("Route not implemented yet: " + ingest.route);
+  const ingest = await ingestRes.json();
+  console.log("INGEST:", ingest);
+
+  if (!ingestRes.ok || !ingest?.ok) {
+    throw new Error(ingest?.error || "ingest failed");
+  }
+
+  // حاليا الـRouter يوجه PDF/Images إلى analyze
+  if (ingest.route === "analyze") {
+    const r = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ingest.payload), // {fileName, blobUrl}
+    });
+
+    const data = await r.json();
+    console.log("ANALYZE:", data);
+    return data;
+  }
+
+  // لاحقاً نفعّل المسارات الأخرى (csv/excel/word)
+  throw new Error("Route not implemented yet: " + ingest.route);
+}
 
 /* ==============================================
    🎯  Events
@@ -158,11 +165,14 @@ btnShow?.addEventListener("click", async () => {
     }
 
     resultsSection?.classList.remove("hidden");
-    cardsEl.innerHTML = `
-      <div>عدد الصفحات: ${data.pages}</div>
-      <div>عدد الجداول: ${data.tables}</div>
-      <div>طول النص: ${data.textLength}</div>
-    `;
+
+    if (cardsEl) {
+      cardsEl.innerHTML = `
+        <div>عدد الصفحات: ${data.pages ?? "-"}</div>
+        <div>عدد الجداول: ${data.tables ?? "-"}</div>
+        <div>طول النص: ${data.textLength ?? "-"}</div>
+      `;
+    }
 
     setStatus("تم استخراج البيانات بنجاح ✅", "ok");
   } catch (e) {
