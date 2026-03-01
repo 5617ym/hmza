@@ -37,8 +37,8 @@ module.exports = async function (context, req) {
     const ep = endpoint.replace(/\/+$/, "");
     const model = "prebuilt-layout";
     const apiVersion = "2023-07-31"; // ثابت ومناسب
-    const analyzeUrl = `${ep}/documentintelligence/documentModels/${model}:analyze?api-version=${apiVersion}&stringIndexType=utf16CodeUnit`;
-
+  
+    const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=2023-07-31`;
     // 1) ابدأ التحليل (نعطيه blobUrl مباشرة)
     const start = await fetch(analyzeUrl, {
       method: "POST",
