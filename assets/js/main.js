@@ -22,6 +22,15 @@ function setStatus(msg, type = "info") {
   if (type === "err") statusEl.classList.add("err");
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function clearUI() {
   selectedFiles = [];
   if (fileInput) fileInput.value = "";
@@ -30,15 +39,6 @@ function clearUI() {
   resultsSection?.classList.add("hidden");
   if (btnShow) btnShow.disabled = true;
   setStatus("");
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 function renderSelectedFiles() {
@@ -50,7 +50,10 @@ function renderSelectedFiles() {
   }
 
   fileListEl.innerHTML = selectedFiles
-    .map((f) => `<div>${escapeHtml(f.name)} - ${Number(f.size || 0).toLocaleString()} bytes</div>`)
+    .map((f) => {
+      const size = Number(f.size || 0).toLocaleString();
+      return `<div>${escapeHtml(f.name)} - ${size} bytes</div>`;
+    })
     .join("");
 }
 
@@ -111,7 +114,7 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // (C) 👈 نبدأ بـ /api/ingest
+  // (C) نبدأ بـ /api/ingest
   const ingestBody = {
     fileName: file.name,
     blobUrl: j1.blobUrl,
@@ -134,7 +137,6 @@ async function analyzeSingleFile(file) {
   }
 
   // (D) إذا ingest رجّع next/payload → اتبع المسار تلقائياً
-  // مثال: { ok:true, route:"analyze", next:"/api/analyze", payload:{...} }
   if (j2?.next) {
     const nextUrl = j2.next;
     const payload = j2.payload || ingestBody;
@@ -151,7 +153,7 @@ async function analyzeSingleFile(file) {
     if (!r3.ok || !j3?.ok) {
       throw new Error(`next(${nextUrl}) failed: ${JSON.stringify(j3)}`);
     }
-    return j3; // هذه هي نتيجة التحليل
+    return j3; // نتيجة التحليل النهائية
   }
 
   // (E) إذا ingest رجّع النتيجة النهائية مباشرة
@@ -190,9 +192,10 @@ btnShow?.addEventListener("click", async () => {
 
   try {
     const data = await analyzeSingleFile(selectedFiles[0]);
+
     resultsSection?.classList.remove("hidden");
 
-    // ✅ read from normalized.meta first, then fallback to older fields
+    // ✅ اقرأ من normalized.meta أولاً (الجديد) ثم fallback للقديم
     const pagesRaw =
       data?.normalized?.meta?.pages ??
       data?.pages ??
@@ -212,7 +215,7 @@ btnShow?.addEventListener("click", async () => {
       (data?.text ? data.text.length : 0) ??
       0;
 
-    // ✅ if pages/tables are arrays, use length; else cast to number
+    // ✅ لو رجعت Arrays نحسب length، لو رقم نحوله رقم
     const pages = Array.isArray(pagesRaw) ? pagesRaw.length : Number(pagesRaw || 0);
     const tables = Array.isArray(tablesRaw) ? tablesRaw.length : Number(tablesRaw || 0);
     const textLength = Number(textLengthRaw || 0);
@@ -221,7 +224,8 @@ btnShow?.addEventListener("click", async () => {
       <div class="card">عدد الصفحات: <b>${pages}</b></div>
       <div class="card">عدد الجداول: <b>${tables}</b></div>
       <div class="card">طول النص: <b>${textLength}</b></div>
-      <div class="card"><div class="muted small">Raw JSON (مختصر):</div>
+      <div class="card">
+        <div class="muted small">Raw JSON (مختصر):</div>
         <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
           JSON.stringify(data, null, 2).slice(0, 2500)
         )}</pre>
