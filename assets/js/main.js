@@ -99,7 +99,7 @@ async function analyzeSingleFile(file) {
   }
 
   // (C) تحليل الملف عبر blobUrl
-  const r2 = await fetch("/api/analyze", {
+  const r2 = await fetch("/api/ingest", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
