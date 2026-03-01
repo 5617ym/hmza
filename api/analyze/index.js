@@ -1,6 +1,5 @@
 // api/analyze/index.js
 // تحليل PDF/صور عبر Azure Document Intelligence (prebuilt-layout)
-// ✅ الإصلاح: تحميل الـ PDF من blobUrl داخل السيرفر ثم إرساله لـ DI كـ bytes (بدون urlSource)
 
 module.exports = async function (context, req) {
   const send = (status, payload) => {
@@ -34,37 +33,23 @@ module.exports = async function (context, req) {
       });
     }
 
-    // 0) حمّل الملف من Blob داخل السيرفر (لتجنب مشاكل DI مع urlSource)
-    const blobRes = await fetch(blobUrl, { method: "GET" });
-    if (!blobRes.ok) {
-      const t = await blobRes.text().catch(() => "");
-      return send(500, {
-        ok: false,
-        error: "Failed to download blob",
-        status: blobRes.status,
-        body: t.slice(0, 2000),
-      });
-    }
-
-    const blobContentType =
-      blobRes.headers.get("content-type") || "application/pdf";
-    const blobArrayBuffer = await blobRes.arrayBuffer();
-    const fileBytes = blobArrayBuffer.byteLength;
-    const fileBuffer = Buffer.from(blobArrayBuffer);
-
-    // 1) ابدأ التحليل بتمرير bytes مباشرة
     const ep = endpoint.replace(/\/+$/, "");
     const model = "prebuilt-layout";
     const apiVersion = "2023-07-31";
-    const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=${apiVersion}`;
 
+    // مهم: نجبر الخدمة تحلل كل الصفحات
+    const analyzeUrl =
+      `${ep}/formrecognizer/documentModels/${model}:analyze` +
+      `?api-version=${apiVersion}&pages=1-2000`;
+
+    // 1) ابدأ التحليل (نعطيه blobUrl مباشرة)
     const start = await fetch(analyzeUrl, {
       method: "POST",
       headers: {
+        "Content-Type": "application/json",
         "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": blobContentType,
       },
-      body: fileBuffer,
+      body: JSON.stringify({ urlSource: blobUrl }),
     });
 
     const startText = await start.text().catch(() => "");
@@ -91,7 +76,7 @@ module.exports = async function (context, req) {
 
     // 2) Polling لنتيجة التحليل
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const maxTries = 45; // ~45 ثانية
+    const maxTries = 60; // نخليه أطول شوي (60 ثانية)
     let last = null;
 
     for (let i = 0; i < maxTries; i++) {
@@ -112,6 +97,7 @@ module.exports = async function (context, req) {
       }
 
       const st = (j?.status || "").toLowerCase();
+
       if (st === "succeeded") break;
 
       if (st === "failed") {
@@ -133,13 +119,16 @@ module.exports = async function (context, req) {
       });
     }
 
-    // 3) أرقام واضحة
     const analyzeResult = last.analyzeResult || {};
-    const pagesArr = Array.isArray(analyzeResult.pages) ? analyzeResult.pages : [];
-    const tablesArr = Array.isArray(analyzeResult.tables) ? analyzeResult.tables : [];
+    const diPagesLen = Array.isArray(analyzeResult.pages) ? analyzeResult.pages.length : 0;
 
-    const pages = pagesArr.length; // ✅ هذا هو عدد الصفحات الحقيقي حسب DI
-    const tables = tablesArr.length;
+    const diPageNumbers = Array.isArray(analyzeResult.pages)
+      ? analyzeResult.pages.map((p) => p.pageNumber).filter(Boolean)
+      : [];
+
+    const pages = diPageNumbers.length ? Math.max(...diPageNumbers) : 0;
+
+    const tables = Array.isArray(analyzeResult.tables) ? analyzeResult.tables.length : 0;
 
     const content = analyzeResult.content || "";
     const textLength = content.length;
@@ -152,9 +141,13 @@ module.exports = async function (context, req) {
       textLength,
       sampleText: content.slice(0, 500),
 
-      // مفيدة للتأكد أن الملف كامل عندنا قبل DI
-      fileBytes,
-      blobContentType,
+      // ✅ Debug مهم جدًا الآن (لا تحذفه)
+      diModel: model,
+      diApiVersion: apiVersion,
+      diStatus: last.status || null,
+      diPagesLen,
+      diPageNumbers,
+      diWarnings: analyzeResult.warnings || last.warnings || null,
     });
   } catch (err) {
     return send(500, { ok: false, error: err.message || "Unhandled error" });
