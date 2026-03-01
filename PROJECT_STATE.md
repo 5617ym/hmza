@@ -1,21 +1,29 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 2A (Routing Layer Completed)
+CURRENT_PHASE: 2B (Frontend Connection Started)
 
 CURRENT_TASK:
-إنهاء ربط الواجهة بـ /api/ingest بدلاً من /api/analyze
-(بدء المرحلة 2B – Frontend Connection)
+ربط الواجهة (main.js) بمسار /api/ingest بدلاً من /api/analyze
+وجعل التدفق كالتالي:
+Frontend → /api/upload-url → PUT Blob → /api/ingest → /api/analyze
 
 LAST_TEST:
-اختبار /api/ingest عبر Console باستخدام fetch
+تمت ترقية Azure Document Intelligence من F0 إلى S0.
+اختبار ملف 30 صفحة:
+pages = 30
+diPagesLen = 30
+diStatus = succeeded
 
 LAST_RESULT:
-نجح التوجيه – يرجع:
-{ ok: true, route: "analyze", next: "/api/analyze" }
+مسار التحليل يعمل بالكامل بدون قيود الصفحات.
+مرحلة 2A مكتملة بنجاح.
 
 ACTIVE_PROBLEM:
-لم يتم بعد ربط main.js بمسار ingest
-الواجهة لا تزال تستدعي /api/analyze مباشرة
+الواجهة لا تزال تستدعي /api/analyze مباشرة.
+لم يتم تحويل main.js ليستدعي /api/ingest أولاً.
+
+NEXT_STEP:
+تعديل main.js ليعتمد /api/ingest كنقطة دخول واحدة للتحليل.
 
 STATUS:
-IN_PROGRESS (Transitioning to 2B)
+IN_PROGRESS (Phase 2B)
