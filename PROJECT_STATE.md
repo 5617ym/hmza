@@ -1,29 +1,22 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 2B (Frontend Connection Started)
+CURRENT_PHASE: 2B (Frontend Connection)
 
 CURRENT_TASK:
-ربط الواجهة (main.js) بمسار /api/ingest بدلاً من /api/analyze
-وجعل التدفق كالتالي:
-Frontend → /api/upload-url → PUT Blob → /api/ingest → /api/analyze
+ربط الواجهة لتبدأ بـ /api/ingest (بدلاً من /api/analyze)
+مع دعم "auto-follow" إذا رجّع ingest حقول next/payload.
 
 LAST_TEST:
-تمت ترقية Azure Document Intelligence من F0 إلى S0.
-اختبار ملف 30 صفحة:
-pages = 30
-diPagesLen = 30
-diStatus = succeeded
+DevTools Network أظهر أن الواجهة ما زالت تستدعي /api/analyze مباشرة
+(initiator: main.js:102) مما أدى إلى 500 + "Empty response body".
 
 LAST_RESULT:
-مسار التحليل يعمل بالكامل بدون قيود الصفحات.
-مرحلة 2A مكتملة بنجاح.
+بعد ترقية Document Intelligence إلى S0 أصبح التحليل يرجع صفحات صحيحة (مثال pages=30)،
+لكن الواجهة تحتاج تعديل main.js لتستخدم ingest أولاً.
 
 ACTIVE_PROBLEM:
-الواجهة لا تزال تستدعي /api/analyze مباشرة.
-لم يتم تحويل main.js ليستدعي /api/ingest أولاً.
-
-NEXT_STEP:
-تعديل main.js ليعتمد /api/ingest كنقطة دخول واحدة للتحليل.
+main.js لا يزال يستخدم /api/analyze مباشرة؛ يجب استبدال main.js بالكامل بالكود الجديد
+الذي يستدعي /api/ingest ثم يتبع next تلقائياً.
 
 STATUS:
-IN_PROGRESS (Phase 2B)
+IN_PROGRESS
