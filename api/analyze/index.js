@@ -1,6 +1,8 @@
 // api/analyze/index.js
 // تحليل PDF/صور عبر Azure Document Intelligence (prebuilt-layout)
 
+const { normalizeAnalyzeResult } = require("../_lib/normalize-di");
+
 module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
@@ -10,34 +12,13 @@ module.exports = async function (context, req) {
     };
   };
 
-  // fetch في بعض بيئات Azure Functions قد لا يكون متاحاً حسب runtime
-  const getFetch = async () => {
-    if (typeof fetch !== "undefined") return fetch;
-    const mod = await import("node-fetch");
-    return mod.default;
-  };
-
   try {
     if ((req.method || "").toUpperCase() !== "POST") {
       return send(405, { ok: false, error: "Method not allowed" });
     }
 
-    // ✅ يدعم حالتين:
-    // 1) req.body.blobUrl مباشرة
-    // 2) req.body.payload.blobUrl لو جاء من ingest
-    const body = req.body || {};
-    const payload = body.payload && typeof body.payload === "object" ? body.payload : body;
-
-    const fileName = payload.fileName || body.fileName || null;
-    const blobUrl = payload.blobUrl || body.blobUrl || null;
-
-    if (!blobUrl) {
-      return send(400, {
-        ok: false,
-        error: "blobUrl مطلوب",
-        debug: { hasBody: Boolean(req.body), keys: Object.keys(body || {}) },
-      });
-    }
+    const { fileName, blobUrl } = req.body || {};
+    if (!blobUrl) return send(400, { ok: false, error: "blobUrl مطلوب" });
 
     const endpoint = process.env.DOCUMENT_INTELLIGENCE_ENDPOINT || "";
     const key = process.env.DOCUMENT_INTELLIGENCE_KEY || "";
@@ -59,10 +40,8 @@ module.exports = async function (context, req) {
     const apiVersion = "2023-07-31";
     const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=${apiVersion}`;
 
-    const _fetch = await getFetch();
-
-    // 1) start
-    const start = await _fetch(analyzeUrl, {
+    // 1) Start
+    const start = await fetch(analyzeUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -72,7 +51,6 @@ module.exports = async function (context, req) {
     });
 
     const startText = await start.text().catch(() => "");
-
     if (!start.ok) {
       return send(500, {
         ok: false,
@@ -83,7 +61,8 @@ module.exports = async function (context, req) {
     }
 
     const operationLocation =
-      start.headers.get("operation-location") || start.headers.get("Operation-Location");
+      start.headers.get("operation-location") ||
+      start.headers.get("Operation-Location");
 
     if (!operationLocation) {
       return send(500, {
@@ -93,13 +72,13 @@ module.exports = async function (context, req) {
       });
     }
 
-    // 2) poll
+    // 2) Poll
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const maxTries = 60; // نخليها 60 ثانية احتياط
+    const maxTries = 60;
     let last = null;
 
     for (let i = 0; i < maxTries; i++) {
-      const r = await _fetch(operationLocation, {
+      const r = await fetch(operationLocation, {
         headers: { "Ocp-Apim-Subscription-Key": key },
       });
 
@@ -130,53 +109,34 @@ module.exports = async function (context, req) {
     }
 
     if (!last || (last.status || "").toLowerCase() !== "succeeded") {
-      return send(504, {
-        ok: false,
-        error: "DI timeout",
-        details: last,
-      });
+      return send(504, { ok: false, error: "DI timeout", details: last });
     }
 
     const analyzeResult = last.analyzeResult || {};
-
-    // ✅ عدّ الصفحات الصحيح
-    const diPagesLen = Array.isArray(analyzeResult.pages) ? analyzeResult.pages.length : 0;
-
-    const diPageNumbers = Array.isArray(analyzeResult.pages)
-      ? analyzeResult.pages
-          .map((p) => p?.pageNumber)
-          .filter((n) => Number.isFinite(n))
-      : [];
-
-    const pages = diPageNumbers.length ? Math.max(...diPageNumbers) : diPagesLen;
-
-    const tables = Array.isArray(analyzeResult.tables) ? analyzeResult.tables.length : 0;
-
-    const content = analyzeResult.content || "";
-    const textLength = content.length;
+    const normalized = normalizeAnalyzeResult(analyzeResult);
 
     return send(200, {
       ok: true,
-      fileName,
-      pages,
-      tables,
-      textLength,
-      sampleText: content.slice(0, 500),
+      fileName: fileName || null,
 
-      // Debug مفيد جداً الآن
+      // ✅ قياسات ثابتة
+      pages: normalized.pagesCount,
+      tables: normalized.tablesCount,
+      textLength: normalized.textLength,
+      sampleText: normalized.sampleText,
+
+      // ✅ Debug مفيد
       diModel: model,
       diApiVersion: apiVersion,
       diStatus: last.status,
-      diPagesLen,
-      diPageNumbers,
-      diWarnings: last?.warnings || null,
+      diPagesLen: normalized.pagesCount,
+      diPageNumbers: normalized.pageNumbers,
+      diWarnings: last?.analyzeResult?.warnings || null,
+
+      // ✅ ناتج موحّد نستخدمه لاحقًا لاستخراج الأرقام
+      normalized,
     });
   } catch (err) {
-    // ✅ أهم شيء: لا نطلع 500 فاضي… لازم نرجع JSON واضح
-    return send(500, {
-      ok: false,
-      error: err?.message || "Unhandled error",
-      stack: err?.stack ? String(err.stack).slice(0, 2000) : null,
-    });
+    return send(500, { ok: false, error: err.message || "Unhandled error" });
   }
 };
