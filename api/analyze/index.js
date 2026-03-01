@@ -1,189 +1,204 @@
-// api/analyze/index.js
-// Azure Document Intelligence (prebuilt-layout)
-// Fix: send Buffer (not ArrayBuffer) + Content-Length to ensure full PDF is processed
+console.log("main.js loaded ✅");
 
-module.exports = async function (context, req) {
-  const send = (status, payload) => {
-    context.res = {
-      status,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: payload,
-    };
+const fileInput = document.getElementById("fileInput");
+const fileListEl = document.getElementById("fileList");
+const btnShow = document.getElementById("btnShow");
+const btnClear = document.getElementById("btnClear");
+const statusEl = document.getElementById("status");
+const resultsSection = document.getElementById("results");
+const cardsEl = document.getElementById("cards");
+
+const periodEl = document.getElementById("period");
+const compareEl = document.getElementById("compare");
+
+let selectedFiles = [];
+
+function setStatus(msg, type = "info") {
+  if (!statusEl) return;
+  statusEl.textContent = msg || "";
+  statusEl.className = "status";
+  if (type === "ok") statusEl.classList.add("ok");
+  if (type === "warn") statusEl.classList.add("warn");
+  if (type === "err") statusEl.classList.add("err");
+}
+
+function clearUI() {
+  selectedFiles = [];
+  if (fileInput) fileInput.value = "";
+  if (fileListEl) fileListEl.innerHTML = "";
+  if (cardsEl) cardsEl.innerHTML = "";
+  resultsSection?.classList.add("hidden");
+  if (btnShow) btnShow.disabled = true;
+  setStatus("");
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderSelectedFiles() {
+  if (!fileListEl) return;
+
+  if (!selectedFiles.length) {
+    fileListEl.innerHTML = `<div>لم يتم اختيار أي ملف.</div>`;
+    return;
+  }
+
+  fileListEl.innerHTML = selectedFiles
+    .map(
+      (f) =>
+        `<div>${escapeHtml(f.name)} - ${Number(f.size || 0).toLocaleString()} bytes</div>`
+    )
+    .join("");
+}
+
+async function safeJson(res) {
+  const txt = await res.text().catch(() => "");
+  if (!txt) return { ok: false, error: "Empty response body" };
+  try {
+    return JSON.parse(txt);
+  } catch (e) {
+    return { ok: false, error: "Invalid JSON from server", raw: txt.slice(0, 1500) };
+  }
+}
+
+/* =========================================================
+   🚀 Upload → PUT → Ingest (router) → Next (analyze/...)
+   ========================================================= */
+
+async function callJson(url, payload) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+  const j = await safeJson(r);
+  if (!r.ok || !j?.ok) {
+    throw new Error(`${url} failed: ${JSON.stringify(j)}`);
+  }
+  return j;
+}
+
+async function analyzeSingleFile(file) {
+  // (A) طلب uploadUrl + blobUrl
+  const j1 = await callJson("/api/upload-url", {
+    fileName: file.name,
+    contentType: file.type || "application/pdf",
+    period: periodEl?.value || null,
+    compare: compareEl?.value || null,
+  });
+
+  console.log("UPLOAD-URL RESPONSE:", j1);
+
+  if (!j1.uploadUrl || !j1.blobUrl) {
+    throw new Error(`upload-url missing uploadUrl/blobUrl: ${JSON.stringify(j1)}`);
+  }
+
+  // (B) رفع الملف إلى Azure Blob
+  const put = await fetch(j1.uploadUrl, {
+    method: "PUT",
+    headers: {
+      "x-ms-blob-type": "BlockBlob",
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+
+  if (!put.ok) {
+    const t = await put.text().catch(() => "");
+    throw new Error(`PUT failed: ${put.status} ${t}`);
+  }
+
+  // (C) ✅ Router: /api/ingest
+  const ingestPayload = {
+    fileName: file.name,
+    blobUrl: j1.blobUrl,
+    contentType: file.type || "",
+    period: periodEl?.value || null,
+    compare: compareEl?.value || null,
   };
 
-  try {
-    if ((req.method || "").toUpperCase() !== "POST") {
-      return send(405, { ok: false, error: "Method not allowed" });
-    }
+  const j2 = await callJson("/api/ingest", ingestPayload);
+  console.log("INGEST RESPONSE:", j2);
 
-    const { fileName, blobUrl } = req.body || {};
-    if (!blobUrl) return send(400, { ok: false, error: "blobUrl مطلوب" });
+  // (D) إذا رجع next + payload → نستدعي next تلقائيًا
+  if (j2.next) {
+    const nextUrl = j2.next; // مثال: "/api/analyze"
+    const nextPayload = j2.payload || ingestPayload;
 
-    const endpoint = process.env.DOCUMENT_INTELLIGENCE_ENDPOINT || "";
-    const key = process.env.DOCUMENT_INTELLIGENCE_KEY || "";
+    const j3 = await callJson(nextUrl, nextPayload);
+    console.log("NEXT RESPONSE:", j3);
 
-    if (!endpoint || !key) {
-      return send(500, {
-        ok: false,
-        error: "DI secrets missing",
-        details: {
-          hasEndpoint: Boolean(endpoint),
-          hasKey: Boolean(key),
-          expectedEnv: ["DOCUMENT_INTELLIGENCE_ENDPOINT", "DOCUMENT_INTELLIGENCE_KEY"],
-        },
-      });
-    }
-
-    // 0) Download blob fully as Buffer
-    const blobRes = await fetch(blobUrl, { method: "GET" });
-
-    if (!blobRes.ok) {
-      const t = await blobRes.text().catch(() => "");
-      return send(500, {
-        ok: false,
-        error: "Blob fetch failed",
-        status: blobRes.status,
-        body: t.slice(0, 2000),
-      });
-    }
-
-    const blobContentType = blobRes.headers.get("content-type") || "application/pdf";
-    const blobLenHeader = blobRes.headers.get("content-length");
-    const headerBytes = blobLenHeader ? Number(blobLenHeader) : null;
-
-    const ab = await blobRes.arrayBuffer();
-    const buf = Buffer.from(ab);
-    const downloadedBytes = buf.length;
-
-    // Quick signature check (PDF should start with "%PDF")
-    const signature = buf.slice(0, 4).toString("utf8");
-
-    // 1) Start DI analyze with raw bytes
-    const ep = endpoint.replace(/\/+$/, "");
-    const model = "prebuilt-layout";
-    const apiVersion = "2023-07-31";
-    const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=${apiVersion}`;
-
-    const start = await fetch(analyzeUrl, {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": blobContentType,
-        "Content-Length": String(downloadedBytes),
-      },
-      body: buf,
-    });
-
-    const startText = await start.text().catch(() => "");
-    if (!start.ok) {
-      return send(500, {
-        ok: false,
-        error: "DI start failed",
-        status: start.status,
-        body: startText.slice(0, 2000),
-        debug: {
-          blobContentType,
-          headerBytes,
-          downloadedBytes,
-          signature,
-        },
-      });
-    }
-
-    const operationLocation =
-      start.headers.get("operation-location") ||
-      start.headers.get("Operation-Location");
-
-    if (!operationLocation) {
-      return send(500, {
-        ok: false,
-        error: "Missing operation-location from DI",
-        body: startText.slice(0, 2000),
-      });
-    }
-
-    // 2) Polling
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const maxTries = 60;
-    let last = null;
-
-    for (let i = 0; i < maxTries; i++) {
-      const r = await fetch(operationLocation, {
-        headers: { "Ocp-Apim-Subscription-Key": key },
-      });
-
-      const j = await r.json().catch(() => null);
-      last = j;
-
-      if (!r.ok) {
-        return send(500, {
-          ok: false,
-          error: "DI poll failed",
-          status: r.status,
-          body: j || null,
-        });
-      }
-
-      const st = (j?.status || "").toLowerCase();
-      if (st === "succeeded") break;
-
-      if (st === "failed") {
-        return send(500, {
-          ok: false,
-          error: "DI analysis failed",
-          details: j,
-        });
-      }
-
-      await sleep(1000);
-    }
-
-    if (!last || (last.status || "").toLowerCase() !== "succeeded") {
-      return send(504, {
-        ok: false,
-        error: "DI timeout",
-        details: last,
-      });
-    }
-
-    const analyzeResult = last.analyzeResult || {};
-
-    const pageNumbers = Array.isArray(analyzeResult.pages)
-      ? analyzeResult.pages.map((p) => p.pageNumber).filter((n) => Number.isFinite(n))
-      : [];
-
-    const diPagesLen = Array.isArray(analyzeResult.pages) ? analyzeResult.pages.length : 0;
-    const pages = pageNumbers.length ? Math.max(...pageNumbers) : diPagesLen;
-
-    const tables = Array.isArray(analyzeResult.tables) ? analyzeResult.tables.length : 0;
-
-    const content = analyzeResult.content || "";
-    const textLength = content.length;
-
-    const diWarnings = analyzeResult.warnings || last.warnings || null;
-
-    return send(200, {
-      ok: true,
-      fileName: fileName || null,
-      pages,
-      tables,
-      textLength,
-      sampleText: content.slice(0, 500),
-
-      // Debug (مهمين جدًا الآن)
-      blobContentType,
-      headerBytes,
-      downloadedBytes,
-      signature,
-
-      diModel: analyzeResult.modelId || model,
-      diApiVersion: analyzeResult.apiVersion || apiVersion,
-      diStatus: last.status || null,
-      diPagesLen,
-      diPageNumbers: pageNumbers,
-      diWarnings,
-    });
-  } catch (err) {
-    return send(500, { ok: false, error: err.message || "Unhandled error" });
+    return j3; // هذا هو الناتج النهائي للواجهة
   }
-};
+
+  // لو ingest صار يرجّع النتائج مباشرة مستقبلاً
+  return j2;
+}
+
+/* ==============================================
+   🎯  Events
+   ============================================== */
+
+fileInput?.addEventListener("change", () => {
+  selectedFiles = Array.from(fileInput.files || []);
+  renderSelectedFiles();
+
+  if (selectedFiles.length) {
+    btnShow.disabled = false;
+    setStatus(`تم اختيار ${selectedFiles.length} ملف ✅`, "ok");
+  } else {
+    btnShow.disabled = true;
+    setStatus("لم يتم اختيار ملف.", "warn");
+  }
+});
+
+btnClear?.addEventListener("click", () => {
+  clearUI();
+});
+
+btnShow?.addEventListener("click", async () => {
+  if (!selectedFiles.length) {
+    setStatus("اختر ملف أولاً.", "warn");
+    return;
+  }
+
+  btnShow.disabled = true;
+  setStatus("جاري رفع الملف ثم التحليل عبر ingest...", "info");
+
+  try {
+    const data = await analyzeSingleFile(selectedFiles[0]);
+
+    resultsSection?.classList.remove("hidden");
+
+    const pages = data.pages ?? data.pageCount ?? 0;
+    const tables = data.tables ?? data.tableCount ?? 0;
+    const textLength = data.textLength ?? (data.text ? data.text.length : 0);
+
+    cardsEl.innerHTML = `
+      <div class="card">عدد الصفحات: <b>${pages}</b></div>
+      <div class="card">عدد الجداول: <b>${tables}</b></div>
+      <div class="card">طول النص: <b>${textLength}</b></div>
+      <div class="card">
+        <div class="muted small">Raw JSON (مختصر):</div>
+        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
+          JSON.stringify(data, null, 2).slice(0, 2500)
+        )}</pre>
+      </div>
+    `;
+
+    setStatus("تم استخراج البيانات بنجاح ✅", "ok");
+  } catch (e) {
+    console.error(e);
+    setStatus(`حدث خطأ: ${e.message}`, "err");
+  } finally {
+    btnShow.disabled = false;
+  }
+});
+
+clearUI();
