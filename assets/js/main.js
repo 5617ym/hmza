@@ -16,7 +16,7 @@ let selectedFiles = [];
 function setStatus(msg, type = "info") {
   if (!statusEl) return;
   statusEl.textContent = msg || "";
-  statusEl.className = "";
+  statusEl.className = "status";
   if (type === "ok") statusEl.classList.add("ok");
   if (type === "warn") statusEl.classList.add("warn");
   if (type === "err") statusEl.classList.add("err");
@@ -45,21 +45,22 @@ function renderSelectedFiles() {
     .join("");
 }
 
-// يضمن قراءة JSON حتى لو السيرفر رجّع HTML/نص
 async function safeJson(res) {
-  const text = await res.text().catch(() => "");
+  const txt = await res.text().catch(() => "");
+  if (!txt) return { ok: false, error: "Empty response body" };
   try {
-    return JSON.parse(text || "{}");
+    return JSON.parse(txt);
   } catch (e) {
-    throw new Error(`Response is not JSON (status ${res.status}): ${text.slice(0, 200)}`);
+    return { ok: false, error: "Invalid JSON from server", raw: txt.slice(0, 1500) };
   }
 }
 
 /* ==============================================
-   🚀 رفع الملف إلى Blob ثم تحليل عبر blobUrl
+   🚀  Upload → PUT → Analyze (مباشرة)
    ============================================== */
+
 async function analyzeSingleFile(file) {
-  // 1) طلب uploadUrl + blobUrl
+  // (A) طلب uploadUrl + blobUrl
   const r1 = await fetch("/api/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -72,14 +73,17 @@ async function analyzeSingleFile(file) {
   });
 
   const j1 = await safeJson(r1);
-  window.lastUploadResult = j1;
   console.log("UPLOAD-URL:", j1);
 
-  if (!r1.ok || !j1?.ok || !j1.uploadUrl || !j1.blobUrl) {
+  if (!r1.ok || !j1?.ok) {
     throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
   }
 
-  // 2) رفع الملف إلى Azure Blob
+  if (!j1.uploadUrl || !j1.blobUrl) {
+    throw new Error(`upload-url missing uploadUrl/blobUrl: ${JSON.stringify(j1)}`);
+  }
+
+  // (B) رفع الملف إلى Azure Blob
   const put = await fetch(j1.uploadUrl, {
     method: "PUT",
     headers: {
@@ -94,30 +98,34 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // 3) تحليل الملف عبر /api/analyze
+  // (C) تحليل الملف عبر blobUrl
   const r2 = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       fileName: file.name,
       blobUrl: j1.blobUrl,
+      // (اختياري) نرسل نوع الملف لو احتجته في السيرفر
+      contentType: file.type || "",
+      period: periodEl?.value || null,
+      compare: compareEl?.value || null,
     }),
   });
 
-  const data = await safeJson(r2);
-  window.lastAnalyzeResult = data;
-  console.log("ANALYZE:", data);
+  const j2 = await safeJson(r2);
+  console.log("ANALYZE:", j2);
 
-  if (!r2.ok) {
-    throw new Error(`analyze http ${r2.status}: ${JSON.stringify(data)}`);
+  if (!r2.ok || !j2?.ok) {
+    throw new Error(`analyze failed: ${JSON.stringify(j2)}`);
   }
 
-  return data;
+  return j2;
 }
 
 /* ==============================================
-   🎯 Events
+   🎯  Events
    ============================================== */
+
 fileInput?.addEventListener("change", () => {
   selectedFiles = Array.from(fileInput.files || []);
   renderSelectedFiles();
@@ -147,24 +155,20 @@ btnShow?.addEventListener("click", async () => {
   try {
     const data = await analyzeSingleFile(selectedFiles[0]);
 
-    if (!data?.ok) {
-      setStatus(`الـ API رجّع خطأ: ${data?.error || "غير معروف"}`, "err");
-      return;
-    }
-
-    // لا نسمح بـ undefined يظهر للمستخدم
-    const pages = Number.isFinite(data.pages) ? data.pages : 0;
-    const tables = Number.isFinite(data.tables) ? data.tables : 0;
-    const textLength = Number.isFinite(data.textLength) ? data.textLength : 0;
-
     resultsSection?.classList.remove("hidden");
-    if (cardsEl) {
-      cardsEl.innerHTML = `
-        <div>عدد الصفحات: ${pages}</div>
-        <div>عدد الجداول: ${tables}</div>
-        <div>طول النص: ${textLength}</div>
-      `;
-    }
+
+    const pages = data.pages ?? data.pageCount ?? 0;
+    const tables = data.tables ?? data.tableCount ?? 0;
+    const textLength = data.textLength ?? (data.text ? data.text.length : 0);
+
+    cardsEl.innerHTML = `
+      <div class="card">عدد الصفحات: <b>${pages}</b></div>
+      <div class="card">عدد الجداول: <b>${tables}</b></div>
+      <div class="card">طول النص: <b>${textLength}</b></div>
+      <div class="card"><div class="muted small">Raw JSON (مختصر):</div>
+        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(JSON.stringify(data, null, 2).slice(0, 2500))}</pre>
+      </div>
+    `;
 
     setStatus("تم استخراج البيانات بنجاح ✅", "ok");
   } catch (e) {
@@ -174,5 +178,14 @@ btnShow?.addEventListener("click", async () => {
     btnShow.disabled = false;
   }
 });
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 clearUI();
