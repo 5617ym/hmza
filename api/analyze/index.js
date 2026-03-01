@@ -119,17 +119,23 @@ const key =
       });
     }
 
-    const analyzeResult = last.analyzeResult || {};
-    const pages = Array.isArray(analyzeResult.pages)
-      ? analyzeResult.pages.length
-      : 0;
-    const tables = Array.isArray(analyzeResult.tables)
-      ? analyzeResult.tables.length
-      : 0;
+   const analyzeResult = last.analyzeResult || {};
 
-    // النص: DI يعطي content شامل
-    const content = analyzeResult.content || "";
-    const textLength = content.length;
+// نحسب أرقام الصفحات الفعلية
+const pageNumbers = Array.isArray(analyzeResult.pages)
+  ? analyzeResult.pages.map(p => p.pageNumber).filter(Boolean)
+  : [];
+
+const pages = pageNumbers.length
+  ? Math.max(...pageNumbers)
+  : 0;
+
+const tables = Array.isArray(analyzeResult.tables)
+  ? analyzeResult.tables.length
+  : 0;
+
+const content = analyzeResult.content || "";
+const textLength = content.length;
 
     return send(200, {
       ok: true,
