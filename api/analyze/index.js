@@ -18,12 +18,9 @@ module.exports = async function (context, req) {
     const { fileName, blobUrl } = req.body || {};
     if (!blobUrl) return send(400, { ok: false, error: "blobUrl مطلوب" });
 
-    const endpoint =
-  process.env.DOCUMENT_INTELLIGENCE_ENDPOINT || "";
+    const endpoint = process.env.DOCUMENT_INTELLIGENCE_ENDPOINT || "";
+    const key = process.env.DOCUMENT_INTELLIGENCE_KEY || "";
 
-const key =
-  process.env.DOCUMENT_INTELLIGENCE_KEY || "";
-    
     if (!endpoint || !key) {
       return send(500, {
         ok: false,
@@ -31,17 +28,21 @@ const key =
         details: {
           hasEndpoint: Boolean(endpoint),
           hasKey: Boolean(key),
-          expectedEnv: ["DOCUMENT_INTELLIGENCE_ENDPOINT", "DOCUMENT_INTELLIGENCE_KEY"],
+          expectedEnv: [
+            "DOCUMENT_INTELLIGENCE_ENDPOINT",
+            "DOCUMENT_INTELLIGENCE_KEY",
+          ],
         },
       });
     }
 
     const ep = endpoint.replace(/\/+$/, "");
     const model = "prebuilt-layout";
-    const apiVersion = "2023-07-31"; // ثابت ومناسب
-  
-    const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=2023-07-31`;
-    // 1) ابدأ التحليل (نعطيه blobUrl مباشرة)
+    const apiVersion = "2023-07-31";
+
+    const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=${apiVersion}`;
+
+    // 1) بدء التحليل
     const start = await fetch(analyzeUrl, {
       method: "POST",
       headers: {
@@ -54,6 +55,7 @@ const key =
     });
 
     const startText = await start.text().catch(() => "");
+
     if (!start.ok) {
       return send(500, {
         ok: false,
@@ -75,9 +77,9 @@ const key =
       });
     }
 
-    // 2) Polling لنتيجة التحليل
+    // 2) Polling
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const maxTries = 35; // ~35 ثانية لو انتظرنا 1s
+    const maxTries = 40;
     let last = null;
 
     for (let i = 0; i < maxTries; i++) {
@@ -100,6 +102,7 @@ const key =
       const status = (j?.status || "").toLowerCase();
 
       if (status === "succeeded") break;
+
       if (status === "failed") {
         return send(500, {
           ok: false,
@@ -119,23 +122,25 @@ const key =
       });
     }
 
-   const analyzeResult = last.analyzeResult || {};
+    const analyzeResult = last.analyzeResult || {};
 
-// نحسب أرقام الصفحات الفعلية
-const pageNumbers = Array.isArray(analyzeResult.pages)
-  ? analyzeResult.pages.map(p => p.pageNumber).filter(Boolean)
-  : [];
+    // 🔎 حساب الصفحات بشكل أدق
+    const pageNumbers = Array.isArray(analyzeResult.pages)
+      ? analyzeResult.pages
+          .map((p) => p.pageNumber)
+          .filter((n) => typeof n === "number")
+      : [];
 
-const pages = pageNumbers.length
-  ? Math.max(...pageNumbers)
-  : 0;
+    const pages = pageNumbers.length
+      ? Math.max(...pageNumbers)
+      : 0;
 
-const tables = Array.isArray(analyzeResult.tables)
-  ? analyzeResult.tables.length
-  : 0;
+    const tables = Array.isArray(analyzeResult.tables)
+      ? analyzeResult.tables.length
+      : 0;
 
-const content = analyzeResult.content || "";
-const textLength = content.length;
+    const content = analyzeResult.content || "";
+    const textLength = content.length;
 
     return send(200, {
       ok: true,
@@ -143,12 +148,15 @@ const textLength = content.length;
       pages,
       tables,
       textLength,
-      // مختصر مفيد لتأكيد وجود بيانات
       sampleText: content.slice(0, 500),
-      // لو تحتاج تتوسع لاحقاً نخزن raw كامل (حالياً نخليه مخفف)
-      // raw: analyzeResult,
+
+      // ⭐ للتشخيص
+      pageNumbers: pageNumbers.slice(0, 50),
     });
   } catch (err) {
-    return send(500, { ok: false, error: err.message || "Unhandled error" });
+    return send(500, {
+      ok: false,
+      error: err.message || "Unhandled error",
+    });
   }
 };
