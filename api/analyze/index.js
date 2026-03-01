@@ -19,9 +19,11 @@ module.exports = async function (context, req) {
     if (!blobUrl) return send(400, { ok: false, error: "blobUrl مطلوب" });
 
     const endpoint =
-      process.env.AZURE_DI_ENDPOINT || process.env.DI_ENDPOINT || "";
-    const key = process.env.AZURE_DI_KEY || process.env.DI_KEY || "";
+  process.env.DOCUMENT_INTELLIGENCE_ENDPOINT || "";
 
+const key =
+  process.env.DOCUMENT_INTELLIGENCE_KEY || "";
+    
     if (!endpoint || !key) {
       return send(500, {
         ok: false,
@@ -29,7 +31,7 @@ module.exports = async function (context, req) {
         details: {
           hasEndpoint: Boolean(endpoint),
           hasKey: Boolean(key),
-          expectedEnv: ["AZURE_DI_ENDPOINT", "AZURE_DI_KEY"],
+          expectedEnv: ["DOCUMENT_INTELLIGENCE_ENDPOINT", "DOCUMENT_INTELLIGENCE_KEY"],
         },
       });
     }
