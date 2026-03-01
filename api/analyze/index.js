@@ -80,7 +80,7 @@ module.exports = async function (context, req) {
 
     // 2) ابدأ التحليل في DI بإرسال الباينري مباشرة (بدون urlSource)
     const ep = endpoint.replace(/\/+$/, "");
-    const model = "prebuilt-layout";
+   const model = "prebuilt-read";
     const apiVersion = "2023-07-31";
 
     const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=${apiVersion}`;
