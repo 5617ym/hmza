@@ -1,5 +1,7 @@
 // api/analyze/index.js
 // تحليل PDF/صور عبر Azure Document Intelligence (prebuilt-layout)
+// (حل مشكلة: DI أحياناً يحلل أول صفحتين فقط عند استخدام urlSource)
+// هنا: نحمل الملف من blobUrl كـ bytes ثم نرسله مباشرة للـ DI
 
 module.exports = async function (context, req) {
   const send = (status, payload) => {
@@ -33,23 +35,41 @@ module.exports = async function (context, req) {
       });
     }
 
+    // 0) حمّل الملف من Blob (bytes) بدل urlSource
+    const blobRes = await fetch(blobUrl, { method: "GET" });
+    const blobContentType = blobRes.headers.get("content-type") || "application/pdf";
+    const blobLenHeader = blobRes.headers.get("content-length");
+    const blobLen = blobLenHeader ? Number(blobLenHeader) : null;
+
+    if (!blobRes.ok) {
+      const t = await blobRes.text().catch(() => "");
+      return send(500, {
+        ok: false,
+        error: "Blob fetch failed",
+        status: blobRes.status,
+        body: t.slice(0, 2000),
+      });
+    }
+
+    const fileArrayBuffer = await blobRes.arrayBuffer();
+    const fileBytes =
+      typeof blobLen === "number" && !Number.isNaN(blobLen)
+        ? blobLen
+        : fileArrayBuffer.byteLength;
+
+    // 1) ابدأ التحليل بإرسال bytes للـ DI
     const ep = endpoint.replace(/\/+$/, "");
     const model = "prebuilt-layout";
     const apiVersion = "2023-07-31";
+    const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=${apiVersion}`;
 
-    // مهم: نجبر الخدمة تحلل كل الصفحات
-    const analyzeUrl =
-      `${ep}/formrecognizer/documentModels/${model}:analyze` +
-      `?api-version=${apiVersion}&pages=1-2000`;
-
-    // 1) ابدأ التحليل (نعطيه blobUrl مباشرة)
     const start = await fetch(analyzeUrl, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
         "Ocp-Apim-Subscription-Key": key,
+        "Content-Type": blobContentType, // مهم: نرسل كملف
       },
-      body: JSON.stringify({ urlSource: blobUrl }),
+      body: fileArrayBuffer,
     });
 
     const startText = await start.text().catch(() => "");
@@ -74,9 +94,9 @@ module.exports = async function (context, req) {
       });
     }
 
-    // 2) Polling لنتيجة التحليل
+    // 2) Polling
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const maxTries = 60; // نخليه أطول شوي (60 ثانية)
+    const maxTries = 60; // نخليه أطول شوي للملفات الكبيرة
     let last = null;
 
     for (let i = 0; i < maxTries; i++) {
@@ -97,7 +117,6 @@ module.exports = async function (context, req) {
       }
 
       const st = (j?.status || "").toLowerCase();
-
       if (st === "succeeded") break;
 
       if (st === "failed") {
@@ -120,18 +139,25 @@ module.exports = async function (context, req) {
     }
 
     const analyzeResult = last.analyzeResult || {};
-    const diPagesLen = Array.isArray(analyzeResult.pages) ? analyzeResult.pages.length : 0;
 
-    const diPageNumbers = Array.isArray(analyzeResult.pages)
-      ? analyzeResult.pages.map((p) => p.pageNumber).filter(Boolean)
+    // الصفحات: الأفضل نعتمد على max(pageNumber) لو موجود
+    const pageNumbers = Array.isArray(analyzeResult.pages)
+      ? analyzeResult.pages.map((p) => p.pageNumber).filter((n) => Number.isFinite(n))
       : [];
 
-    const pages = diPageNumbers.length ? Math.max(...diPageNumbers) : 0;
+    const diPagesLen = Array.isArray(analyzeResult.pages) ? analyzeResult.pages.length : 0;
+    const pages = pageNumbers.length ? Math.max(...pageNumbers) : diPagesLen;
 
     const tables = Array.isArray(analyzeResult.tables) ? analyzeResult.tables.length : 0;
 
     const content = analyzeResult.content || "";
     const textLength = content.length;
+
+    // Warnings/Errors (للتشخيص)
+    const diWarnings =
+      analyzeResult.warnings ||
+      last.warnings ||
+      null;
 
     return send(200, {
       ok: true,
@@ -141,13 +167,15 @@ module.exports = async function (context, req) {
       textLength,
       sampleText: content.slice(0, 500),
 
-      // ✅ Debug مهم جدًا الآن (لا تحذفه)
-      diModel: model,
-      diApiVersion: apiVersion,
+      // معلومات تشخيص (مهمة الآن)
+      fileBytes,
+      blobContentType,
+      diModel: analyzeResult.modelId || model,
+      diApiVersion: analyzeResult.apiVersion || apiVersion,
       diStatus: last.status || null,
       diPagesLen,
-      diPageNumbers,
-      diWarnings: analyzeResult.warnings || last.warnings || null,
+      diPageNumbers: pageNumbers,
+      diWarnings,
     });
   } catch (err) {
     return send(500, { ok: false, error: err.message || "Unhandled error" });
