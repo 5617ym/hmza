@@ -32,6 +32,15 @@ function clearUI() {
   setStatus("");
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function renderSelectedFiles() {
   if (!fileListEl) return;
 
@@ -41,7 +50,7 @@ function renderSelectedFiles() {
   }
 
   fileListEl.innerHTML = selectedFiles
-    .map((f) => `<div>${escapeHtml(f.name)} - ${f.size.toLocaleString()} bytes</div>`)
+    .map((f) => `<div>${escapeHtml(f.name)} - ${Number(f.size || 0).toLocaleString()} bytes</div>`)
     .join("");
 }
 
@@ -51,17 +60,13 @@ async function safeJson(res) {
   try {
     return JSON.parse(txt);
   } catch (e) {
-    return { ok: false, error: "Invalid JSON from server", status: res.status, raw: txt.slice(0, 1500) };
+    return {
+      ok: false,
+      error: "Invalid JSON from server",
+      status: res.status,
+      raw: txt.slice(0, 1500),
+    };
   }
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 /* ==============================================
@@ -106,7 +111,7 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // (C) 👈 بدلاً من /api/analyze: نبدأ بـ /api/ingest
+  // (C) 👈 نبدأ بـ /api/ingest
   const ingestBody = {
     fileName: file.name,
     blobUrl: j1.blobUrl,
@@ -185,12 +190,32 @@ btnShow?.addEventListener("click", async () => {
 
   try {
     const data = await analyzeSingleFile(selectedFiles[0]);
-
     resultsSection?.classList.remove("hidden");
 
-    const pages = data.pages ?? data.pageCount ?? 0;
-    const tables = data.tables ?? data.tableCount ?? 0;
-    const textLength = data.textLength ?? (data.text ? data.text.length : 0);
+    // ✅ read from normalized.meta first, then fallback to older fields
+    const pagesRaw =
+      data?.normalized?.meta?.pages ??
+      data?.pages ??
+      data?.pageCount ??
+      data?.diPagesLen ??
+      0;
+
+    const tablesRaw =
+      data?.normalized?.meta?.tables ??
+      data?.tables ??
+      data?.tableCount ??
+      0;
+
+    const textLengthRaw =
+      data?.normalized?.meta?.textLength ??
+      data?.textLength ??
+      (data?.text ? data.text.length : 0) ??
+      0;
+
+    // ✅ if pages/tables are arrays, use length; else cast to number
+    const pages = Array.isArray(pagesRaw) ? pagesRaw.length : Number(pagesRaw || 0);
+    const tables = Array.isArray(tablesRaw) ? tablesRaw.length : Number(tablesRaw || 0);
+    const textLength = Number(textLengthRaw || 0);
 
     cardsEl.innerHTML = `
       <div class="card">عدد الصفحات: <b>${pages}</b></div>
