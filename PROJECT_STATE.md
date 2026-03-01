@@ -1,22 +1,30 @@
-# PROJECT_STATE.md
-
-CURRENT_PHASE: 2B (Frontend Connection)
+CURRENT_PHASE: 2B (Frontend Connection via Ingest Router)
 
 CURRENT_TASK:
-ربط الواجهة لتبدأ بـ /api/ingest (بدلاً من /api/analyze)
-مع دعم "auto-follow" إذا رجّع ingest حقول next/payload.
+تأكيد أن الواجهة تستخدم المسار التالي:
+Upload → /api/ingest → (auto-follow next) → /api/analyze
+ثم قراءة النتائج من:
+data.normalized.meta (pages, tables, textLength)
 
 LAST_TEST:
-DevTools Network أظهر أن الواجهة ما زالت تستدعي /api/analyze مباشرة
-(initiator: main.js:102) مما أدى إلى 500 + "Empty response body".
+- API يعمل بشكل صحيح.
+- /api/analyze يرجع:
+  normalized.meta.pages = 30
+  normalized.meta.tables = 35
+  normalized.meta.textLength = 69469
+- Network يُظهر أن analyze يعمل بدون 500.
+- لكن Initiator ما زال يشير إلى main.js بأسطر قديمة
+  مما يدل أن المتصفح يستخدم نسخة Cached من main.js.
 
 LAST_RESULT:
-بعد ترقية Document Intelligence إلى S0 أصبح التحليل يرجع صفحات صحيحة (مثال pages=30)،
-لكن الواجهة تحتاج تعديل main.js لتستخدم ingest أولاً.
+الباك-إند سليم بالكامل.
+المشكلة حالياً Frontend Caching (المتصفح لم يحمّل main.js الجديد).
 
 ACTIVE_PROBLEM:
-main.js لا يزال يستخدم /api/analyze مباشرة؛ يجب استبدال main.js بالكامل بالكود الجديد
-الذي يستدعي /api/ingest ثم يتبع next تلقائياً.
+النسخة القديمة من main.js ما زالت تعمل بسبب Cache.
+يجب تنفيذ:
+Empty Cache + Hard Reload
+أو تغيير اسم ملف main.js لكسر الكاش (cache busting).
 
 STATUS:
-IN_PROGRESS
+PENDING_CACHE_REFRESH
