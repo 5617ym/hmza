@@ -1,7 +1,6 @@
 // api/analyze/index.js
-// تحليل PDF/صور عبر Azure Document Intelligence (prebuilt-layout)
-// (حل مشكلة: DI أحياناً يحلل أول صفحتين فقط عند استخدام urlSource)
-// هنا: نحمل الملف من blobUrl كـ bytes ثم نرسله مباشرة للـ DI
+// Azure Document Intelligence (prebuilt-layout)
+// Fix: send Buffer (not ArrayBuffer) + Content-Length to ensure full PDF is processed
 
 module.exports = async function (context, req) {
   const send = (status, payload) => {
@@ -35,11 +34,8 @@ module.exports = async function (context, req) {
       });
     }
 
-    // 0) حمّل الملف من Blob (bytes) بدل urlSource
+    // 0) Download blob fully as Buffer
     const blobRes = await fetch(blobUrl, { method: "GET" });
-    const blobContentType = blobRes.headers.get("content-type") || "application/pdf";
-    const blobLenHeader = blobRes.headers.get("content-length");
-    const blobLen = blobLenHeader ? Number(blobLenHeader) : null;
 
     if (!blobRes.ok) {
       const t = await blobRes.text().catch(() => "");
@@ -51,13 +47,18 @@ module.exports = async function (context, req) {
       });
     }
 
-    const fileArrayBuffer = await blobRes.arrayBuffer();
-    const fileBytes =
-      typeof blobLen === "number" && !Number.isNaN(blobLen)
-        ? blobLen
-        : fileArrayBuffer.byteLength;
+    const blobContentType = blobRes.headers.get("content-type") || "application/pdf";
+    const blobLenHeader = blobRes.headers.get("content-length");
+    const headerBytes = blobLenHeader ? Number(blobLenHeader) : null;
 
-    // 1) ابدأ التحليل بإرسال bytes للـ DI
+    const ab = await blobRes.arrayBuffer();
+    const buf = Buffer.from(ab);
+    const downloadedBytes = buf.length;
+
+    // Quick signature check (PDF should start with "%PDF")
+    const signature = buf.slice(0, 4).toString("utf8");
+
+    // 1) Start DI analyze with raw bytes
     const ep = endpoint.replace(/\/+$/, "");
     const model = "prebuilt-layout";
     const apiVersion = "2023-07-31";
@@ -67,9 +68,10 @@ module.exports = async function (context, req) {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": blobContentType, // مهم: نرسل كملف
+        "Content-Type": blobContentType,
+        "Content-Length": String(downloadedBytes),
       },
-      body: fileArrayBuffer,
+      body: buf,
     });
 
     const startText = await start.text().catch(() => "");
@@ -79,6 +81,12 @@ module.exports = async function (context, req) {
         error: "DI start failed",
         status: start.status,
         body: startText.slice(0, 2000),
+        debug: {
+          blobContentType,
+          headerBytes,
+          downloadedBytes,
+          signature,
+        },
       });
     }
 
@@ -96,7 +104,7 @@ module.exports = async function (context, req) {
 
     // 2) Polling
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const maxTries = 60; // نخليه أطول شوي للملفات الكبيرة
+    const maxTries = 60;
     let last = null;
 
     for (let i = 0; i < maxTries; i++) {
@@ -140,7 +148,6 @@ module.exports = async function (context, req) {
 
     const analyzeResult = last.analyzeResult || {};
 
-    // الصفحات: الأفضل نعتمد على max(pageNumber) لو موجود
     const pageNumbers = Array.isArray(analyzeResult.pages)
       ? analyzeResult.pages.map((p) => p.pageNumber).filter((n) => Number.isFinite(n))
       : [];
@@ -153,11 +160,7 @@ module.exports = async function (context, req) {
     const content = analyzeResult.content || "";
     const textLength = content.length;
 
-    // Warnings/Errors (للتشخيص)
-    const diWarnings =
-      analyzeResult.warnings ||
-      last.warnings ||
-      null;
+    const diWarnings = analyzeResult.warnings || last.warnings || null;
 
     return send(200, {
       ok: true,
@@ -167,9 +170,12 @@ module.exports = async function (context, req) {
       textLength,
       sampleText: content.slice(0, 500),
 
-      // معلومات تشخيص (مهمة الآن)
-      fileBytes,
+      // Debug (مهمين جدًا الآن)
       blobContentType,
+      headerBytes,
+      downloadedBytes,
+      signature,
+
       diModel: analyzeResult.modelId || model,
       diApiVersion: analyzeResult.apiVersion || apiVersion,
       diStatus: last.status || null,
