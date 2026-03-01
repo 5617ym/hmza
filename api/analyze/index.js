@@ -1,6 +1,6 @@
 // api/analyze/index.js
 // تحليل PDF/صور عبر Azure Document Intelligence (prebuilt-layout)
-// ✅ نحمّل الملف من blobUrl داخل السيرفر ثم نرسله كـ binary إلى DI (بدون urlSource)
+// ✅ الإصلاح: تحميل الـ PDF من blobUrl داخل السيرفر ثم إرساله لـ DI كـ bytes (بدون urlSource)
 
 module.exports = async function (context, req) {
   const send = (status, payload) => {
@@ -9,24 +9,6 @@ module.exports = async function (context, req) {
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: payload,
     };
-  };
-
-  const safeText = async (res) => {
-    try {
-      return await res.text();
-    } catch {
-      return "";
-    }
-  };
-
-  const safeJson = async (res) => {
-    const t = await safeText(res);
-    if (!t) return null;
-    try {
-      return JSON.parse(t);
-    } catch {
-      return null;
-    }
   };
 
   try {
@@ -52,49 +34,40 @@ module.exports = async function (context, req) {
       });
     }
 
-    // 1) حمّل الملف من Azure Blob داخل السيرفر
+    // 0) حمّل الملف من Blob داخل السيرفر (لتجنب مشاكل DI مع urlSource)
     const blobRes = await fetch(blobUrl, { method: "GET" });
     if (!blobRes.ok) {
-      const t = await safeText(blobRes);
+      const t = await blobRes.text().catch(() => "");
       return send(500, {
         ok: false,
-        error: "Blob download failed",
+        error: "Failed to download blob",
         status: blobRes.status,
         body: t.slice(0, 2000),
       });
     }
 
-    const contentType =
-      blobRes.headers.get("content-type") ||
-      "application/pdf";
+    const blobContentType =
+      blobRes.headers.get("content-type") || "application/pdf";
+    const blobArrayBuffer = await blobRes.arrayBuffer();
+    const fileBytes = blobArrayBuffer.byteLength;
+    const fileBuffer = Buffer.from(blobArrayBuffer);
 
-    const bytes = await blobRes.arrayBuffer();
-    const byteLength = bytes.byteLength || 0;
-
-    if (!byteLength) {
-      return send(500, {
-        ok: false,
-        error: "Downloaded file is empty",
-      });
-    }
-
-    // 2) ابدأ التحليل في DI بإرسال الباينري مباشرة (بدون urlSource)
+    // 1) ابدأ التحليل بتمرير bytes مباشرة
     const ep = endpoint.replace(/\/+$/, "");
-   const model = "prebuilt-read";
+    const model = "prebuilt-layout";
     const apiVersion = "2023-07-31";
-
     const analyzeUrl = `${ep}/formrecognizer/documentModels/${model}:analyze?api-version=${apiVersion}`;
 
     const start = await fetch(analyzeUrl, {
       method: "POST",
       headers: {
-        "Content-Type": contentType, // مهم: pdf/octet-stream
         "Ocp-Apim-Subscription-Key": key,
+        "Content-Type": blobContentType,
       },
-      body: Buffer.from(bytes),
+      body: fileBuffer,
     });
 
-    const startText = await safeText(start);
+    const startText = await start.text().catch(() => "");
     if (!start.ok) {
       return send(500, {
         ok: false,
@@ -116,9 +89,9 @@ module.exports = async function (context, req) {
       });
     }
 
-    // 3) Polling
+    // 2) Polling لنتيجة التحليل
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const maxTries = 45; // 45 ثانية
+    const maxTries = 45; // ~45 ثانية
     let last = null;
 
     for (let i = 0; i < maxTries; i++) {
@@ -126,23 +99,22 @@ module.exports = async function (context, req) {
         headers: { "Ocp-Apim-Subscription-Key": key },
       });
 
-      const j = (await safeJson(r)) || null;
+      const j = await r.json().catch(() => null);
       last = j;
 
       if (!r.ok) {
-        const t = await safeText(r);
         return send(500, {
           ok: false,
           error: "DI poll failed",
           status: r.status,
-          body: j || t.slice(0, 2000),
+          body: j || null,
         });
       }
 
-      const status = (j?.status || "").toLowerCase();
-      if (status === "succeeded") break;
+      const st = (j?.status || "").toLowerCase();
+      if (st === "succeeded") break;
 
-      if (status === "failed") {
+      if (st === "failed") {
         return send(500, {
           ok: false,
           error: "DI analysis failed",
@@ -161,11 +133,12 @@ module.exports = async function (context, req) {
       });
     }
 
+    // 3) أرقام واضحة
     const analyzeResult = last.analyzeResult || {};
     const pagesArr = Array.isArray(analyzeResult.pages) ? analyzeResult.pages : [];
     const tablesArr = Array.isArray(analyzeResult.tables) ? analyzeResult.tables : [];
 
-    const pages = pagesArr.length;     // ✅ هذا يعكس عدد صفحات الملف اللي حللها DI
+    const pages = pagesArr.length; // ✅ هذا هو عدد الصفحات الحقيقي حسب DI
     const tables = tablesArr.length;
 
     const content = analyzeResult.content || "";
@@ -178,9 +151,10 @@ module.exports = async function (context, req) {
       tables,
       textLength,
       sampleText: content.slice(0, 500),
-      // معلومات مساعدة بدون تعقيد (اختيارية لكنها مهمة للتأكد)
-      fileBytes: byteLength,
-      blobContentType: contentType,
+
+      // مفيدة للتأكد أن الملف كامل عندنا قبل DI
+      fileBytes,
+      blobContentType,
     });
   } catch (err) {
     return send(500, { ok: false, error: err.message || "Unhandled error" });
