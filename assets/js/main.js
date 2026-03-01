@@ -41,7 +41,7 @@ function renderSelectedFiles() {
   }
 
   fileListEl.innerHTML = selectedFiles
-    .map((f) => `<div>${f.name} - ${f.size.toLocaleString()} bytes</div>`)
+    .map((f) => `<div>${escapeHtml(f.name)} - ${Number(f.size || 0).toLocaleString()} bytes</div>`)
     .join("");
 }
 
@@ -73,7 +73,7 @@ async function analyzeSingleFile(file) {
   });
 
   const j1 = await safeJson(r1);
-  console.log("UPLOAD-URL:", j1);
+  console.log("UPLOAD-URL RESPONSE:", j1);
 
   if (!r1.ok || !j1?.ok) {
     throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
@@ -98,14 +98,13 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // (C) تحليل الملف عبر blobUrl
-  const r2 = await fetch("/api/ingest", {
+  // (C) ✅ التحليل الحقيقي عبر /api/analyze (ليس /api/ingest)
+  const r2 = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       fileName: file.name,
       blobUrl: j1.blobUrl,
-      // (اختياري) نرسل نوع الملف لو احتجته في السيرفر
       contentType: file.type || "",
       period: periodEl?.value || null,
       compare: compareEl?.value || null,
@@ -113,7 +112,7 @@ async function analyzeSingleFile(file) {
   });
 
   const j2 = await safeJson(r2);
-  console.log("ANALYZE:", j2);
+  console.log("ANALYZE RESPONSE:", j2);
 
   if (!r2.ok || !j2?.ok) {
     throw new Error(`analyze failed: ${JSON.stringify(j2)}`);
@@ -165,8 +164,11 @@ btnShow?.addEventListener("click", async () => {
       <div class="card">عدد الصفحات: <b>${pages}</b></div>
       <div class="card">عدد الجداول: <b>${tables}</b></div>
       <div class="card">طول النص: <b>${textLength}</b></div>
-      <div class="card"><div class="muted small">Raw JSON (مختصر):</div>
-        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(JSON.stringify(data, null, 2).slice(0, 2500))}</pre>
+      <div class="card">
+        <div class="muted small">Raw JSON (مختصر):</div>
+        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
+          JSON.stringify(data, null, 2).slice(0, 2500)
+        )}</pre>
       </div>
     `;
 
