@@ -20,6 +20,15 @@ module.exports = async function (context, req) {
       String(compare).trim() === "" ||
       String(compare).includes("بدون");
 
+    // === DIAG FLAGS (NEW) ===
+    // diag=1 -> يرجّع مرشحين الميزانية فقط (بدون استخراج قائمة الدخل)
+    const diag =
+      String(req.query?.diag || body.diag || "").toLowerCase() === "1" ||
+      String(req.query?.diag || body.diag || "").toLowerCase() === "true";
+
+    // target اختياري للمستقبل (balance / income)
+    const target = String(req.query?.target || body.target || "").toLowerCase();
+
     if (!normalized || typeof normalized !== "object") {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
@@ -338,6 +347,95 @@ module.exports = async function (context, req) {
       }
       return out;
     };
+
+    /* =========================
+       DIAG: Balance Sheet candidates from tablesPreview (NEW)
+       ========================= */
+
+    const normText2 = (s) =>
+      String(s || "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const tableTextQuick = (t) => {
+      const rows = Array.isArray(t?.sample) ? t.sample : [];
+      let out = [];
+      for (let r = 0; r < rows.length && r < 30; r++) {
+        const row = rows[r];
+        if (!Array.isArray(row)) continue;
+        for (let c = 0; c < row.length && c < 12; c++) {
+          const v = row[c];
+          if (v) out.push(v);
+        }
+      }
+      return normText2(out.join(" | "));
+    };
+
+    const scoreBalanceSheetText = (text) => {
+      const keysStrong = [
+        "قائمة المركز المالي",
+        "الميزانية",
+        "الميزانية العمومية",
+        "قائمة الوضع المالي",
+        "statement of financial position",
+        "balance sheet",
+        "financial position",
+      ];
+      const keysSupport = [
+        "الأصول",
+        "assets",
+        "الموجودات",
+        "المطلوبات",
+        "liabilities",
+        "الالتزامات",
+        "حقوق الملكية",
+        "equity",
+        "إجمالي الأصول",
+        "total assets",
+        "إجمالي المطلوبات",
+        "total liabilities",
+      ];
+
+      let score = 0;
+      for (const k of keysStrong) if (text.includes(normText2(k))) score += 50;
+      for (const k of keysSupport) if (text.includes(normText2(k))) score += 10;
+
+      // مكافأة إذا ظهر "متداولة/غير متداولة" لأنها عادة بالميزانية
+      if (text.includes("متداولة") || text.includes("غير متداولة")) score += 8;
+
+      return score;
+    };
+
+    if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
+      const ranked = tablesPreview
+        .map((t) => {
+          const text = tableTextQuick(t);
+          const score = scoreBalanceSheetText(text);
+          return {
+            index: t?.index ?? null,
+            score,
+            page: t?.pageNumber ?? t?.page ?? null,
+            columnCount: t?.columnCount ?? null,
+            rowCount: t?.rowCount ?? null,
+            snippet: text.slice(0, 260),
+          };
+        })
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+
+      return send(200, {
+        ok: true,
+        diag: true,
+        kind: "balanceSheetCandidates",
+        pagesMeta,
+        tablesPreviewCount: tablesPreview.length,
+        found: ranked.length,
+        ranked,
+        hint: "اختر index الجدول الأعلى Score، ثم سنثبت استخراج الميزانية منه في الخطوة التالية.",
+      });
+    }
 
     /* =========================
        1) اختيار أفضل جدول قائمة دخل
