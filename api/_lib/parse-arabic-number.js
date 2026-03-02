@@ -1,74 +1,89 @@
 // api/_lib/parse-arabic-number.js
-
-// يحول نص رقم عربي مثل: "١,٦٢٣,١٦٠٫٩٧١" => 1623160.971
-// ويدعم السالب بالأقواس: "(١٢٣)" => -123
-// ويرجع null إذا ما كان رقم
+// يحول نص رقم عربي مثل "٢٫٢١٨,٦٦٢٫٧٣٥" إلى رقم صحيح 2218662735
+// ويدعم السالب بالأقواس (١٢٣) => -123
 
 function toLatinDigits(s) {
-  // الأرقام العربية والهندية الشائعة
   const map = {
     "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
     "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
     "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
     "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
   };
-
   return String(s).replace(/[٠-٩۰-۹]/g, (ch) => map[ch] ?? ch);
+}
+
+function looksLikeThousandGrouping(parts) {
+  // مثال: 2 | 218 | 662 | 735  => true
+  if (!parts || parts.length < 2) return false;
+  for (let i = 1; i < parts.length; i++) {
+    if (parts[i].length !== 3) return false;
+    if (!/^\d{3}$/.test(parts[i])) return false;
+  }
+  // أول جزء يسمح 1-3 أرقام
+  return /^\d{1,3}$/.test(parts[0]);
 }
 
 function parseArabicNumber(input) {
   if (input === null || input === undefined) return null;
-
-  // لو أصلاً رقم جاهز
   if (typeof input === "number" && Number.isFinite(input)) return input;
 
   let s = String(input).trim();
   if (!s) return null;
 
-  // إزالة مسافات لا مرئية
-  s = s.replace(/\u00A0/g, " ").trim();
-
-  // سالب بالأقواس ( ... )
-  let negative = false;
-  if (/^\(.*\)$/.test(s)) {
-    negative = true;
-    s = s.slice(1, -1).trim();
+  // سالب بين قوسين: (١٢٣) أو ( ١٢٣ )
+  let neg = false;
+  if (s.includes("(") && s.includes(")")) {
+    neg = true;
+    s = s.replace(/[()]/g, "");
   }
 
-  // تحويل الأرقام العربية إلى لاتينية
   s = toLatinDigits(s);
 
-  // توحيد فواصل الأرقام:
-  // "٫" (decimal) => "."
-  // "٬" (thousands) => ","
-  s = s.replace(/٫/g, ".").replace(/٬/g, ",");
+  // إزالة مسافات
+  s = s.replace(/\s+/g, "");
 
-  // إزالة أي رموز غير رقمية مسموحة (نخلي أرقام + . + , + -)
-  // وأيضاً نحذف كلمات مثل "ريال" وغيرها إن وجدت
-  s = s.replace(/[^\d.,\-]/g, "");
+  // فواصل ممكنة في العربية/الإنجليزية
+  //  - "٬" آلاف عربي
+  //  - "," فاصلة إنجليزية (قد تكون آلاف)
+  //  - "٫" فاصلة عشرية عربية (لكن OCR قد يستخدمها بدل آلاف)
+  //  - "." فاصلة عشرية إنجليزية
+  const hasSep = /[٬,٫.]/.test(s);
 
-  // إذا صار فاضي بعد التنظيف
-  if (!s) return null;
+  // احتفظ فقط بالرقم + فواصل + إشارة سالب
+  s = s.replace(/[^\d٬,٫.\-]/g, "");
 
-  // لو فيه أكثر من "-" نخليه غير صالح
-  const minusCount = (s.match(/\-/g) || []).length;
-  if (minusCount > 1) return null;
+  // إذا فيه أكثر من فاصل داخل الرقم وعلى نمط مجموعات ثلاثية => اعتبره آلاف
+  if (hasSep) {
+    // نقسم على أي فاصل ونشوف شكل المجموعات
+    const parts = s.split(/[٬,٫.]/).filter(Boolean);
 
-  // إذا "-" مو في البداية -> غير صالح
-  if (s.includes("-") && !s.startsWith("-")) return null;
+    if (looksLikeThousandGrouping(parts)) {
+      // آلاف => نجمعها بدون فواصل
+      const joined = parts.join("");
+      const n = Number(joined);
+      if (!Number.isFinite(n)) return null;
+      return neg ? -n : n;
+    }
 
-  // إزالة فواصل الآلاف: 1,234,567.89 => 1234567.89
-  // لكن قبلها: لو النص يحتوي "." نعتبرها الفاصلة العشرية
-  // (هذا مناسب لمعطيات Document Intelligence عندك)
-  s = s.replace(/,/g, "");
+    // غير نمط آلاف: نعامل "٫" كعشري، ونحذف فواصل الآلاف
+    // 1) نحول "٫" إلى "."
+    s = s.replace(/٫/g, ".");
+    // 2) نحذف "٬" و ","
+    s = s.replace(/[٬,]/g, "");
 
-  // إذا صار مثل "." أو "-" فقط
-  if (s === "." || s === "-" || s === "-.") return null;
+    // إذا صار عندنا أكثر من نقطة، نخلي آخر نقطة عشرية ونحذف الباقي (احتياط)
+    const dotCount = (s.match(/\./g) || []).length;
+    if (dotCount > 1) {
+      const last = s.lastIndexOf(".");
+      s = s.replace(/\./g, "");
+      s = s.slice(0, last) + "." + s.slice(last);
+    }
+  }
 
+  // أخيرًا: تحويل
   const n = Number(s);
   if (!Number.isFinite(n)) return null;
-
-  return negative ? -Math.abs(n) : n;
+  return neg ? -n : n;
 }
 
 module.exports = { parseArabicNumber };
