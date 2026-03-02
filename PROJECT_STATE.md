@@ -1,40 +1,45 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 3A (Arabic Numbers Normalization)
+CURRENT_PHASE: 3B (Extract Financial - Stable Income Statement)
 
 CURRENT_TASK:
-تطبيع (تحويل) الأرقام العربية داخل tablesPreview إلى أرقام قياسية (1234.56)
-لجعل البيانات قابلة للحساب والتحليل المالي لاحقاً.
+تثبيت مسار استخراج قائمة الدخل من tablesPreview داخل /api/extract-financial
+مع:
+
+- اختيار أحدث سنة تلقائياً عند "بدون مقارنة"
+- تفضيل 3 أشهر إذا كان التقرير ربعياً
+- دعم المقارنة (أحدث سنة + السنة السابقة)
+- تطبيع الأرقام العربية وتحويلها إلى Numbers حقيقية
 
 LAST_TEST:
-رفع PDF + ضغط "عرض النتائج" في الواجهة.
-Network أظهر الطلبات التالية جميعها Status=200:
-- /api/upload-url
-- PUT blob
-- /api/ingest
-- /api/analyze
-- /api/extract-financial
+رفع ملف PDF (جاهز) + الضغط على "عرض النتائج".
+
+تم تنفيذ المسار الكامل بنجاح:
+upload-url → ingest → analyze → extract-financial
+
+جميع الطلبات Status=200.
 
 LAST_RESULT:
-- الواجهة تعرض: pages/tables/textLength بشكل صحيح
-- /api/extract-financial يعمل (200) عند إرسال normalized بشكل صحيح
-- تم حل مشكلة "Missing normalized" ومشكلة 404 الخاصة بالـ extract-financial بعد إضافة function.json
+- pages / tables / textLength تظهر بشكل صحيح
+- تم اختيار الأعمدة: latest=2024 و previous=2023
+- تم حل مشكلة الأرقام العربية (مثل "٢٫٢١٨,٦٦٢٫٧٣٥")
+- current أصبح رقم صحيح: 2218662735
+- extract-financial يرجع بيانات منظمة داخل incomeStatementLite
 
 ACTIVE_PROBLEM:
-الأرقام داخل الجداول بصيغة عربية (٠١٢٣٤٥٦٧٨٩) وبفواصل عربية/رموز
-مثل: "١,٦٢٣,١٦٠٫٩٧١" أو "٢١٠,٧٥٣٫٥٧٠"
-ويجب تحويلها إلى رقم قياسي (1623160.971) مع دعم السالب بالأقواس (مثل "(١٢٣)")
+لا يوجد خطأ تقني حاليًا في مسار extract-financial.
+
+ملاحظات:
+- favicon.ico يظهر 404 (غير مؤثر)
+- لم يتم بعد حساب نسب مالية (هوامش/نمو)
 
 NEXT_STEP:
-1) إنشاء دالة داخل api/_lib مثل: parseArabicNumber(str)
-   - تحويل ٠١٢٣٤٥٦٧٨٩ إلى 0123456789
-   - استبدال "٫" إلى "." و"٬" إلى "," وإزالة الفواصل
-   - دعم السالب: (123) => -123
-2) تطبيق التحويل على جميع القيم الرقمية داخل normalized.tablesPreview[*].sample
-3) إرجاع نتيجة extract-financial فيها:
-   - meta: { pages, tables, textLength }
-   - tablesPreviewNormalized: نفس الجداول لكن الأرقام صارت Numbers
-4) اختبار سريع من الواجهة/Console أن القيم أصبحت Numbers وليست Strings
+الانتقال إلى المرحلة 4:
+
+أحد الخيارات التالية:
+A) إضافة حساب النسب المالية داخل extract-financial (Margins + Growth)
+B) استخراج قائمة المركز المالي بنفس المنهجية
+C) تحسين الواجهة لعرض النتائج بشكل احترافي
 
 STATUS:
 IN_PROGRESS
