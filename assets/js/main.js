@@ -1,5 +1,4 @@
-console.log("MAIN_JS_VERSION = 2B_INGEST_ROUTER_2026-03-02");
-
+console.log("MAIN_JS_VERSION = 2B_INGEST_ROUTER_PLUS_EXTRACT_2026-03-02");
 console.log("main.js loaded ✅");
 
 const fileInput = document.getElementById("fileInput");
@@ -163,6 +162,33 @@ async function analyzeSingleFile(file) {
 }
 
 /* ==============================================
+   🧠 Extract Financial (POST /api/extract-financial)
+   ============================================== */
+
+async function extractFinancialFromAnalyze(analyzeData) {
+  const normalized = analyzeData?.normalized;
+
+  if (!normalized || typeof normalized !== "object") {
+    throw new Error("extract-financial يحتاج normalized من analyze، لكنه غير موجود.");
+  }
+
+  const r = await fetch("/api/extract-financial", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ normalized }), // مهم: نفس التوقع في API
+  });
+
+  const j = await safeJson(r);
+  console.log("EXTRACT-FINANCIAL:", j);
+
+  if (!r.ok || !j?.ok) {
+    throw new Error(`extract-financial failed: ${JSON.stringify(j)}`);
+  }
+
+  return j;
+}
+
+/* ==============================================
    🎯 Events
    ============================================== */
 
@@ -193,8 +219,8 @@ btnShow?.addEventListener("click", async () => {
   setStatus("جاري رفع الملف ثم التحليل عبر ingest...", "info");
 
   try {
+    // 1) Analyze عبر ingest router
     const data = await analyzeSingleFile(selectedFiles[0]);
-
     resultsSection?.classList.remove("hidden");
 
     // ✅ اقرأ من normalized.meta أولاً (الجديد) ثم fallback للقديم
@@ -222,19 +248,38 @@ btnShow?.addEventListener("click", async () => {
     const tables = Array.isArray(tablesRaw) ? tablesRaw.length : Number(tablesRaw || 0);
     const textLength = Number(textLengthRaw || 0);
 
+    // 2) Extract Financial بعد نجاح analyze
+    setStatus("تم التحليل ✅ — جاري استخراج البيانات المالية...", "info");
+    const fin = await extractFinancialFromAnalyze(data);
+
+    // محاولة عرض ملخص لو موجود (بدون افتراض شكل ثابت)
+    const finSummary =
+      fin?.summary ||
+      fin?.result?.summary ||
+      fin?.data?.summary ||
+      null;
+
     cardsEl.innerHTML = `
       <div class="card">عدد الصفحات: <b>${pages}</b></div>
       <div class="card">عدد الجداول: <b>${tables}</b></div>
       <div class="card">طول النص: <b>${textLength}</b></div>
+
       <div class="card">
-        <div class="muted small">Raw JSON (مختصر):</div>
+        <div class="muted small">Extract Financial (مختصر):</div>
         <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
-          JSON.stringify(data, null, 2).slice(0, 2500)
+          JSON.stringify(finSummary ?? fin, null, 2).slice(0, 2500)
+        )}</pre>
+      </div>
+
+      <div class="card">
+        <div class="muted small">Raw JSON (Analyze) مختصر:</div>
+        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
+          JSON.stringify(data, null, 2).slice(0, 2000)
         )}</pre>
       </div>
     `;
 
-    setStatus("تم استخراج البيانات بنجاح ✅", "ok");
+    setStatus("تم استخراج البيانات المالية بنجاح ✅", "ok");
   } catch (e) {
     console.error(e);
     setStatus(`حدث خطأ: ${e.message}`, "err");
