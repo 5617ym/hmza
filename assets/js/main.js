@@ -158,8 +158,7 @@ async function extractFinancialFromAnalyze(analyzeData) {
   const r = await fetch("/api/extract-financial", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ normalized, diag: 1, target: "balance" }),
-  });
+    body: JSON.stringify({ normalized }),
 
   const j = await safeJson(r);
 
