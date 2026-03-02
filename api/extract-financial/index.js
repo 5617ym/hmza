@@ -57,18 +57,32 @@ module.exports = async function (context, req) {
         "۷": "7",
         "۸": "8",
         "۹": "9",
-        "٫": ".", // decimal
-        "٬": ",", // thousands
       };
-      return String(s || "").replace(/[٠-٩۰-۹٫٬]/g, (ch) => map[ch] ?? ch);
+      return String(s || "").replace(/[٠-٩۰-۹]/g, (ch) => map[ch] ?? ch);
     };
 
-    const norm = (s) => toLatinDigits(String(s || "")).toLowerCase().trim();
+    const normalizeSeparators = (s) => {
+      // توحيد الفواصل العربية/الأوربية
+      return String(s || "")
+        .replace(/٫/g, ".") // Arabic decimal
+        .replace(/[٬،]/g, ","); // Arabic thousands/comma
+    };
 
-    // يدعم: (1,234,567.89) و ١٫٢٣٤٫٥٦٧ و ١,٢٣٤,٥٦٧ إلخ
+    const norm = (s) => toLatinDigits(normalizeSeparators(String(s || ""))).toLowerCase().trim();
+
+    /**
+     * parseNumberSmart (FIXED)
+     * - يتعامل مع:
+     *   (1,234,567)
+     *   ١٬٢٣٤٬٥٦٧
+     *   ٢٫٢١٨,٦٦٢٫٧٣٥  => 2218662735  (تجميع آلاف مختلط)
+     *   1,234,567.89
+     *   1.234.567,89 (لو حصلت)
+     */
     const parseNumberSmart = (raw) => {
       if (raw === null || raw === undefined) return null;
-      let s = toLatinDigits(String(raw)).trim();
+
+      let s = toLatinDigits(normalizeSeparators(String(raw))).trim();
       if (!s) return null;
 
       // سالب بين أقواس
@@ -78,28 +92,85 @@ module.exports = async function (context, req) {
         s = s.replace(/[()]/g, "");
       }
 
-      // إزالة أي حروف
+      // إزالة أي شيء غير الأرقام والفواصل والنقاط والإشارة
       s = s.replace(/[^\d.,\-+]/g, "");
 
-      // إزالة فواصل آلاف
-      s = s.replace(/,/g, "");
+      // أحيانًا يكون فيه أكثر من إشارة، نظفها
+      s = s.replace(/(?!^)[\-+]/g, "");
 
-      // لو بقي أكثر من نقطة، خذ أول وحدة فقط (احتياط)
-      const firstDot = s.indexOf(".");
-      if (firstDot !== -1) {
-        const before = s.slice(0, firstDot + 1);
-        const after = s.slice(firstDot + 1).replace(/\./g, "");
-        s = before + after;
+      const hasDot = s.includes(".");
+      const hasComma = s.includes(",");
+
+      const isGroupedThousands = (x) => /^\d{1,3}([.,]\d{3})+$/.test(x);
+
+      // حالة نمط تجميع آلاف واضح
+      if (isGroupedThousands(s)) {
+        const n = Number(s.replace(/[.,]/g, ""));
+        return Number.isFinite(n) ? (neg ? -n : n) : null;
       }
 
+      // إذا فيه نقط + فواصل مع بعض:
+      if (hasDot && hasComma) {
+        // لو آخر جزء بعد آخر فاصلة/نقطة طوله 3 غالباً تجميع آلاف
+        const lastSep = Math.max(s.lastIndexOf("."), s.lastIndexOf(","));
+        const tail = s.slice(lastSep + 1);
+
+        if (/^\d{3}$/.test(tail)) {
+          // اعتبرها كلها تجميع آلاف (مثل 2.218,662.735)
+          const n = Number(s.replace(/[.,]/g, ""));
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        }
+
+        // غير ذلك: حدّد العشري من آخر فاصل (الأقرب أنه عشري)
+        // إذا آخر فاصل هو ',' -> عشري أوروبي
+        if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+          // احذف نقاط التجميع، وحول آخر ',' إلى '.'
+          const parts = s.split(",");
+          const dec = parts.pop(); // آخر جزء
+          const intPart = parts.join("").replace(/\./g, "");
+          const n = Number(intPart + "." + dec);
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        } else {
+          // آخر فاصل هو '.' -> عشري أمريكي
+          const parts = s.split(".");
+          const dec = parts.pop();
+          const intPart = parts.join("").replace(/,/g, "");
+          const n = Number(intPart + "." + dec);
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        }
+      }
+
+      // إذا فقط فاصلة
+      if (!hasDot && hasComma) {
+        // إن كان نمط 1,234,567 اعتبره تجميع آلاف
+        if (/^\d{1,3}(,\d{3})+$/.test(s)) {
+          const n = Number(s.replace(/,/g, ""));
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        }
+        // وإلا اعتبرها عشري (1,23)
+        const n = Number(s.replace(",", "."));
+        return Number.isFinite(n) ? (neg ? -n : n) : null;
+      }
+
+      // إذا فقط نقطة
+      if (hasDot && !hasComma) {
+        // إن كان نمط 1.234.567 اعتبره تجميع آلاف
+        if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+          const n = Number(s.replace(/\./g, ""));
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        }
+        // وإلا عشري عادي
+        const n = Number(s);
+        return Number.isFinite(n) ? (neg ? -n : n) : null;
+      }
+
+      // لا فواصل ولا نقاط
       const n = Number(s);
-      if (!Number.isFinite(n)) return null;
-      return neg ? -n : n;
+      return Number.isFinite(n) ? (neg ? -n : n) : null;
     };
 
     const findYear = (text) => {
-      // بعد تحويل الأرقام العربية → لاتينية
-      const s = toLatinDigits(text);
+      const s = toLatinDigits(normalizeSeparators(text));
       const m = s.match(/\b(20\d{2})\b/);
       if (!m) return null;
       const y = Number(m[1]);
@@ -111,7 +182,6 @@ module.exports = async function (context, req) {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const colCount = Number(table?.columnCount || 0);
 
-      // meta per column
       const cols = Array.from({ length: colCount }, (_, i) => ({
         col: i,
         years: [],
@@ -138,15 +208,12 @@ module.exports = async function (context, req) {
           if (t.includes("الثلاثة") && t.includes("أشهر")) cols[c].hasThreeMonths = true;
           if (t.includes("التسعة") && t.includes("أشهر")) cols[c].hasNineMonths = true;
 
-          // سنوي
           if (t.includes("ديسمبر") || t.includes("السنة") || t.includes("منتهية")) cols[c].hasAnnual = true;
 
-          // إيضاح
           if (t.includes("إيضاح") || t.includes("ايضاح") || t === "إيضاح") cols[c].hasNote = true;
         }
       }
 
-      // simplify years
       for (const c of cols) {
         c.years = Array.from(new Set(c.years)).sort((a, b) => a - b);
       }
@@ -155,36 +222,30 @@ module.exports = async function (context, req) {
     };
 
     const pickLatestColumns = (cols) => {
-      // استبعد أعمدة الإيضاح
       const candidates = cols.filter((c) => !c.hasNote);
 
-      // أعمدة فيها سنوات
       const withYears = candidates
         .map((c) => ({
           ...c,
           latestYear: c.years.length ? c.years[c.years.length - 1] : null,
-          // أولوية: 3 أشهر > 9 أشهر > سنوي > غير معروف
           periodScore: c.hasThreeMonths ? 3 : c.hasNineMonths ? 2 : c.hasAnnual ? 1 : 0,
         }))
         .filter((c) => c.latestYear);
 
-      if (!withYears.length) return { latest: null, previous: null, debug: { reason: "no years detected" } };
+      if (!withYears.length)
+        return { latest: null, previous: null, debug: { reason: "no years detected" } };
 
-      // أحدث سنة
       const maxYear = Math.max(...withYears.map((c) => c.latestYear));
 
       const latestCandidates = withYears
         .filter((c) => c.latestYear === maxYear)
         .sort((a, b) => {
-          // فضّل 3 أشهر ثم 9 أشهر ثم سنوي
           if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore;
-          // ثم فضّل العمود الأيمن (عادة الأحدث)
           return b.col - a.col;
         });
 
       const latest = latestCandidates[0];
 
-      // السابقة (للمقارنة)
       const yearsAll = Array.from(new Set(withYears.map((c) => c.latestYear))).sort((a, b) => a - b);
       const prevYear = yearsAll.length >= 2 ? yearsAll[yearsAll.length - 2] : null;
 
@@ -199,18 +260,13 @@ module.exports = async function (context, req) {
         previous = prevCandidates[0] || null;
       }
 
-      return {
-        latest,
-        previous,
-        debug: { maxYear, prevYear, yearsAll },
-      };
+      return { latest, previous, debug: { maxYear, prevYear, yearsAll } };
     };
 
     const scoreIncomeTable = (table) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
-      // كلمات قوية لقائمة الدخل
       const hits = [
         "الإيرادات",
         "الايرادات",
@@ -229,10 +285,8 @@ module.exports = async function (context, req) {
       let score = 0;
       for (const k of hits) if (joined.includes(norm(k))) score += 2;
 
-      // إذا فيه "إيضاح" عادة موجود
       if (joined.includes("إيضاح") || joined.includes("ايضاح")) score += 1;
 
-      // إذا عدد الأعمدة كبير غالباً ربع
       const cc = Number(table?.columnCount || 0);
       if (cc >= 5) score += 1;
 
@@ -243,8 +297,8 @@ module.exports = async function (context, req) {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
 
       const want = [
-        { key: "revenue", names: ["الإيرادات", "الايرادات", "Revenue"] },
-        { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "Cost of revenue", "تكلفة المبيعات"] },
+        { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "Revenue"] },
+        { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"] },
         { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
         { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
         { key: "netProfitBeforeZakat", names: ["صافي ربح الفترة قبل الزكاة", "صافي ربح السنة قبل الزكاة"] },
@@ -253,17 +307,14 @@ module.exports = async function (context, req) {
       ];
 
       const getRowLabel = (r) => {
-        // في كثير من الجداول "البيان" في آخر عمود، وأحيانًا قبل الأخير
         const last = norm(r?.[r.length - 1]);
         const prev = norm(r?.[r.length - 2]);
-        // لو آخر خلية فاضية خذ اللي قبلها
         return last || prev || "";
       };
 
       const findValue = (r, colIdx) => {
         if (colIdx === null || colIdx === undefined) return null;
-        const cell = r?.[colIdx];
-        return parseNumberSmart(cell);
+        return parseNumberSmart(r?.[colIdx]);
       };
 
       const out = {};
@@ -277,7 +328,6 @@ module.exports = async function (context, req) {
           const ok = item.names.some((n) => label.includes(norm(n)));
           if (!ok) continue;
 
-          // خذ قيم العمود المحدد
           const cur = findValue(r, latestColIdx);
           const prev = prevColIdx != null ? findValue(r, prevColIdx) : null;
 
@@ -324,9 +374,8 @@ module.exports = async function (context, req) {
        3) استخراج أرقام قائمة الدخل من نفس الجدول
        ========================= */
 
-    const incomeExtract = latestCol != null
-      ? extractIncomeFromTable(bestIncome.table, latestCol, prevCol)
-      : {};
+    const incomeExtract =
+      latestCol != null ? extractIncomeFromTable(bestIncome.table, latestCol, prevCol) : {};
 
     return send(200, {
       ok: true,
@@ -368,7 +417,6 @@ module.exports = async function (context, req) {
 
         incomeStatementLite: incomeExtract,
 
-        // عينة صغيرة للعرض فقط
         sample: bestIncome.table.sample?.slice(0, 12) || [],
       },
     });
