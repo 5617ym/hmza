@@ -1,4 +1,4 @@
-console.log("MAIN_JS_VERSION = 2B_INGEST_ROUTER_PLUS_EXTRACT_2026-03-02_FIXED");
+console.log("MAIN_JS_VERSION = 2B_INGEST_ROUTER_PLUS_EXTRACT_2026-03-02_FIXED_v2");
 console.log("main.js loaded ✅");
 
 const fileInput = document.getElementById("fileInput");
@@ -159,6 +159,7 @@ async function extractFinancialFromAnalyze(analyzeData) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ normalized }),
+  });
 
   const j = await safeJson(r);
 
