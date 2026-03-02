@@ -1,14 +1,4 @@
 // api/extract-financial/index.js
-
-let parseArabicNumber = null;
-try {
-  // إذا ملف المساعد موجود: api/_lib/parse-arabic-number.js
-  // وداخله: module.exports = function parseArabicNumber(...) { ... }
-  parseArabicNumber = require("../_lib/parse-arabic-number");
-} catch (e) {
-  parseArabicNumber = null;
-}
-
 module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
@@ -20,124 +10,32 @@ module.exports = async function (context, req) {
 
   try {
     const body = req.body || {};
+    const normalized = body.normalized;
 
-    // يقبل:
-    // 1) { normalized: {...} }
-    // 2) أو Analyze Response كامل { ok:true, normalized:{...} }
-    const normalized = body.normalized || body?.analyze?.normalized || body?.data?.normalized;
+    // compare يجي من الواجهة أحيانًا
+    const compare = body.compare ?? null;
+    const noCompare =
+      compare === null ||
+      compare === undefined ||
+      String(compare).trim() === "" ||
+      String(compare).includes("بدون");
 
     if (!normalized || typeof normalized !== "object") {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
 
-    // الجداول المتاحة غالباً:
-    // - normalized.tablesPreview (حسب اللي أرسلته)
-    // - أو normalized.tablesPreviewNormalized (لو عندك نسخة مطبّعة)
-    // - أو normalized.tables (لو لاحقاً صار عندك استخراج كامل)
-    const tablesPreview =
-      (Array.isArray(normalized.tablesPreview) && normalized.tablesPreview) ||
-      (Array.isArray(normalized.tablesPreviewNormalized) && normalized.tablesPreviewNormalized) ||
-      (Array.isArray(normalized.tables) && normalized.tables) ||
-      [];
+    // عندك الآن tablesPreview (ليس tables)
+    const tablesPreview = Array.isArray(normalized.tablesPreview)
+      ? normalized.tablesPreview
+      : [];
 
-    // صفحات حاليا meta فقط، ما نقدر نستخدمها لاكتشاف العناوين
-    const pagesMeta = Array.isArray(normalized.pages) ? normalized.pages : [];
+    const pagesMeta = normalized?.meta || null;
 
-    const norm = (s) => String(s || "").toLowerCase();
+    /* =========================
+       Helpers
+       ========================= */
 
-    const TABLE_KW = {
-      incomeStatement: [
-        "الإيرادات",
-        "تكلفة الإيرادات",
-        "مجمل الربح",
-        "الربح التشغيلي",
-        "مصروفات",
-        "income",
-        "revenue",
-        "gross profit",
-        "operating profit",
-        "p&l",
-      ],
-      balanceSheet: [
-        "الأصول",
-        "الموجودات",
-        "الخصوم",
-        "المطلوبات",
-        "حقوق الملكية",
-        "balance sheet",
-        "statement of financial position",
-      ],
-      cashFlow: [
-        "التدفقات النقدية",
-        "النقد",
-        "تشغيلية",
-        "استثمارية",
-        "تمويلية",
-        "cash flow",
-        "operating activities",
-        "investing activities",
-        "financing activities",
-      ],
-      equity: [
-        "التغيرات في حقوق الملكية",
-        "أرباح مبقاة",
-        "علاوة الإصدار",
-        "أسهم خزينة",
-        "changes in equity",
-        "shareholders' equity",
-      ],
-    };
-
-    const scoreTable = (t) => {
-      // نجمع نصوص الـ sample كاملة كسلسلة واحدة للفحص
-      const sample = Array.isArray(t?.sample) ? t.sample : [];
-      const flat = sample.flat().map((x) => String(x || ""));
-      const text = norm(flat.join(" | "));
-
-      const score = {
-        incomeStatement: 0,
-        balanceSheet: 0,
-        cashFlow: 0,
-        equity: 0,
-      };
-
-      for (const k of TABLE_KW.incomeStatement) if (text.includes(norm(k))) score.incomeStatement += 2;
-      for (const k of TABLE_KW.balanceSheet) if (text.includes(norm(k))) score.balanceSheet += 2;
-      for (const k of TABLE_KW.cashFlow) if (text.includes(norm(k))) score.cashFlow += 2;
-      for (const k of TABLE_KW.equity) if (text.includes(norm(k))) score.equity += 2;
-
-      // أفضل نوع
-      let bestType = "unknown";
-      let bestScore = 0;
-      for (const [type, sc] of Object.entries(score)) {
-        if (sc > bestScore) {
-          bestScore = sc;
-          bestType = type;
-        }
-      }
-
-      return { bestType, bestScore, textSample: text.slice(0, 700) };
-    };
-
-    // يحاول تحويل قيم عربية/لاتينية إلى رقم
-    const toNumber = (v) => {
-      if (v === null || v === undefined) return null;
-      if (typeof v === "number" && Number.isFinite(v)) return v;
-
-      const s = String(v).trim();
-      if (!s) return null;
-
-      // أقواس سالب (123) أو (١٢٣)
-      const isNeg = /^\(.*\)$/.test(s);
-      const cleaned = s.replace(/^\(|\)$/g, "").trim();
-
-      // لو عندنا helper جاهز
-      if (typeof parseArabicNumber === "function") {
-        const n = parseArabicNumber(cleaned);
-        if (typeof n === "number" && Number.isFinite(n)) return isNeg ? -n : n;
-      }
-
-      // fallback بسيط
+    const toLatinDigits = (s) => {
       const map = {
         "٠": "0",
         "١": "1",
@@ -149,126 +47,332 @@ module.exports = async function (context, req) {
         "٧": "7",
         "٨": "8",
         "٩": "9",
-        "٫": ".",
-        "٬": ",",
+        "۰": "0",
+        "۱": "1",
+        "۲": "2",
+        "۳": "3",
+        "۴": "4",
+        "۵": "5",
+        "۶": "6",
+        "۷": "7",
+        "۸": "8",
+        "۹": "9",
+        "٫": ".", // decimal
+        "٬": ",", // thousands
       };
-
-      const latin = cleaned.replace(/[٠-٩٫٬]/g, (ch) => map[ch] ?? ch);
-      const normalizedNum = latin.replace(/,/g, "").replace(/\s+/g, "");
-
-      const n = Number(normalizedNum);
-      if (Number.isFinite(n)) return isNeg ? -n : n;
-      return null;
+      return String(s || "").replace(/[٠-٩۰-۹٫٬]/g, (ch) => map[ch] ?? ch);
     };
 
-    // نجرب نستخرج مؤشرات “نسخة 1” من جدول قائمة الدخل (لو موجود)
-    const extractIncomeStatementLite = (table) => {
-      // table.sample: صفوف، عادة العمود الأخير = اسم البند
-      const sample = Array.isArray(table?.sample) ? table.sample : [];
-      if (!sample.length) return {};
+    const norm = (s) => toLatinDigits(String(s || "")).toLowerCase().trim();
 
-      // نحاول نلقط: الإيرادات / تكلفة الإيرادات / مجمل الربح / الربح التشغيلي
-      // ونرجع أفضل رقمين موجودين في نفس الصف (مثلاً 2024/2025)
-      const pickRowNumbers = (row) => {
-        const nums = row.map(toNumber).filter((x) => typeof x === "number" && Number.isFinite(x));
-        // غالباً يكون فيه قيمتين (سنة وسنة) — نأخذ آخر قيمتين (أقرب للأرقام الحقيقية)
-        if (nums.length >= 2) return nums.slice(-2);
-        if (nums.length === 1) return [nums[0]];
-        return [];
+    // يدعم: (1,234,567.89) و ١٫٢٣٤٫٥٦٧ و ١,٢٣٤,٥٦٧ إلخ
+    const parseNumberSmart = (raw) => {
+      if (raw === null || raw === undefined) return null;
+      let s = toLatinDigits(String(raw)).trim();
+      if (!s) return null;
+
+      // سالب بين أقواس
+      let neg = false;
+      if (s.includes("(") && s.includes(")")) {
+        neg = true;
+        s = s.replace(/[()]/g, "");
+      }
+
+      // إزالة أي حروف
+      s = s.replace(/[^\d.,\-+]/g, "");
+
+      // إزالة فواصل آلاف
+      s = s.replace(/,/g, "");
+
+      // لو بقي أكثر من نقطة، خذ أول وحدة فقط (احتياط)
+      const firstDot = s.indexOf(".");
+      if (firstDot !== -1) {
+        const before = s.slice(0, firstDot + 1);
+        const after = s.slice(firstDot + 1).replace(/\./g, "");
+        s = before + after;
+      }
+
+      const n = Number(s);
+      if (!Number.isFinite(n)) return null;
+      return neg ? -n : n;
+    };
+
+    const findYear = (text) => {
+      // بعد تحويل الأرقام العربية → لاتينية
+      const s = toLatinDigits(text);
+      const m = s.match(/\b(20\d{2})\b/);
+      if (!m) return null;
+      const y = Number(m[1]);
+      return y >= 2000 && y <= 2100 ? y : null;
+    };
+
+    const headerRowLimit = 5;
+    const detectColumns = (table) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const colCount = Number(table?.columnCount || 0);
+
+      // meta per column
+      const cols = Array.from({ length: colCount }, (_, i) => ({
+        col: i,
+        years: [],
+        hasThreeMonths: false,
+        hasNineMonths: false,
+        hasAnnual: false,
+        hasNote: false,
+        headerText: "",
+      }));
+
+      const topRows = rows.slice(0, headerRowLimit);
+
+      for (const r of topRows) {
+        for (let c = 0; c < colCount; c++) {
+          const cell = r?.[c];
+          const t = norm(cell);
+          if (!t) continue;
+
+          cols[c].headerText += " " + t;
+
+          const y = findYear(t);
+          if (y) cols[c].years.push(y);
+
+          if (t.includes("الثلاثة") && t.includes("أشهر")) cols[c].hasThreeMonths = true;
+          if (t.includes("التسعة") && t.includes("أشهر")) cols[c].hasNineMonths = true;
+
+          // سنوي
+          if (t.includes("ديسمبر") || t.includes("السنة") || t.includes("منتهية")) cols[c].hasAnnual = true;
+
+          // إيضاح
+          if (t.includes("إيضاح") || t.includes("ايضاح") || t === "إيضاح") cols[c].hasNote = true;
+        }
+      }
+
+      // simplify years
+      for (const c of cols) {
+        c.years = Array.from(new Set(c.years)).sort((a, b) => a - b);
+      }
+
+      return cols;
+    };
+
+    const pickLatestColumns = (cols) => {
+      // استبعد أعمدة الإيضاح
+      const candidates = cols.filter((c) => !c.hasNote);
+
+      // أعمدة فيها سنوات
+      const withYears = candidates
+        .map((c) => ({
+          ...c,
+          latestYear: c.years.length ? c.years[c.years.length - 1] : null,
+          // أولوية: 3 أشهر > 9 أشهر > سنوي > غير معروف
+          periodScore: c.hasThreeMonths ? 3 : c.hasNineMonths ? 2 : c.hasAnnual ? 1 : 0,
+        }))
+        .filter((c) => c.latestYear);
+
+      if (!withYears.length) return { latest: null, previous: null, debug: { reason: "no years detected" } };
+
+      // أحدث سنة
+      const maxYear = Math.max(...withYears.map((c) => c.latestYear));
+
+      const latestCandidates = withYears
+        .filter((c) => c.latestYear === maxYear)
+        .sort((a, b) => {
+          // فضّل 3 أشهر ثم 9 أشهر ثم سنوي
+          if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore;
+          // ثم فضّل العمود الأيمن (عادة الأحدث)
+          return b.col - a.col;
+        });
+
+      const latest = latestCandidates[0];
+
+      // السابقة (للمقارنة)
+      const yearsAll = Array.from(new Set(withYears.map((c) => c.latestYear))).sort((a, b) => a - b);
+      const prevYear = yearsAll.length >= 2 ? yearsAll[yearsAll.length - 2] : null;
+
+      let previous = null;
+      if (prevYear) {
+        const prevCandidates = withYears
+          .filter((c) => c.latestYear === prevYear)
+          .sort((a, b) => {
+            if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore;
+            return b.col - a.col;
+          });
+        previous = prevCandidates[0] || null;
+      }
+
+      return {
+        latest,
+        previous,
+        debug: { maxYear, prevYear, yearsAll },
+      };
+    };
+
+    const scoreIncomeTable = (table) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+
+      // كلمات قوية لقائمة الدخل
+      const hits = [
+        "الإيرادات",
+        "الايرادات",
+        "تكلفة الإيرادات",
+        "تكلفة الايرادات",
+        "مجمل الربح",
+        "الربح التشغيلي",
+        "صافي الربح",
+        "قائمة الدخل",
+        "قائمة الربح والخسارة",
+        "لفترة",
+        "الثلاثة أشهر",
+        "التسعة أشهر",
+      ];
+
+      let score = 0;
+      for (const k of hits) if (joined.includes(norm(k))) score += 2;
+
+      // إذا فيه "إيضاح" عادة موجود
+      if (joined.includes("إيضاح") || joined.includes("ايضاح")) score += 1;
+
+      // إذا عدد الأعمدة كبير غالباً ربع
+      const cc = Number(table?.columnCount || 0);
+      if (cc >= 5) score += 1;
+
+      return score;
+    };
+
+    const extractIncomeFromTable = (table, latestColIdx, prevColIdx) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+
+      const want = [
+        { key: "revenue", names: ["الإيرادات", "الايرادات", "Revenue"] },
+        { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "Cost of revenue", "تكلفة المبيعات"] },
+        { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
+        { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
+        { key: "netProfitBeforeZakat", names: ["صافي ربح الفترة قبل الزكاة", "صافي ربح السنة قبل الزكاة"] },
+        { key: "zakat", names: ["الزكاة"] },
+        { key: "netProfit", names: ["صافي ربح الفترة", "صافي ربح السنة", "صافي الربح", "Net profit"] },
+      ];
+
+      const getRowLabel = (r) => {
+        // في كثير من الجداول "البيان" في آخر عمود، وأحيانًا قبل الأخير
+        const last = norm(r?.[r.length - 1]);
+        const prev = norm(r?.[r.length - 2]);
+        // لو آخر خلية فاضية خذ اللي قبلها
+        return last || prev || "";
       };
 
-      const findRow = (kwArr) => {
-        for (const row of sample) {
-          const rowText = norm(row.join(" | "));
-          if (kwArr.some((k) => rowText.includes(norm(k)))) return row;
-        }
-        return null;
+      const findValue = (r, colIdx) => {
+        if (colIdx === null || colIdx === undefined) return null;
+        const cell = r?.[colIdx];
+        return parseNumberSmart(cell);
       };
 
       const out = {};
+      for (const item of want) {
+        let found = null;
+        for (const r of rows) {
+          if (!Array.isArray(r)) continue;
+          const label = getRowLabel(r);
+          if (!label) continue;
 
-      const rRevenue = findRow(["الإيرادات", "revenue"]);
-      if (rRevenue) out.revenue = pickRowNumbers(rRevenue);
+          const ok = item.names.some((n) => label.includes(norm(n)));
+          if (!ok) continue;
 
-      const rCogs = findRow(["تكلفة الإيرادات", "cost of revenue", "cost of sales"]);
-      if (rCogs) out.costOfRevenue = pickRowNumbers(rCogs);
+          // خذ قيم العمود المحدد
+          const cur = findValue(r, latestColIdx);
+          const prev = prevColIdx != null ? findValue(r, prevColIdx) : null;
 
-      const rGross = findRow(["مجمل الربح", "gross profit"]);
-      if (rGross) out.grossProfit = pickRowNumbers(rGross);
-
-      const rOp = findRow(["الربح التشغيلي", "operating profit", "operating income"]);
-      if (rOp) out.operatingProfit = pickRowNumbers(rOp);
-
+          found = { label, current: cur, previous: prev };
+          break;
+        }
+        out[item.key] = found;
+      }
       return out;
     };
 
-    // صنّف الجداول وأخرج ملخص
-    const classified = tablesPreview.map((t) => {
-      const sc = scoreTable(t);
-      return {
-        index: t.index ?? null,
-        rowCount: t.rowCount ?? null,
-        columnCount: t.columnCount ?? null,
-        type: sc.bestType,
-        score: sc.bestScore,
-        sample: t.sample || [],
-        extractedLite:
-          sc.bestType === "incomeStatement" ? extractIncomeStatementLite(t) : {},
-      };
-    });
+    /* =========================
+       1) اختيار أفضل جدول قائمة دخل
+       ========================= */
 
-    // خذ أفضل جدول قائمة دخل (أعلى score)
-    const incomeTables = classified
-      .filter((x) => x.type === "incomeStatement")
-      .sort((a, b) => (b.score || 0) - (a.score || 0));
+    let bestIncome = null;
+    for (const t of tablesPreview) {
+      const s = scoreIncomeTable(t);
+      if (!bestIncome || s > bestIncome.score) bestIncome = { table: t, score: s };
+    }
 
-    const bestIncome = incomeTables[0] || null;
+    if (!bestIncome) {
+      return send(200, {
+        ok: true,
+        financial: {
+          pagesMeta,
+          note: "لا توجد tablesPreview داخل normalized.",
+          tablesPreviewCount: tablesPreview.length,
+        },
+      });
+    }
 
-    // pagesDetected: هنا لن نقدر نحددها بدون نص الصفحات
-    const pagesDetected = {
-      balanceSheet: [],
-      incomeStatement: [],
-      cashFlow: [],
-      equity: [],
-      note: "لا يمكن اكتشاف صفحات القوائم بدون نص الصفحات (p.text). نستخدم tablesPreview حالياً.",
-    };
+    /* =========================
+       2) تحديد أعمدة السنة الأحدث (ومقارنة إن وجدت)
+       ========================= */
+
+    const cols = detectColumns(bestIncome.table);
+    const picked = pickLatestColumns(cols);
+
+    const latestCol = picked.latest?.col ?? null;
+    const prevCol = !noCompare ? picked.previous?.col ?? null : null;
+
+    /* =========================
+       3) استخراج أرقام قائمة الدخل من نفس الجدول
+       ========================= */
+
+    const incomeExtract = latestCol != null
+      ? extractIncomeFromTable(bestIncome.table, latestCol, prevCol)
+      : {};
 
     return send(200, {
       ok: true,
       financial: {
-        pagesMeta: {
-          pagesCount: pagesMeta.length,
-          meta: normalized?.meta || null,
+        pagesMeta,
+
+        selectionPolicy: {
+          noCompare,
+          rule: noCompare
+            ? "No compare selected -> pick latest year only (prefer 3-month if quarterly)."
+            : "Compare selected -> pick latest year + previous year (prefer same period type).",
         },
 
-        pagesDetected,
+        bestIncomeTable: {
+          index: bestIncome.table.index,
+          score: bestIncome.score,
+          columnCount: bestIncome.table.columnCount,
+          rowCount: bestIncome.table.rowCount,
+        },
 
-        tablesPreviewCount: tablesPreview.length,
-        tablesClassifiedCount: classified.length,
-
-        // نرجع أول 10 فقط عشان لا يصير response ضخم
-        tablesClassifiedTop: classified.slice(0, 10).map((t) => ({
-          index: t.index,
-          rowCount: t.rowCount,
-          columnCount: t.columnCount,
-          type: t.type,
-          score: t.score,
-          extractedLite: t.extractedLite,
-          // sample مختصر
-          sample: Array.isArray(t.sample) ? t.sample.slice(0, 12) : [],
+        columnsDetected: cols.map((c) => ({
+          col: c.col,
+          years: c.years,
+          hasThreeMonths: c.hasThreeMonths,
+          hasNineMonths: c.hasNineMonths,
+          hasAnnual: c.hasAnnual,
+          hasNote: c.hasNote,
         })),
 
-        bestIncomeTable: bestIncome
-          ? {
-              index: bestIncome.index,
-              score: bestIncome.score,
-              extractedLite: bestIncome.extractedLite,
-              sample: bestIncome.sample.slice(0, 20),
-            }
-          : null,
+        pickedColumns: {
+          latest: picked.latest
+            ? { col: picked.latest.col, year: picked.latest.years?.slice(-1)?.[0] ?? null }
+            : null,
+          previous: picked.previous
+            ? { col: picked.previous.col, year: picked.previous.years?.slice(-1)?.[0] ?? null }
+            : null,
+          debug: picked.debug,
+        },
+
+        incomeStatementLite: incomeExtract,
+
+        // عينة صغيرة للعرض فقط
+        sample: bestIncome.table.sample?.slice(0, 12) || [],
       },
     });
   } catch (e) {
-    return send(500, { ok: false, error: e?.message || String(e) });
+    return send(500, { ok: false, error: e.message || String(e) });
   }
 };
