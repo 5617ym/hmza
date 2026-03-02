@@ -1,6 +1,7 @@
 // api/_lib/parse-arabic-number.js
-// يحول نص رقم عربي مثل "٢٫٢١٨,٦٦٢٫٧٣٥" إلى رقم صحيح 2218662735
-// ويدعم السالب بالأقواس (١٢٣) => -123
+// يحول نص رقم عربي مثل: "٢٫٢١٨,٦٦٢٫٧٣٥" => 2218662735
+// ويدعم السالب بالأقواس: "(١٢٣)" => -123
+// ويعيد null إذا ما كان رقم
 
 function toLatinDigits(s) {
   const map = {
@@ -12,78 +13,92 @@ function toLatinDigits(s) {
   return String(s).replace(/[٠-٩۰-۹]/g, (ch) => map[ch] ?? ch);
 }
 
-function looksLikeThousandGrouping(parts) {
-  // مثال: 2 | 218 | 662 | 735  => true
-  if (!parts || parts.length < 2) return false;
-  for (let i = 1; i < parts.length; i++) {
-    if (parts[i].length !== 3) return false;
-    if (!/^\d{3}$/.test(parts[i])) return false;
-  }
-  // أول جزء يسمح 1-3 أرقام
-  return /^\d{1,3}$/.test(parts[0]);
+function countChar(str, ch) {
+  return (str.match(new RegExp(`\\${ch}`, "g")) || []).length;
 }
 
 function parseArabicNumber(input) {
   if (input === null || input === undefined) return null;
+
+  // لو رقم جاهز
   if (typeof input === "number" && Number.isFinite(input)) return input;
 
   let s = String(input).trim();
   if (!s) return null;
 
-  // سالب بين قوسين: (١٢٣) أو ( ١٢٣ )
-  let neg = false;
-  if (s.includes("(") && s.includes(")")) {
-    neg = true;
-    s = s.replace(/[()]/g, "");
+  // إزالة رموز شائعة
+  s = s
+    .replace(/\s+/g, "")                // مسافات
+    .replace(/[ر﷼$٪%]/g, "")            // عملات/نسب
+    .replace(/ـ/g, "")                  // تطويل
+    .replace(/,/g, ",")                 // توحيد (احتياط)
+    .replace(/٬/g, ",")                 // Arabic thousands -> comma
+    .replace(/٫/g, ".");                // Arabic decimal -> dot (مؤقتًا)
+
+  // سالب بالأقواس
+  let negative = false;
+  if (/^\(.*\)$/.test(s)) {
+    negative = true;
+    s = s.slice(1, -1);
   }
+
+  // دعم السالب العادي
+  if (s.startsWith("-")) {
+    negative = true;
+    s = s.slice(1);
+  }
+  if (s.startsWith("+")) s = s.slice(1);
 
   s = toLatinDigits(s);
 
-  // إزالة مسافات
-  s = s.replace(/\s+/g, "");
+  // أبقي فقط أرقام وفواصل
+  s = s.replace(/[^\d.,]/g, "");
+  if (!s) return null;
 
-  // فواصل ممكنة في العربية/الإنجليزية
-  //  - "٬" آلاف عربي
-  //  - "," فاصلة إنجليزية (قد تكون آلاف)
-  //  - "٫" فاصلة عشرية عربية (لكن OCR قد يستخدمها بدل آلاف)
-  //  - "." فاصلة عشرية إنجليزية
-  const hasSep = /[٬,٫.]/.test(s);
+  // ======== القاعدة الذهبية للقوائم المالية ========
+  // إذا وجدنا "أكثر من فاصل" غالبًا هذه فواصل آلاف وليست كسور
+  const dotCount = countChar(s, ".");
+  const commaCount = countChar(s, ",");
 
-  // احتفظ فقط بالرقم + فواصل + إشارة سالب
-  s = s.replace(/[^\d٬,٫.\-]/g, "");
+  const totalSeps = dotCount + commaCount;
 
-  // إذا فيه أكثر من فاصل داخل الرقم وعلى نمط مجموعات ثلاثية => اعتبره آلاف
-  if (hasSep) {
-    // نقسم على أي فاصل ونشوف شكل المجموعات
-    const parts = s.split(/[٬,٫.]/).filter(Boolean);
+  // مثال: 2.218,662.735  أو  1,784,755,283  => كله آلاف
+  if (totalSeps >= 2) {
+    const asInt = s.replace(/[.,]/g, "");
+    if (!/^\d+$/.test(asInt)) return null;
+    const n = Number(asInt);
+    if (!Number.isFinite(n)) return null;
+    return negative ? -n : n;
+  }
 
-    if (looksLikeThousandGrouping(parts)) {
-      // آلاف => نجمعها بدون فواصل
-      const joined = parts.join("");
-      const n = Number(joined);
-      if (!Number.isFinite(n)) return null;
-      return neg ? -n : n;
-    }
+  // إذا يوجد فاصل واحد فقط: نقرر هل هو كسور أم آلاف
+  if (totalSeps === 1) {
+    const sep = dotCount === 1 ? "." : ",";
+    const parts = s.split(sep);
 
-    // غير نمط آلاف: نعامل "٫" كعشري، ونحذف فواصل الآلاف
-    // 1) نحول "٫" إلى "."
-    s = s.replace(/٫/g, ".");
-    // 2) نحذف "٬" و ","
-    s = s.replace(/[٬,]/g, "");
-
-    // إذا صار عندنا أكثر من نقطة، نخلي آخر نقطة عشرية ونحذف الباقي (احتياط)
-    const dotCount = (s.match(/\./g) || []).length;
-    if (dotCount > 1) {
-      const last = s.lastIndexOf(".");
-      s = s.replace(/\./g, "");
-      s = s.slice(0, last) + "." + s.slice(last);
+    // إذا الجزء بعد الفاصل 1-2 رقم => اعتبرها كسور
+    // غير ذلك => اعتبر الفاصل آلاف واحذفه
+    if (parts.length === 2) {
+      const frac = parts[1] || "";
+      if (frac.length >= 1 && frac.length <= 2) {
+        const n = Number(parts[0] + "." + frac);
+        if (!Number.isFinite(n)) return null;
+        return negative ? -n : n;
+      } else {
+        const asInt = parts[0] + parts[1];
+        if (!/^\d+$/.test(asInt)) return null;
+        const n = Number(asInt);
+        if (!Number.isFinite(n)) return null;
+        return negative ? -n : n;
+      }
     }
   }
 
-  // أخيرًا: تحويل
+  // بدون فواصل
+  if (!/^\d+$/.test(s)) return null;
   const n = Number(s);
   if (!Number.isFinite(n)) return null;
-  return neg ? -n : n;
+  return negative ? -n : n;
 }
 
 module.exports = { parseArabicNumber };
