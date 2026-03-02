@@ -1,30 +1,40 @@
-CURRENT_PHASE: 2B (Frontend Connection via Ingest Router)
+# PROJECT_STATE.md
+
+CURRENT_PHASE: 3A (Arabic Numbers Normalization)
 
 CURRENT_TASK:
-تأكيد أن الواجهة تستخدم المسار التالي:
-Upload → /api/ingest → (auto-follow next) → /api/analyze
-ثم قراءة النتائج من:
-data.normalized.meta (pages, tables, textLength)
+تطبيع (تحويل) الأرقام العربية داخل tablesPreview إلى أرقام قياسية (1234.56)
+لجعل البيانات قابلة للحساب والتحليل المالي لاحقاً.
 
 LAST_TEST:
-- API يعمل بشكل صحيح.
-- /api/analyze يرجع:
-  normalized.meta.pages = 30
-  normalized.meta.tables = 35
-  normalized.meta.textLength = 69469
-- Network يُظهر أن analyze يعمل بدون 500.
-- لكن Initiator ما زال يشير إلى main.js بأسطر قديمة
-  مما يدل أن المتصفح يستخدم نسخة Cached من main.js.
+رفع PDF + ضغط "عرض النتائج" في الواجهة.
+Network أظهر الطلبات التالية جميعها Status=200:
+- /api/upload-url
+- PUT blob
+- /api/ingest
+- /api/analyze
+- /api/extract-financial
 
 LAST_RESULT:
-الباك-إند سليم بالكامل.
-المشكلة حالياً Frontend Caching (المتصفح لم يحمّل main.js الجديد).
+- الواجهة تعرض: pages/tables/textLength بشكل صحيح
+- /api/extract-financial يعمل (200) عند إرسال normalized بشكل صحيح
+- تم حل مشكلة "Missing normalized" ومشكلة 404 الخاصة بالـ extract-financial بعد إضافة function.json
 
 ACTIVE_PROBLEM:
-النسخة القديمة من main.js ما زالت تعمل بسبب Cache.
-يجب تنفيذ:
-Empty Cache + Hard Reload
-أو تغيير اسم ملف main.js لكسر الكاش (cache busting).
+الأرقام داخل الجداول بصيغة عربية (٠١٢٣٤٥٦٧٨٩) وبفواصل عربية/رموز
+مثل: "١,٦٢٣,١٦٠٫٩٧١" أو "٢١٠,٧٥٣٫٥٧٠"
+ويجب تحويلها إلى رقم قياسي (1623160.971) مع دعم السالب بالأقواس (مثل "(١٢٣)")
+
+NEXT_STEP:
+1) إنشاء دالة داخل api/_lib مثل: parseArabicNumber(str)
+   - تحويل ٠١٢٣٤٥٦٧٨٩ إلى 0123456789
+   - استبدال "٫" إلى "." و"٬" إلى "," وإزالة الفواصل
+   - دعم السالب: (123) => -123
+2) تطبيق التحويل على جميع القيم الرقمية داخل normalized.tablesPreview[*].sample
+3) إرجاع نتيجة extract-financial فيها:
+   - meta: { pages, tables, textLength }
+   - tablesPreviewNormalized: نفس الجداول لكن الأرقام صارت Numbers
+4) اختبار سريع من الواجهة/Console أن القيم أصبحت Numbers وليست Strings
 
 STATUS:
-PENDING_CACHE_REFRESH
+IN_PROGRESS
