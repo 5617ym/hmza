@@ -1,3 +1,5 @@
+console.log("MAIN_JS_VERSION = 2B_INGEST_ROUTER_2026-03-02");
+
 console.log("main.js loaded ✅");
 
 const fileInput = document.getElementById("fileInput");
