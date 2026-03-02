@@ -1,4 +1,12 @@
 // api/extract-financial/index.js
+let parseArabicNumberLib = null;
+try {
+  // api/extract-financial -> api/_lib
+  parseArabicNumberLib = require("../_lib/parse-arabic-number");
+} catch (e) {
+  // ignore - سنستخدم fallback
+}
+
 module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
@@ -8,6 +16,119 @@ module.exports = async function (context, req) {
     };
   };
 
+  // ===== Fallback: تحويل أرقام عربية/هندية إلى لاتينية + تنظيف الفواصل =====
+  function toLatinDigits(input) {
+    const s = String(input ?? "");
+    const map = {
+      "٠": "0",
+      "١": "1",
+      "٢": "2",
+      "٣": "3",
+      "٤": "4",
+      "٥": "5",
+      "٦": "6",
+      "٧": "7",
+      "٨": "8",
+      "٩": "9",
+      "۰": "0",
+      "۱": "1",
+      "۲": "2",
+      "۳": "3",
+      "۴": "4",
+      "۵": "5",
+      "۶": "6",
+      "۷": "7",
+      "۸": "8",
+      "۹": "9",
+    };
+    return s.replace(/[٠-٩۰-۹]/g, (ch) => map[ch] ?? ch);
+  }
+
+  function normalizeNumberString(raw) {
+    let s = String(raw ?? "").trim();
+    if (!s) return "";
+
+    // أحياناً السالب يكون بين أقواس (123) => -123
+    let negative = false;
+    if (s.startsWith("(") && s.endsWith(")")) {
+      negative = true;
+      s = s.slice(1, -1).trim();
+    }
+
+    // تحويل الأرقام العربية إلى لاتينية
+    s = toLatinDigits(s);
+
+    // إزالة مسافات
+    s = s.replace(/\s+/g, "");
+
+    // الفاصل العشري العربي "٫" => "."
+    s = s.replace(/٫/g, ".");
+
+    // فواصل الآلاف العربية "٬" والعادية "," => احذف
+    s = s.replace(/[٬,]/g, "");
+
+    // بعض الملفات تستخدم "−" بدل "-"
+    s = s.replace(/−/g, "-");
+
+    if (negative && s && !s.startsWith("-")) s = "-" + s;
+    return s;
+  }
+
+  function parseArabicNumber(raw) {
+    // 1) لو مكتبتك موجودة وفيها parseArabicNumber استخدمها
+    const fn =
+      parseArabicNumberLib?.parseArabicNumber ||
+      parseArabicNumberLib?.default ||
+      null;
+
+    if (typeof fn === "function") {
+      try {
+        const v = fn(raw);
+        if (typeof v === "number" && Number.isFinite(v)) return v;
+      } catch (_) {}
+    }
+
+    // 2) fallback
+    const s = normalizeNumberString(raw);
+    if (!s) return null;
+
+    // لازم يكون شكل رقم (مع احتمال علامة -)
+    if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function normalizeTablesPreview(tablesPreview) {
+    const out = [];
+    for (const t of tablesPreview) {
+      const sample = Array.isArray(t.sample) ? t.sample : [];
+
+      // sampleNormalized: نفس النص لكن مُنظَّف (digits/sep)
+      const sampleNormalized = sample.map((row) =>
+        (Array.isArray(row) ? row : []).map((cell) => {
+          const s = String(cell ?? "");
+          return normalizeNumberString(s) || s;
+        })
+      );
+
+      // sampleNumbers: نحاول نطلع Number لكل خلية (null إذا فشل)
+      const sampleNumbers = sample.map((row) =>
+        (Array.isArray(row) ? row : []).map((cell) => parseArabicNumber(cell))
+      );
+
+      out.push({
+        index: t.index ?? null,
+        rowCount: t.rowCount ?? null,
+        columnCount: t.columnCount ?? null,
+        sample, // الأصلي
+        sampleNormalized,
+        sampleNumbers,
+      });
+    }
+    return out;
+  }
+
   try {
     const body = req.body || {};
     const normalized = body.normalized;
@@ -16,10 +137,13 @@ module.exports = async function (context, req) {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
 
+    // ✅ pages عادة موجودة، لكن غالباً بدون text (حسب normalize-di)
     const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
-    const tables = Array.isArray(normalized.tables) ? normalized.tables : [];
 
-    // كلمات مفتاحية لاكتشاف صفحات القوائم
+    // ✅ المهم عندك الآن هو tablesPreview
+    const tablesPreview = Array.isArray(normalized.tablesPreview) ? normalized.tablesPreview : [];
+
+    // كلمات مفتاحية لاكتشاف صفحات القوائم (قد يظل فارغ إذا pages بدون text)
     const KW = {
       bs: [
         "قائمة المركز المالي",
@@ -53,12 +177,11 @@ module.exports = async function (context, req) {
     const norm = (s) => String(s || "").toLowerCase();
     const hasAny = (text, arr) => arr.some((k) => norm(text).includes(norm(k)));
 
-    // 1) اكتشاف صفحات القوائم اعتمادًا على نص الصفحة
     const detected = { balanceSheet: [], incomeStatement: [], cashFlow: [], equity: [] };
 
     for (const p of pages) {
       const pageNumber = p.pageNumber ?? p.page ?? null;
-      const text = p.text || "";
+      const text = p.text || ""; // غالباً غير موجود حالياً
       if (!pageNumber) continue;
 
       if (hasAny(text, KW.bs)) detected.balanceSheet.push(pageNumber);
@@ -67,59 +190,26 @@ module.exports = async function (context, req) {
       if (hasAny(text, KW.eq)) detected.equity.push(pageNumber);
     }
 
-    // إزالة تكرار + ترتيب
     const uniqSort = (arr) => Array.from(new Set(arr)).sort((a, b) => a - b);
     detected.balanceSheet = uniqSort(detected.balanceSheet);
     detected.incomeStatement = uniqSort(detected.incomeStatement);
     detected.cashFlow = uniqSort(detected.cashFlow);
     detected.equity = uniqSort(detected.equity);
 
-    // 2) اختيار أهم الجداول: التي تقع ضمن الصفحات المكتشفة أو قريبة منها
-    const allDetectedPages = uniqSort([
-      ...detected.balanceSheet,
-      ...detected.incomeStatement,
-      ...detected.cashFlow,
-      ...detected.equity,
-    ]);
-
-    const near = (p, targets) => targets.some((t) => Math.abs((p || 0) - t) <= 1);
-
-    const pickedTables = tables
-      .filter((t) => {
-        const pn = t.pageNumber ?? t.page ?? null;
-        if (!pn) return false;
-        if (allDetectedPages.length === 0) return true; // إذا ما اكتشفنا صفحات، خذ الكل مؤقتًا
-        return near(pn, allDetectedPages);
-      })
-      .slice(0, 20); // حد مبدئي
-
-    // 3) استخراج أرقام مبدئي (بسيط جدًا الآن): نجمع كل الأرقام من نص الصفحات المكتشفة
-    // ملاحظة: هذا "Draft" وسنحسنه بالخطوات القادمة لاستخراج البنود المسماة.
-    const numericRegex = /[-+]?\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?/g;
-
-    const numberHits = [];
-    const targetPagesSet = new Set(allDetectedPages);
-
-    for (const p of pages) {
-      const pn = p.pageNumber ?? p.page ?? null;
-      if (!pn) continue;
-      if (allDetectedPages.length > 0 && !targetPagesSet.has(pn)) continue;
-
-      const text = String(p.text || "");
-      const matches = text.match(numericRegex) || [];
-      for (const m of matches.slice(0, 200)) {
-        numberHits.push({ page: pn, raw: m });
-      }
-    }
+    // ✅ الجديد: تطبيع tablesPreview
+    const tablesPreviewNormalized = normalizeTablesPreview(tablesPreview);
 
     return send(200, {
       ok: true,
       financial: {
         pagesDetected: detected,
-        tablesPickedCount: pickedTables.length,
-        tablesPicked: pickedTables,
-        numbersSampleCount: numberHits.length,
-        numbersSample: numberHits.slice(0, 200),
+        // tablesPreview كما جاء من normalize
+        tablesPreviewCount: tablesPreview.length,
+        tablesPreview: tablesPreview,
+
+        // ✅ التطبيع المطلوب
+        tablesPreviewNormalizedCount: tablesPreviewNormalized.length,
+        tablesPreviewNormalized: tablesPreviewNormalized,
       },
     });
   } catch (e) {
