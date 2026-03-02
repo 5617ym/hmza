@@ -34,9 +34,7 @@ module.exports = async function (context, req) {
     }
 
     // عندك الآن tablesPreview (ليس tables)
-    const tablesPreview = Array.isArray(normalized.tablesPreview)
-      ? normalized.tablesPreview
-      : [];
+    const tablesPreview = Array.isArray(normalized.tablesPreview) ? normalized.tablesPreview : [];
 
     const pagesMeta = normalized?.meta || null;
 
@@ -307,7 +305,10 @@ module.exports = async function (context, req) {
 
       const want = [
         { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "Revenue"] },
-        { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"] },
+        {
+          key: "costOfRevenue",
+          names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"],
+        },
         { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
         { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
         { key: "netProfitBeforeZakat", names: ["صافي ربح الفترة قبل الزكاة", "صافي ربح السنة قبل الزكاة"] },
@@ -475,6 +476,77 @@ module.exports = async function (context, req) {
     const incomeExtract =
       latestCol != null ? extractIncomeFromTable(bestIncome.table, latestCol, prevCol) : {};
 
+    /* =========================
+       4) استخراج قائمة المركز المالي (Balance Sheet) من index ثابت = 2
+       - بدون مقارنة: أحدث سنة فقط
+       - مع مقارنة: أحدث سنة + السنة السابقة
+       ========================= */
+
+    const BALANCE_TABLE_INDEX = 2;
+    const balanceTable = tablesPreview.find((t) => Number(t?.index) === BALANCE_TABLE_INDEX) || null;
+
+    const balanceCols = balanceTable ? detectColumns(balanceTable) : [];
+    const balancePicked = balanceTable
+      ? pickLatestColumns(balanceCols)
+      : { latest: null, previous: null, debug: { reason: "balance table not found" } };
+
+    const balanceLatestCol = balancePicked.latest?.col ?? null;
+    const balancePrevCol = !noCompare ? balancePicked.previous?.col ?? null : null;
+
+    const extractBalanceFromTable = (table, latestColIdx, prevColIdx) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+
+      const want = [
+        { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الاصول", "total assets"] },
+        { key: "currentAssets", names: ["إجمالي الأصول المتداولة", "اجمالي الاصول المتداولة", "الأصول المتداولة", "الاصول المتداولة", "current assets"] },
+        { key: "nonCurrentAssets", names: ["إجمالي الأصول غير المتداولة", "اجمالي الاصول غير المتداولة", "الأصول غير المتداولة", "الاصول غير المتداولة", "non-current assets"] },
+
+        { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "total liabilities"] },
+        { key: "currentLiabilities", names: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "المطلوبات المتداولة", "current liabilities"] },
+        { key: "nonCurrentLiabilities", names: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "المطلوبات غير المتداولة", "non-current liabilities"] },
+
+        { key: "totalEquity", names: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "حقوق الملكية", "total equity", "equity"] },
+      ];
+
+      const getRowLabel = (r) => {
+        const last = norm(r?.[r.length - 1]);
+        const prev = norm(r?.[r.length - 2]);
+        return last || prev || "";
+      };
+
+      const findValue = (r, colIdx) => {
+        if (colIdx === null || colIdx === undefined) return null;
+        return parseNumberSmart(r?.[colIdx]);
+      };
+
+      const out = {};
+      for (const item of want) {
+        let found = null;
+        for (const r of rows) {
+          if (!Array.isArray(r)) continue;
+
+          const label = getRowLabel(r);
+          if (!label) continue;
+
+          const ok = item.names.some((n) => label.includes(norm(n)));
+          if (!ok) continue;
+
+          const cur = findValue(r, latestColIdx);
+          const prev = prevColIdx != null ? findValue(r, prevColIdx) : null;
+
+          found = { label, current: cur, previous: prev };
+          break;
+        }
+        out[item.key] = found;
+      }
+      return out;
+    };
+
+    const balanceSheetLite =
+      balanceTable && balanceLatestCol != null
+        ? extractBalanceFromTable(balanceTable, balanceLatestCol, balancePrevCol)
+        : { note: "Balance table not found or columns not detected", tableIndex: BALANCE_TABLE_INDEX };
+
     return send(200, {
       ok: true,
       financial: {
@@ -504,9 +576,7 @@ module.exports = async function (context, req) {
         })),
 
         pickedColumns: {
-          latest: picked.latest
-            ? { col: picked.latest.col, year: picked.latest.years?.slice(-1)?.[0] ?? null }
-            : null,
+          latest: picked.latest ? { col: picked.latest.col, year: picked.latest.years?.slice(-1)?.[0] ?? null } : null,
           previous: picked.previous
             ? { col: picked.previous.col, year: picked.previous.years?.slice(-1)?.[0] ?? null }
             : null,
@@ -514,6 +584,32 @@ module.exports = async function (context, req) {
         },
 
         incomeStatementLite: incomeExtract,
+
+        // ✅ Balance Sheet additions
+        balanceSheetTable: balanceTable
+          ? { index: balanceTable.index, columnCount: balanceTable.columnCount, rowCount: balanceTable.rowCount }
+          : null,
+
+        balanceColumnsDetected: balanceCols.map((c) => ({
+          col: c.col,
+          years: c.years,
+          hasThreeMonths: c.hasThreeMonths,
+          hasNineMonths: c.hasNineMonths,
+          hasAnnual: c.hasAnnual,
+          hasNote: c.hasNote,
+        })),
+
+        balancePickedColumns: {
+          latest: balancePicked.latest
+            ? { col: balancePicked.latest.col, year: balancePicked.latest.years?.slice(-1)?.[0] ?? null }
+            : null,
+          previous: balancePicked.previous
+            ? { col: balancePicked.previous.col, year: balancePicked.previous.years?.slice(-1)?.[0] ?? null }
+            : null,
+          debug: balancePicked.debug,
+        },
+
+        balanceSheetLite,
 
         sample: bestIncome.table.sample?.slice(0, 12) || [],
       },
