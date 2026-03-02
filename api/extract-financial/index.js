@@ -1,11 +1,5 @@
 // api/extract-financial/index.js
-let parseArabicNumberLib = null;
-try {
-  // api/extract-financial -> api/_lib
-  parseArabicNumberLib = require("../_lib/parse-arabic-number");
-} catch (e) {
-  // ignore - سنستخدم fallback
-}
+const parseArabicNumber = require("../_lib/parse-arabic-number");
 
 module.exports = async function (context, req) {
   const send = (status, payload) => {
@@ -16,119 +10,6 @@ module.exports = async function (context, req) {
     };
   };
 
-  // ===== Fallback: تحويل أرقام عربية/هندية إلى لاتينية + تنظيف الفواصل =====
-  function toLatinDigits(input) {
-    const s = String(input ?? "");
-    const map = {
-      "٠": "0",
-      "١": "1",
-      "٢": "2",
-      "٣": "3",
-      "٤": "4",
-      "٥": "5",
-      "٦": "6",
-      "٧": "7",
-      "٨": "8",
-      "٩": "9",
-      "۰": "0",
-      "۱": "1",
-      "۲": "2",
-      "۳": "3",
-      "۴": "4",
-      "۵": "5",
-      "۶": "6",
-      "۷": "7",
-      "۸": "8",
-      "۹": "9",
-    };
-    return s.replace(/[٠-٩۰-۹]/g, (ch) => map[ch] ?? ch);
-  }
-
-  function normalizeNumberString(raw) {
-    let s = String(raw ?? "").trim();
-    if (!s) return "";
-
-    // أحياناً السالب يكون بين أقواس (123) => -123
-    let negative = false;
-    if (s.startsWith("(") && s.endsWith(")")) {
-      negative = true;
-      s = s.slice(1, -1).trim();
-    }
-
-    // تحويل الأرقام العربية إلى لاتينية
-    s = toLatinDigits(s);
-
-    // إزالة مسافات
-    s = s.replace(/\s+/g, "");
-
-    // الفاصل العشري العربي "٫" => "."
-    s = s.replace(/٫/g, ".");
-
-    // فواصل الآلاف العربية "٬" والعادية "," => احذف
-    s = s.replace(/[٬,]/g, "");
-
-    // بعض الملفات تستخدم "−" بدل "-"
-    s = s.replace(/−/g, "-");
-
-    if (negative && s && !s.startsWith("-")) s = "-" + s;
-    return s;
-  }
-
-  function parseArabicNumber(raw) {
-    // 1) لو مكتبتك موجودة وفيها parseArabicNumber استخدمها
-    const fn =
-      parseArabicNumberLib?.parseArabicNumber ||
-      parseArabicNumberLib?.default ||
-      null;
-
-    if (typeof fn === "function") {
-      try {
-        const v = fn(raw);
-        if (typeof v === "number" && Number.isFinite(v)) return v;
-      } catch (_) {}
-    }
-
-    // 2) fallback
-    const s = normalizeNumberString(raw);
-    if (!s) return null;
-
-    // لازم يكون شكل رقم (مع احتمال علامة -)
-    if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
-
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function normalizeTablesPreview(tablesPreview) {
-    const out = [];
-    for (const t of tablesPreview) {
-      const sample = Array.isArray(t.sample) ? t.sample : [];
-
-      // sampleNormalized: نفس النص لكن مُنظَّف (digits/sep)
-      const sampleNormalized = sample.map((row) =>
-        (Array.isArray(row) ? row : []).map((cell) => {
-          const s = String(cell ?? "");
-          return normalizeNumberString(s) || s;
-        })
-      );
-
-      // sampleNumbers: نحاول نطلع Number لكل خلية (null إذا فشل)
-      const sampleNumbers = sample.map((row) =>
-        (Array.isArray(row) ? row : []).map((cell) => parseArabicNumber(cell))
-      );
-
-      out.push({
-        index: t.index ?? null,
-        rowCount: t.rowCount ?? null,
-        columnCount: t.columnCount ?? null,
-        sample, // الأصلي
-        sampleNormalized,
-        sampleNumbers,
-      });
-    }
-    return out;
-  }
-
   try {
     const body = req.body || {};
     const normalized = body.normalized;
@@ -137,79 +18,170 @@ module.exports = async function (context, req) {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
 
-    // ✅ pages عادة موجودة، لكن غالباً بدون text (حسب normalize-di)
-    const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
+    // نستخدم tablesPreviewNormalized (الأهم لنا الآن)
+    const tablesPreviewNormalized =
+      Array.isArray(normalized.tablesPreviewNormalized) ? normalized.tablesPreviewNormalized : [];
 
-    // ✅ المهم عندك الآن هو tablesPreview
-    const tablesPreview = Array.isArray(normalized.tablesPreview) ? normalized.tablesPreview : [];
-
-    // كلمات مفتاحية لاكتشاف صفحات القوائم (قد يظل فارغ إذا pages بدون text)
-    const KW = {
-      bs: [
-        "قائمة المركز المالي",
-        "قائمة الوضع المالي",
-        "الميزانية",
-        "الميزانية العمومية",
-        "Statement of Financial Position",
-        "Balance Sheet",
-      ],
-      is: [
-        "قائمة الدخل",
-        "قائمة الربح والخسارة",
-        "قائمة الأرباح والخسائر",
-        "Income Statement",
-        "Profit & Loss",
-        "P&L",
-      ],
-      cf: [
-        "قائمة التدفقات النقدية",
-        "بيان التدفقات النقدية",
-        "Cash Flow Statement",
-        "Statement of Cash Flows",
-      ],
-      eq: [
-        "قائمة التغيرات في حقوق الملكية",
-        "Statement of Changes in Equity",
-        "Statement of Shareholders' Equity",
-      ],
-    };
-
-    const norm = (s) => String(s || "").toLowerCase();
-    const hasAny = (text, arr) => arr.some((k) => norm(text).includes(norm(k)));
-
-    const detected = { balanceSheet: [], incomeStatement: [], cashFlow: [], equity: [] };
-
-    for (const p of pages) {
-      const pageNumber = p.pageNumber ?? p.page ?? null;
-      const text = p.text || ""; // غالباً غير موجود حالياً
-      if (!pageNumber) continue;
-
-      if (hasAny(text, KW.bs)) detected.balanceSheet.push(pageNumber);
-      if (hasAny(text, KW.is)) detected.incomeStatement.push(pageNumber);
-      if (hasAny(text, KW.cf)) detected.cashFlow.push(pageNumber);
-      if (hasAny(text, KW.eq)) detected.equity.push(pageNumber);
+    if (!tablesPreviewNormalized.length) {
+      return send(200, {
+        ok: true,
+        financial: {
+          incomeStatement: { ok: false, reason: "No tablesPreviewNormalized found" },
+        },
+      });
     }
 
-    const uniqSort = (arr) => Array.from(new Set(arr)).sort((a, b) => a - b);
-    detected.balanceSheet = uniqSort(detected.balanceSheet);
-    detected.incomeStatement = uniqSort(detected.incomeStatement);
-    detected.cashFlow = uniqSort(detected.cashFlow);
-    detected.equity = uniqSort(detected.equity);
+    const norm = (s) =>
+      String(s || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
 
-    // ✅ الجديد: تطبيع tablesPreview
-    const tablesPreviewNormalized = normalizeTablesPreview(tablesPreview);
+    const containsAny = (text, keywords) => {
+      const t = norm(text);
+      return keywords.some((k) => t.includes(norm(k)));
+    };
+
+    // ---------- 1) بنود قائمة الدخل التي سنبحث عنها ----------
+    const IS_ITEMS = [
+      { key: "revenue", label: "الإيرادات", kws: ["الإيرادات", "revenue"] },
+      { key: "cogs", label: "تكلفة الإيرادات", kws: ["تكلفة الإيرادات", "cost of revenue", "cost of sales"] },
+      { key: "grossProfit", label: "مجمل الربح", kws: ["مجمل الربح", "gross profit"] },
+      { key: "ads", label: "مصروفات دعاية وإعلان", kws: ["مصروفات دعاية وإعلان", "دعاية", "إعلان", "advertising"] },
+      { key: "gna", label: "مصروفات عمومية وإدارية", kws: ["مصروفات عمومية وإدارية", "عمومية", "إدارية", "g&a", "general and administrative"] },
+      { key: "rnd", label: "مصروفات أبحاث وتطوير", kws: ["مصروفات أبحاث وتطوير", "أبحاث", "تطوير", "r&d", "research and development"] },
+      { key: "operatingProfit", label: "الربح التشغيلي", kws: ["الربح التشغيلي", "operating profit", "operating income"] },
+    ];
+
+    // ---------- 2) نلتقط "رأس الأعمدة" إن أمكن (سنوات/فترات) ----------
+    // في عينتك كان فيه صف: 2024م / 2025م ... الخ
+    const looksLikeYear = (cell) => {
+      const t = norm(cell);
+      return /20\d{2}/.test(t) || t.includes("٢٠٢٤") || t.includes("٢٠٢٥");
+    };
+
+    // ---------- 3) نبحث داخل كل جدول عن صفوف قائمة الدخل ----------
+    // sample في كل جدول عبارة عن Array of rows, كل row عبارة عن Array cells.
+    const results = {};
+    const hits = []; // للتتبع
+
+    for (const table of tablesPreviewNormalized) {
+      const sample = Array.isArray(table.sample) ? table.sample : [];
+      if (!sample.length) continue;
+
+      // اكتشاف صف السنوات (اختياري)
+      let headerYears = null;
+      for (const row of sample.slice(0, 6)) {
+        const yearCells = row.filter(looksLikeYear);
+        if (yearCells.length >= 2) {
+          headerYears = row;
+          break;
+        }
+      }
+
+      for (const row of sample) {
+        // نجمع نص الصف كله
+        const rowText = row.map((c) => String(c ?? "")).join(" | ");
+
+        // لو الصف لا يحتوي أي كلمة من قائمة الدخل، تجاهله بسرعة
+        const quickIS = containsAny(rowText, [
+          "الإيرادات",
+          "تكلفة الإيرادات",
+          "مجمل الربح",
+          "مصروفات",
+          "الربح التشغيلي",
+          "income",
+          "profit",
+        ]);
+        if (!quickIS) continue;
+
+        for (const item of IS_ITEMS) {
+          if (!containsAny(rowText, item.kws)) continue;
+
+          // نحاول استخراج الأرقام من نفس الصف:
+          // نأخذ كل الخلايا التي يمكن تحويلها إلى رقم
+          const numericCells = [];
+          for (let i = 0; i < row.length; i++) {
+            const v = row[i];
+            const n = parseArabicNumber(v);
+            if (typeof n === "number" && Number.isFinite(n)) {
+              numericCells.push({ colIndex: i, raw: v, value: n });
+            }
+          }
+
+          // إذا ما فيه أرقام، نسجل hit بدون أرقام
+          if (!numericCells.length) {
+            hits.push({
+              tableIndex: table.index ?? null,
+              item: item.key,
+              label: item.label,
+              row,
+              note: "Matched label but no numeric cells",
+            });
+            continue;
+          }
+
+          // نخزن أفضل نتيجة (أول مرة) أو إذا كانت أقوى (عدد أرقام أكثر)
+          const current = results[item.key];
+          const candidate = {
+            label: item.label,
+            tableIndex: table.index ?? null,
+            headerYears,
+            row,
+            numbers: numericCells,
+          };
+
+          if (!current || (candidate.numbers?.length || 0) > (current.numbers?.length || 0)) {
+            results[item.key] = candidate;
+          }
+
+          hits.push({
+            tableIndex: table.index ?? null,
+            item: item.key,
+            label: item.label,
+            numbersCount: numericCells.length,
+          });
+        }
+      }
+    }
+
+    // ---------- 4) تبسيط شكل الإخراج للمستخدم ----------
+    // نخرج لكل بند: رقمين (غالبًا 2024/2025) إن توفروا
+    const simplify = (entry) => {
+      if (!entry) return null;
+
+      // خذ أول رقمين على اليسار (أحيانًا تكون الأعمدة 2024/2025)
+      // ملاحظة: هذا “نسخة 1” وسنحسن اختيار الأعمدة في الخطوة التالية.
+      const nums = Array.isArray(entry.numbers) ? entry.numbers : [];
+      const picked = nums.slice(0, 4).map((x) => x.value);
+
+      return {
+        label: entry.label,
+        tableIndex: entry.tableIndex,
+        values: picked,
+        // للاطلاع فقط:
+        row: entry.row,
+        headerYears: entry.headerYears,
+      };
+    };
+
+    const incomeStatement = {};
+    for (const item of IS_ITEMS) {
+      incomeStatement[item.key] = simplify(results[item.key]);
+    }
 
     return send(200, {
       ok: true,
       financial: {
-        pagesDetected: detected,
-        // tablesPreview كما جاء من normalize
-        tablesPreviewCount: tablesPreview.length,
-        tablesPreview: tablesPreview,
-
-        // ✅ التطبيع المطلوب
-        tablesPreviewNormalizedCount: tablesPreviewNormalized.length,
-        tablesPreviewNormalized: tablesPreviewNormalized,
+        incomeStatement: {
+          ok: true,
+          items: incomeStatement,
+          debug: {
+            tablesPreviewNormalizedCount: tablesPreviewNormalized.length,
+            hitsCount: hits.length,
+            hitsSample: hits.slice(0, 50),
+          },
+        },
       },
     });
   } catch (e) {
