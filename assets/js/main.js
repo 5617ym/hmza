@@ -1,4 +1,4 @@
-console.log("MAIN_JS_VERSION = 2B_INGEST_ROUTER_PLUS_EXTRACT_2026-03-02");
+console.log("MAIN_JS_VERSION = 2B_INGEST_ROUTER_PLUS_EXTRACT_2026-03-02_FIXED");
 console.log("main.js loaded ✅");
 
 const fileInput = document.getElementById("fileInput");
@@ -78,7 +78,6 @@ async function safeJson(res) {
    ============================================== */
 
 async function analyzeSingleFile(file) {
-  // (A) طلب uploadUrl + blobUrl
   const r1 = await fetch("/api/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -91,16 +90,10 @@ async function analyzeSingleFile(file) {
   });
 
   const j1 = await safeJson(r1);
-  console.log("UPLOAD-URL:", j1);
-
   if (!r1.ok || !j1?.ok) {
     throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
   }
-  if (!j1.uploadUrl || !j1.blobUrl) {
-    throw new Error(`upload-url missing uploadUrl/blobUrl: ${JSON.stringify(j1)}`);
-  }
 
-  // (B) رفع الملف إلى Azure Blob
   const put = await fetch(j1.uploadUrl, {
     method: "PUT",
     headers: {
@@ -115,7 +108,6 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
-  // (C) نبدأ بـ /api/ingest
   const ingestBody = {
     fileName: file.name,
     blobUrl: j1.blobUrl,
@@ -131,55 +123,45 @@ async function analyzeSingleFile(file) {
   });
 
   const j2 = await safeJson(r2);
-  console.log("INGEST:", j2);
-
   if (!r2.ok || !j2?.ok) {
     throw new Error(`ingest failed: ${JSON.stringify(j2)}`);
   }
 
-  // (D) إذا ingest رجّع next/payload → اتبع المسار تلقائياً
   if (j2?.next) {
-    const nextUrl = j2.next;
-    const payload = j2.payload || ingestBody;
-
-    const r3 = await fetch(nextUrl, {
+    const r3 = await fetch(j2.next, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(j2.payload || ingestBody),
     });
 
     const j3 = await safeJson(r3);
-    console.log("NEXT:", nextUrl, j3);
-
     if (!r3.ok || !j3?.ok) {
-      throw new Error(`next(${nextUrl}) failed: ${JSON.stringify(j3)}`);
+      throw new Error(`next failed: ${JSON.stringify(j3)}`);
     }
-    return j3; // نتيجة التحليل النهائية
+    return j3;
   }
 
-  // (E) إذا ingest رجّع النتيجة النهائية مباشرة
   return j2;
 }
 
 /* ==============================================
-   🧠 Extract Financial (POST /api/extract-financial)
+   🧠 Extract Financial
    ============================================== */
 
 async function extractFinancialFromAnalyze(analyzeData) {
   const normalized = analyzeData?.normalized;
 
   if (!normalized || typeof normalized !== "object") {
-    throw new Error("extract-financial يحتاج normalized من analyze، لكنه غير موجود.");
+    throw new Error("extract-financial يحتاج normalized من analyze.");
   }
 
   const r = await fetch("/api/extract-financial", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ normalized, diag: 1, target: "balance" })
-  
+    body: JSON.stringify({ normalized, diag: 1, target: "balance" }),
+  });
 
   const j = await safeJson(r);
-  console.log("EXTRACT-FINANCIAL:", j);
 
   if (!r.ok || !j?.ok) {
     throw new Error(`extract-financial failed: ${JSON.stringify(j)}`);
@@ -205,9 +187,7 @@ fileInput?.addEventListener("change", () => {
   }
 });
 
-btnClear?.addEventListener("click", () => {
-  clearUI();
-});
+btnClear?.addEventListener("click", clearUI);
 
 btnShow?.addEventListener("click", async () => {
   if (!selectedFiles.length) {
@@ -216,66 +196,27 @@ btnShow?.addEventListener("click", async () => {
   }
 
   btnShow.disabled = true;
-  setStatus("جاري رفع الملف ثم التحليل عبر ingest...", "info");
+  setStatus("جاري رفع الملف ثم التحليل...", "info");
 
   try {
-    // 1) Analyze عبر ingest router
     const data = await analyzeSingleFile(selectedFiles[0]);
     resultsSection?.classList.remove("hidden");
 
-    // ✅ اقرأ من normalized.meta أولاً (الجديد) ثم fallback للقديم
-    const pagesRaw =
-      data?.normalized?.meta?.pages ??
-      data?.pages ??
-      data?.pageCount ??
-      data?.diPagesLen ??
-      0;
+    const pages = Number(data?.normalized?.meta?.pages || 0);
+    const tables = Number(data?.normalized?.meta?.tables || 0);
+    const textLength = Number(data?.normalized?.meta?.textLength || 0);
 
-    const tablesRaw =
-      data?.normalized?.meta?.tables ??
-      data?.tables ??
-      data?.tableCount ??
-      0;
-
-    const textLengthRaw =
-      data?.normalized?.meta?.textLength ??
-      data?.textLength ??
-      (data?.text ? data.text.length : 0) ??
-      0;
-
-    // ✅ لو رجعت Arrays نحسب length، لو رقم نحوله رقم
-    const pages = Array.isArray(pagesRaw) ? pagesRaw.length : Number(pagesRaw || 0);
-    const tables = Array.isArray(tablesRaw) ? tablesRaw.length : Number(tablesRaw || 0);
-    const textLength = Number(textLengthRaw || 0);
-
-    // 2) Extract Financial بعد نجاح analyze
-    setStatus("تم التحليل ✅ — جاري استخراج البيانات المالية...", "info");
+    setStatus("تم التحليل — جاري استخراج البيانات المالية...", "info");
     const fin = await extractFinancialFromAnalyze(data);
-
-    // محاولة عرض ملخص لو موجود (بدون افتراض شكل ثابت)
-    const finSummary =
-      fin?.summary ||
-      fin?.result?.summary ||
-      fin?.data?.summary ||
-      null;
 
     cardsEl.innerHTML = `
       <div class="card">عدد الصفحات: <b>${pages}</b></div>
       <div class="card">عدد الجداول: <b>${tables}</b></div>
       <div class="card">طول النص: <b>${textLength}</b></div>
-
       <div class="card">
-        <div class="muted small">Extract Financial (مختصر):</div>
-        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
-          JSON.stringify(finSummary ?? fin, null, 2).slice(0, 2500)
-        )}</pre>
-      </div>
-
-      <div class="card">
-        <div class="muted small">Raw JSON (Analyze) مختصر:</div>
-        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
-          JSON.stringify(data, null, 2).slice(0, 2000)
-        )}</pre>
+        <pre style="white-space:pre-wrap;max-height:300px;overflow:auto;">
+${escapeHtml(JSON.stringify(fin, null, 2))}
+        </pre>
       </div>
     `;
 
