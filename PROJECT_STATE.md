@@ -1,45 +1,44 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 3B (Extract Financial - Stable Income Statement)
+CURRENT_PHASE: 3B (Extract Financial - Stable Income Statement) ✅ مكتملة تقنياً
 
 CURRENT_TASK:
-تثبيت مسار استخراج قائمة الدخل من tablesPreview داخل /api/extract-financial
-مع:
-
+تثبيت مسار استخراج قائمة الدخل من tablesPreview داخل /api/extract-financial مع:
 - اختيار أحدث سنة تلقائياً عند "بدون مقارنة"
 - تفضيل 3 أشهر إذا كان التقرير ربعياً
-- دعم المقارنة (أحدث سنة + السنة السابقة)
+- دعم المقارنة داخل نفس الملف (أحدث سنة + السنة السابقة)
 - تطبيع الأرقام العربية وتحويلها إلى Numbers حقيقية
 
 LAST_TEST:
-رفع ملف PDF (جاهز) + الضغط على "عرض النتائج".
-
-تم تنفيذ المسار الكامل بنجاح:
+رفع ملف PDF (جاهز) + الضغط على "عرض النتائج"
+المسار الكامل اشتغل بنجاح:
 upload-url → ingest → analyze → extract-financial
-
-جميع الطلبات Status=200.
+جميع الطلبات Status=200
 
 LAST_RESULT:
 - pages / tables / textLength تظهر بشكل صحيح
-- تم اختيار الأعمدة: latest=2024 و previous=2023
-- تم حل مشكلة الأرقام العربية (مثل "٢٫٢١٨,٦٦٢٫٧٣٥")
+- اختيار الأعمدة يعمل:
+  - latest=2024
+  - previous=2023 (عند المقارنة)
+- تطبيع الأرقام العربية تم بنجاح (مثال: "٢٫٢١٨,٦٦٢٫٧٣٥")
 - current أصبح رقم صحيح: 2218662735
 - extract-financial يرجع بيانات منظمة داخل incomeStatementLite
+- selectionPolicy يعكس اختيار المستخدم (noCompare / compare / 2 files)
 
 ACTIVE_PROBLEM:
 لا يوجد خطأ تقني حاليًا في مسار extract-financial.
-
-ملاحظات:
+ملاحظات غير مؤثرة:
 - favicon.ico يظهر 404 (غير مؤثر)
-- لم يتم بعد حساب نسب مالية (هوامش/نمو)
+
+DECISION:
+إغلاق المرحلة 3B (Definition of Done تحقق ✅)
 
 NEXT_STEP:
-الانتقال إلى المرحلة 4:
-
-أحد الخيارات التالية:
-A) إضافة حساب النسب المالية داخل extract-financial (Margins + Growth)
-B) استخراج قائمة المركز المالي بنفس المنهجية
-C) تحسين الواجهة لعرض النتائج بشكل احترافي
+الانتقال إلى المرحلة 4 (اختيار مسار واحد فقط وعدم التشعب):
+B) استخراج قائمة المركز المالي (Balance Sheet) بنفس المنهجية
+- تشغيل DIAG لاختيار أفضل جدول ميزانية
+- تثبيت استخراج أصول/التزامات/حقوق ملكية
+- دعم نفس سياسة المقارنة (بدون مقارنة / مقارنة داخل نفس الملف / ملفين)
 
 STATUS:
-IN_PROGRESS
+READY_FOR_NEXT_PHASE
