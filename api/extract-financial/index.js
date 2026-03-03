@@ -292,11 +292,29 @@ module.exports = async function (context, req) {
     ];
 
     const getRowLabel = (r) => {
-      if (!Array.isArray(r)) return "";
-      const last = norm(r?.[r.length - 1]);
-      const prev = norm(r?.[r.length - 2]);
-      return last || prev || "";
-    };
+  if (!Array.isArray(r)) return "";
+
+  // ابحث عن أول خلية نصية طويلة (غالبًا هي اسم البند)
+  for (let i = 0; i < r.length; i++) {
+    const cell = r[i];
+    if (!cell) continue;
+
+    const raw = String(cell).trim();
+    if (!raw) continue;
+
+    const normalized = norm(raw);
+
+    // تجاهل القيم الرقمية
+    if (/^[\d.,()\-\s]+$/.test(normalized)) continue;
+
+    // أول نص حقيقي نعتبره label
+    if (normalized.length > 2) {
+      return normalized;
+    }
+  }
+
+  return "";
+};
 
 const findRowByLabel = (rows, names) => {
   if (!Array.isArray(rows)) return null;
