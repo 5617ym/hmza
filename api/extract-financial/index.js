@@ -357,12 +357,37 @@ module.exports = async function (context, req) {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
-      const strong = ["قائمة المركز المالي", "الميزانية", "الميزانية العمومية", "قائمة الوضع المالي", "balance sheet", "statement of financial position"];
-      const support = ["الأصول", "الموجودات", "المطلوبات", "الالتزامات", "حقوق الملكية", "إجمالي الأصول", "إجمالي المطلوبات"];
+      const strong = [
+        "قائمة المركز المالي",
+        "الميزانية",
+        "الميزانية العمومية",
+        "قائمة الوضع المالي",
+        "balance sheet",
+        "statement of financial position",
+      ];
+      const support = [
+        "الأصول",
+        "الموجودات",
+        "assets",
+        "المطلوبات",
+        "liabilities",
+        "الالتزامات",
+        "حقوق الملكية",
+        "equity",
+        "إجمالي الأصول",
+        "total assets",
+        "إجمالي المطلوبات",
+        "total liabilities",
+        "إجمالي حقوق الملكية",
+        "total equity",
+      ];
 
       let score = 0;
       for (const k of strong) if (joined.includes(norm(k))) score += 20;
       for (const k of support) if (joined.includes(norm(k))) score += 6;
+
+      // small bonus for current/non-current structure
+      if (joined.includes(norm("متداولة")) && joined.includes(norm("غير متداولة"))) score += 6;
 
       return score;
     };
@@ -418,7 +443,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       DIAG: balance candidates
+       DIAG: pick best balance table (stable, no hardcoded index)
        ========================= */
 
     const normText2 = (s) =>
@@ -429,7 +454,7 @@ module.exports = async function (context, req) {
 
     const tableTextQuick = (t) => {
       const rows = Array.isArray(t?.sample) ? t.sample : [];
-      let out = [];
+      const out = [];
       for (let r = 0; r < rows.length && r < 30; r++) {
         const row = rows[r];
         if (!Array.isArray(row)) continue;
@@ -464,6 +489,8 @@ module.exports = async function (context, req) {
         "total assets",
         "إجمالي المطلوبات",
         "total liabilities",
+        "إجمالي حقوق الملكية",
+        "total equity",
       ];
 
       let score = 0;
@@ -475,11 +502,12 @@ module.exports = async function (context, req) {
       return score;
     };
 
-    if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
-      const ranked = tablesPreview
+    const pickBestBalanceSheetTable = (tables) => {
+      const ranked = (Array.isArray(tables) ? tables : [])
         .map((t) => {
           const text = tableTextQuick(t);
           const score = scoreBalanceSheetText(text);
+
           return {
             index: t?.index ?? null,
             score,
@@ -490,8 +518,20 @@ module.exports = async function (context, req) {
           };
         })
         .filter((x) => x.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5);
+        .sort((a, b) => b.score - a.score);
+
+      const best = ranked[0] || null;
+
+      return {
+        bestTableIndex: best?.index ?? null,
+        bestScore: best?.score ?? null,
+        candidates: ranked.slice(0, 5),
+      };
+    };
+
+    // If diag endpoint requested for balance: return candidates directly (no extraction)
+    if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
+      const bsDiag = pickBestBalanceSheetTable(tablesPreview);
 
       return send(200, {
         ok: true,
@@ -499,9 +539,11 @@ module.exports = async function (context, req) {
         kind: "balanceSheetCandidates",
         pagesMeta,
         tablesPreviewCount: tablesPreview.length,
-        found: ranked.length,
-        ranked,
-        hint: "اختر index الجدول الأعلى Score، ثم سنثبت استخراج الميزانية منه في الخطوة التالية.",
+        bestTableIndex: bsDiag.bestTableIndex,
+        bestScore: bsDiag.bestScore,
+        found: bsDiag.candidates.length,
+        ranked: bsDiag.candidates,
+        hint: "اختر الجدول الأعلى Score (bestTableIndex). سنثبت استخراج الميزانية منه في الخطوة التالية.",
       });
     }
 
@@ -555,20 +597,21 @@ module.exports = async function (context, req) {
     }
 
     /* =========================
-       2) pick best balance table (file A)
-       - priority: if your diag ranked shows index=1 best, we hard-prefer it when present
+       2) pick best balance table (file A) using DIAG first (stable)
        ========================= */
 
-    let bestBalanceA = null;
+    const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
 
-    // Hard prefer index=1 when it exists (from your diag result)
-    const tableIdx1 = tablesPreview.find((t) => Number(t?.index) === 1);
-    if (tableIdx1) {
-      bestBalanceA = { table: tableIdx1, score: scoreBalanceTable(tableIdx1), forcedIndex: 1 };
-    } else {
+    let bestBalanceA = null;
+    if (bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
+      const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
+      if (t) bestBalanceA = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
+    }
+
+    if (!bestBalanceA) {
       for (const t of tablesPreview) {
         const s = scoreBalanceTable(t);
-        if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s };
+        if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s, pickedBy: "fallbackScore" };
       }
     }
 
@@ -583,15 +626,18 @@ module.exports = async function (context, req) {
       const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
 
       if (usingTwoFiles) {
-        // pick balance table from file B
+        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
+
         let bestBalanceB = null;
-        const tableBIdx1 = tablesPreviewPrev.find((t) => Number(t?.index) === 1);
-        if (tableBIdx1) {
-          bestBalanceB = { table: tableBIdx1, score: scoreBalanceTable(tableBIdx1), forcedIndex: 1 };
-        } else {
+        if (bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
+          const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
+          if (t) bestBalanceB = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
+        }
+
+        if (!bestBalanceB) {
           for (const t of tablesPreviewPrev) {
             const s = scoreBalanceTable(t);
-            if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s };
+            if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s, pickedBy: "fallbackScore" };
           }
         }
 
@@ -611,23 +657,32 @@ module.exports = async function (context, req) {
             fileA: {
               tableIndex: bestBalanceA.table.index,
               score: bestBalanceA.score,
+              pickedBy: bestBalanceA.pickedBy,
               pickedColumns: {
-                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
-                previous: pickedBalA.previous ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null } : null,
+                latest: pickedBalA.latest
+                  ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
+                  : null,
+                previous: pickedBalA.previous
+                  ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
+                  : null,
                 debug: pickedBalA.debug,
               },
+              diag: bsDiagA,
             },
             fileB: {
               tableIndex: bestBalanceB.table.index,
               score: bestBalanceB.score,
+              pickedBy: bestBalanceB.pickedBy,
               pickedColumns: {
-                latest: pickedBalB.latest ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null } : null,
+                latest: pickedBalB.latest
+                  ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null }
+                  : null,
                 debug: pickedBalB.debug,
               },
+              diag: bsDiagB,
             },
           };
         } else {
-          // fallback single file
           balanceExtract =
             latestBalColA != null
               ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null)
@@ -636,11 +691,15 @@ module.exports = async function (context, req) {
             fileA: {
               tableIndex: bestBalanceA.table.index,
               score: bestBalanceA.score,
+              pickedBy: bestBalanceA.pickedBy,
               pickedColumns: {
-                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+                latest: pickedBalA.latest
+                  ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
+                  : null,
                 previous: null,
                 debug: pickedBalA.debug,
               },
+              diag: bsDiagA,
             },
             note: "No balance table found in file B; used file A latest only.",
           };
@@ -654,8 +713,11 @@ module.exports = async function (context, req) {
           fileA: {
             tableIndex: bestBalanceA.table.index,
             score: bestBalanceA.score,
+            pickedBy: bestBalanceA.pickedBy,
             pickedColumns: {
-              latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+              latest: pickedBalA.latest
+                ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
+                : null,
               previous: noCompare
                 ? null
                 : pickedBalA.previous
@@ -663,6 +725,7 @@ module.exports = async function (context, req) {
                 : null,
               debug: pickedBalA.debug,
             },
+            diag: bsDiagA,
           },
         };
       }
@@ -711,7 +774,7 @@ module.exports = async function (context, req) {
 
         incomeStatementLite: incomeExtract,
 
-        // NEW OUTPUT
+        // Balance outputs
         balanceSheetLite: balanceExtract,
         balancePickInfo: balancePicked,
 
