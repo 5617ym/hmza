@@ -298,16 +298,40 @@ module.exports = async function (context, req) {
       return last || prev || "";
     };
 
-    const findRowByLabel = (rows, names) => {
-      for (const r of rows) {
-        if (!Array.isArray(r)) continue;
-        const label = getRowLabel(r);
-        if (!label) continue;
-        const ok = names.some((n) => label.includes(norm(n)));
-        if (ok) return { row: r, label };
-      }
-      return null;
-    };
+const findRowByLabel = (rows, names) => {
+  if (!Array.isArray(rows)) return null;
+
+  // 1) First pass: prefer rows that contain إجمالي/total
+  for (const r of rows) {
+    if (!Array.isArray(r)) continue;
+    const label = getRowLabel(r);
+    if (!label) continue;
+
+    const labelNorm = norm(label);
+    const hasTotalWord =
+      labelNorm.includes(norm("إجمالي")) ||
+      labelNorm.includes(norm("اجمالي")) ||
+      labelNorm.includes("total");
+
+    if (!hasTotalWord) continue;
+
+    const ok = names.some((n) => labelNorm.includes(norm(n)));
+    if (ok) return { row: r, label };
+  }
+
+  // 2) Fallback: normal matching
+  for (const r of rows) {
+    if (!Array.isArray(r)) continue;
+    const label = getRowLabel(r);
+    if (!label) continue;
+
+    const labelNorm = norm(label);
+    const ok = names.some((n) => labelNorm.includes(norm(n)));
+    if (ok) return { row: r, label };
+  }
+
+  return null;
+};
 
     const extractIncomeSingleTable = (table, latestColIdx, prevColIdx) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
