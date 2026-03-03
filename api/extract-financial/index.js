@@ -13,12 +13,20 @@ module.exports = async function (context, req) {
     const normalized = body.normalized;
     const normalizedPrev = body.normalizedPrev || null;
 
-    const compare = body.compare ?? null;
+    const compareRaw = body.compare ?? null;
+
+    const compareStr =
+      compareRaw === null || compareRaw === undefined
+        ? ""
+        : String(compareRaw).toLowerCase().trim();
+
     const noCompare =
-      compare === null ||
-      compare === undefined ||
-      String(compare).trim() === "" ||
-      String(compare).includes("بدون");
+      compareStr === "" ||
+      compareStr.includes("بدون") ||
+      compareStr === "none" ||
+      compareStr === "no" ||
+      compareStr === "no_compare" ||
+      compareStr === "no-compare";
 
     const usingTwoFiles = Boolean(normalizedPrev) && !noCompare;
 
