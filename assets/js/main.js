@@ -1,4 +1,4 @@
-console.log("MAIN_JS_VERSION = 2B_INGEST_ROUTER_PLUS_EXTRACT_2026-03-02_FIXED_v2");
+console.log("MAIN_JS_VERSION = 3B_EXTRACT_FINANCIAL_COMPARE_FIX_2026-03-03");
 console.log("main.js loaded ✅");
 
 const fileInput = document.getElementById("fileInput");
@@ -24,7 +24,7 @@ function setStatus(msg, type = "info") {
 }
 
 function escapeHtml(s) {
-  return String(s)
+  return String(s ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -78,22 +78,32 @@ async function safeJson(res) {
    ============================================== */
 
 async function analyzeSingleFile(file) {
+  const period = periodEl?.value || null;
+  const compare = compareEl?.value || null;
+
+  // (A) upload-url
   const r1 = await fetch("/api/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       fileName: file.name,
       contentType: file.type || "application/pdf",
-      period: periodEl?.value || null,
-      compare: compareEl?.value || null,
+      period,
+      compare,
     }),
   });
 
   const j1 = await safeJson(r1);
+  console.log("UPLOAD-URL:", j1);
+
   if (!r1.ok || !j1?.ok) {
     throw new Error(`upload-url failed: ${JSON.stringify(j1)}`);
   }
+  if (!j1.uploadUrl || !j1.blobUrl) {
+    throw new Error(`upload-url missing uploadUrl/blobUrl: ${JSON.stringify(j1)}`);
+  }
 
+  // (B) PUT to Azure Blob
   const put = await fetch(j1.uploadUrl, {
     method: "PUT",
     headers: {
@@ -108,12 +118,13 @@ async function analyzeSingleFile(file) {
     throw new Error(`PUT failed: ${put.status} ${t}`);
   }
 
+  // (C) ingest
   const ingestBody = {
     fileName: file.name,
     blobUrl: j1.blobUrl,
     contentType: file.type || "application/pdf",
-    period: periodEl?.value || null,
-    compare: compareEl?.value || null,
+    period,
+    compare,
   };
 
   const r2 = await fetch("/api/ingest", {
@@ -123,20 +134,28 @@ async function analyzeSingleFile(file) {
   });
 
   const j2 = await safeJson(r2);
+  console.log("INGEST:", j2);
+
   if (!r2.ok || !j2?.ok) {
     throw new Error(`ingest failed: ${JSON.stringify(j2)}`);
   }
 
+  // (D) auto-follow next (analyze)
   if (j2?.next) {
-    const r3 = await fetch(j2.next, {
+    const nextUrl = j2.next;
+    const payload = j2.payload || ingestBody;
+
+    const r3 = await fetch(nextUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(j2.payload || ingestBody),
+      body: JSON.stringify(payload),
     });
 
     const j3 = await safeJson(r3);
+    console.log("NEXT:", nextUrl, j3);
+
     if (!r3.ok || !j3?.ok) {
-      throw new Error(`next failed: ${JSON.stringify(j3)}`);
+      throw new Error(`next(${nextUrl}) failed: ${JSON.stringify(j3)}`);
     }
     return j3;
   }
@@ -145,23 +164,34 @@ async function analyzeSingleFile(file) {
 }
 
 /* ==============================================
-   🧠 Extract Financial
+   🧠 Extract Financial (POST /api/extract-financial)
+   - IMPORTANT: send compare/period so backend can decide noCompare
    ============================================== */
 
 async function extractFinancialFromAnalyze(analyzeData) {
   const normalized = analyzeData?.normalized;
-
   if (!normalized || typeof normalized !== "object") {
-    throw new Error("extract-financial يحتاج normalized من analyze.");
+    throw new Error("extract-financial يحتاج normalized من analyze، لكنه غير موجود.");
   }
+
+  const period = periodEl?.value || null;
+  const compare = compareEl?.value || null;
 
   const r = await fetch("/api/extract-financial", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ normalized }),
+    body: JSON.stringify({
+      normalized,
+      period,
+      compare,
+      // ملاحظة: diag/target اختيارية، لو ما تحتاجها احذفها من هنا
+      diag: 0,
+      target: "income",
+    }),
   });
 
   const j = await safeJson(r);
+  console.log("EXTRACT-FINANCIAL:", j);
 
   if (!r.ok || !j?.ok) {
     throw new Error(`extract-financial failed: ${JSON.stringify(j)}`);
@@ -187,7 +217,7 @@ fileInput?.addEventListener("change", () => {
   }
 });
 
-btnClear?.addEventListener("click", clearUI);
+btnClear?.addEventListener("click", () => clearUI());
 
 btnShow?.addEventListener("click", async () => {
   if (!selectedFiles.length) {
@@ -196,9 +226,10 @@ btnShow?.addEventListener("click", async () => {
   }
 
   btnShow.disabled = true;
-  setStatus("جاري رفع الملف ثم التحليل...", "info");
+  setStatus("جاري رفع الملف ثم التحليل عبر ingest...", "info");
 
   try {
+    // 1) Analyze عبر ingest router
     const data = await analyzeSingleFile(selectedFiles[0]);
     resultsSection?.classList.remove("hidden");
 
@@ -206,17 +237,41 @@ btnShow?.addEventListener("click", async () => {
     const tables = Number(data?.normalized?.meta?.tables || 0);
     const textLength = Number(data?.normalized?.meta?.textLength || 0);
 
-    setStatus("تم التحليل — جاري استخراج البيانات المالية...", "info");
+    // 2) Extract Financial
+    setStatus("تم التحليل ✅ — جاري استخراج قائمة الدخل...", "info");
     const fin = await extractFinancialFromAnalyze(data);
+
+    const picked = fin?.financial?.pickedColumns || fin?.pickedColumns || null;
+    const policy = fin?.financial?.selectionPolicy || fin?.selectionPolicy || null;
+    const income = fin?.financial?.incomeStatementLite || fin?.incomeStatementLite || null;
+
+    const revenueCur = income?.revenue?.current ?? null;
+    const revenuePrev = income?.revenue?.previous ?? null;
 
     cardsEl.innerHTML = `
       <div class="card">عدد الصفحات: <b>${pages}</b></div>
       <div class="card">عدد الجداول: <b>${tables}</b></div>
       <div class="card">طول النص: <b>${textLength}</b></div>
+
       <div class="card">
-        <pre style="white-space:pre-wrap;max-height:300px;overflow:auto;">
-${escapeHtml(JSON.stringify(fin, null, 2))}
-        </pre>
+        <div class="muted small">Policy / Picked Columns:</div>
+        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
+          JSON.stringify({ policy, picked }, null, 2)
+        )}</pre>
+      </div>
+
+      <div class="card">
+        <div class="muted small">Income (Revenue):</div>
+        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
+          JSON.stringify({ current: revenueCur, previous: revenuePrev }, null, 2)
+        )}</pre>
+      </div>
+
+      <div class="card">
+        <div class="muted small">Extract Financial (Raw) مختصر:</div>
+        <pre class="small" style="white-space:pre-wrap;max-height:260px;overflow:auto;margin:8px 0 0;">${escapeHtml(
+          JSON.stringify(fin, null, 2).slice(0, 3000)
+        )}</pre>
       </div>
     `;
 
