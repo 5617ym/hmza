@@ -75,14 +75,43 @@ async function safeJson(res) {
 
 /* ==============================================
    ✅ Normalize UI selections (period/compare)
+   - period: annual | quarterly | ttm
+   - compare: none | compare
    ============================================== */
 
 function getUiSelection() {
-  const period = (periodEl?.value || "").trim() || null;
+  const periodRaw = (periodEl?.value || "").trim();
+
+  // Normalize period to canonical values expected by backend/logs
+  let period = null;
+  if (periodRaw) {
+    const p = periodRaw.toLowerCase();
+    if (p.includes("ربع") || p === "quarterly") period = "quarterly";
+    else if (p.includes("سن") || p === "annual" || p === "yearly") period = "annual";
+    else if (p.includes("12") || p.includes("ttm") || p.includes("آخر") || p.includes("اخر")) period = "ttm";
+    else period = periodRaw; // fallback if you add new options later
+  }
 
   const compareRaw = (compareEl?.value || "").trim();
-  // أي خيار يحتوي "بدون" اعتبره null
-  const compare = !compareRaw || compareRaw.includes("بدون") ? null : compareRaw;
+
+  // Normalize compare to canonical values:
+  // - "none" means no comparison
+  // - "compare" means user wants comparison
+  let compare = "none";
+  if (compareRaw) {
+    const c = compareRaw.toLowerCase();
+    if (
+      c.includes("بدون") ||
+      c === "none" ||
+      c === "no" ||
+      c === "no_compare" ||
+      c === "no-compare"
+    ) {
+      compare = "none";
+    } else {
+      compare = "compare";
+    }
+  }
 
   return { period, compare };
 }
@@ -99,7 +128,7 @@ async function analyzeSingleFile(file, ui) {
       fileName: file.name,
       contentType: file.type || "application/pdf",
       period: ui?.period || null,
-      compare: ui?.compare || null,
+      compare: ui?.compare || "none",
     }),
   });
 
@@ -132,7 +161,7 @@ async function analyzeSingleFile(file, ui) {
     blobUrl: j1.blobUrl,
     contentType: file.type || "application/pdf",
     period: ui?.period || null,
-    compare: ui?.compare || null,
+    compare: ui?.compare || "none",
   };
 
   const r2 = await fetch("/api/ingest", {
@@ -218,7 +247,8 @@ btnShow?.addEventListener("click", async () => {
 
   const ui = getUiSelection();
 
-  if (!ui.compare && selectedFiles.length > 1) {
+  // إذا بدون مقارنة وتم اختيار أكثر من ملف -> سنحلل أول ملف فقط
+  if (ui.compare === "none" && selectedFiles.length > 1) {
     setStatus("تم اختيار أكثر من ملف مع (بدون مقارنة). سيتم تحليل أول ملف فقط.", "warn");
   }
 
@@ -235,7 +265,7 @@ btnShow?.addEventListener("click", async () => {
     const textLengthA = Number(dataA?.normalized?.meta?.textLength || 0);
 
     let dataB = null;
-    if (ui.compare && selectedFiles.length >= 2) {
+    if (ui.compare === "compare" && selectedFiles.length >= 2) {
       setStatus("تم تحليل الملف الأول ✅ — جاري تحليل الملف الثاني للمقارنة...", "info");
       dataB = await analyzeSingleFile(selectedFiles[1], ui);
     }
@@ -253,7 +283,6 @@ btnShow?.addEventListener("click", async () => {
     }
 
     const fin = await extractFinancial(payload);
-
     const selectionInfo = fin?.financial?.selectionPolicy || null;
 
     cardsEl.innerHTML = `
