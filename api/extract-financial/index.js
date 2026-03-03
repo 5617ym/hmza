@@ -350,7 +350,75 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       DIAG: balance candidates (as-is)
+       BALANCE SHEET (NEW)
+       ========================= */
+
+    const scoreBalanceTable = (table) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+
+      const strong = ["قائمة المركز المالي", "الميزانية", "الميزانية العمومية", "قائمة الوضع المالي", "balance sheet", "statement of financial position"];
+      const support = ["الأصول", "الموجودات", "المطلوبات", "الالتزامات", "حقوق الملكية", "إجمالي الأصول", "إجمالي المطلوبات"];
+
+      let score = 0;
+      for (const k of strong) if (joined.includes(norm(k))) score += 20;
+      for (const k of support) if (joined.includes(norm(k))) score += 6;
+
+      return score;
+    };
+
+    const wantBalance = [
+      { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الأصول", "Total assets"] },
+      { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "Total liabilities"] },
+      { key: "totalEquity", names: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "Total equity", "حقوق الملكية"] },
+      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "Current assets"] },
+      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
+      { key: "currentLiabilities", names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"] },
+      { key: "nonCurrentLiabilities", names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"] },
+    ];
+
+    const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const out = {};
+
+      for (const item of wantBalance) {
+        const hit = findRowByLabel(rows, item.names);
+        if (!hit) {
+          out[item.key] = null;
+          continue;
+        }
+        const cur = latestColIdx != null ? parseNumberSmart(hit.row?.[latestColIdx]) : null;
+        const prev = prevColIdx != null ? parseNumberSmart(hit.row?.[prevColIdx]) : null;
+        out[item.key] = { label: hit.label, current: cur, previous: prev };
+      }
+
+      return out;
+    };
+
+    const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
+      const rowsA = Array.isArray(tableA?.sample) ? tableA.sample : [];
+      const rowsB = Array.isArray(tableB?.sample) ? tableB.sample : [];
+      const out = {};
+
+      for (const item of wantBalance) {
+        const hitA = findRowByLabel(rowsA, item.names);
+        const hitB = findRowByLabel(rowsB, item.names);
+
+        const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
+        const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
+
+        out[item.key] = {
+          label: hitA?.label || hitB?.label || null,
+          current: cur,
+          previous: prev,
+        };
+      }
+
+      return out;
+    };
+
+    /* =========================
+       DIAG: balance candidates
        ========================= */
 
     const normText2 = (s) =>
@@ -486,19 +554,119 @@ module.exports = async function (context, req) {
       incomeExtract = latestColA != null ? extractIncomeSingleTable(bestA.table, latestColA, prevColA) : {};
     }
 
-    // ✅ مهم: حتى لو اكتشفنا previous داخل الملف، نخفيه إذا noCompare = true
-    const pickedColumnsForResponse = {
-      latest: pickedA.latest
-        ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null }
-        : null,
-      previous:
-        noCompare
-          ? null
-          : pickedA.previous
-          ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null }
-          : null,
-      debug: pickedA.debug,
-    };
+    /* =========================
+       2) pick best balance table (file A)
+       - priority: if your diag ranked shows index=1 best, we hard-prefer it when present
+       ========================= */
+
+    let bestBalanceA = null;
+
+    // Hard prefer index=1 when it exists (from your diag result)
+    const tableIdx1 = tablesPreview.find((t) => Number(t?.index) === 1);
+    if (tableIdx1) {
+      bestBalanceA = { table: tableIdx1, score: scoreBalanceTable(tableIdx1), forcedIndex: 1 };
+    } else {
+      for (const t of tablesPreview) {
+        const s = scoreBalanceTable(t);
+        if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s };
+      }
+    }
+
+    let balanceExtract = {};
+    let balancePicked = null;
+
+    if (bestBalanceA?.table) {
+      const colsBalA = detectColumns(bestBalanceA.table);
+      const pickedBalA = pickLatestColumns(colsBalA);
+
+      const latestBalColA = pickedBalA.latest?.col ?? null;
+      const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
+
+      if (usingTwoFiles) {
+        // pick balance table from file B
+        let bestBalanceB = null;
+        const tableBIdx1 = tablesPreviewPrev.find((t) => Number(t?.index) === 1);
+        if (tableBIdx1) {
+          bestBalanceB = { table: tableBIdx1, score: scoreBalanceTable(tableBIdx1), forcedIndex: 1 };
+        } else {
+          for (const t of tablesPreviewPrev) {
+            const s = scoreBalanceTable(t);
+            if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s };
+          }
+        }
+
+        if (bestBalanceB?.table) {
+          const colsBalB = detectColumns(bestBalanceB.table);
+          const pickedBalB = pickLatestColumns(colsBalB);
+          const latestBalColB = pickedBalB.latest?.col ?? null;
+
+          balanceExtract = extractBalanceTwoFiles(
+            bestBalanceA.table,
+            latestBalColA,
+            bestBalanceB.table,
+            latestBalColB
+          );
+
+          balancePicked = {
+            fileA: {
+              tableIndex: bestBalanceA.table.index,
+              score: bestBalanceA.score,
+              pickedColumns: {
+                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+                previous: pickedBalA.previous ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null } : null,
+                debug: pickedBalA.debug,
+              },
+            },
+            fileB: {
+              tableIndex: bestBalanceB.table.index,
+              score: bestBalanceB.score,
+              pickedColumns: {
+                latest: pickedBalB.latest ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null } : null,
+                debug: pickedBalB.debug,
+              },
+            },
+          };
+        } else {
+          // fallback single file
+          balanceExtract =
+            latestBalColA != null
+              ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null)
+              : {};
+          balancePicked = {
+            fileA: {
+              tableIndex: bestBalanceA.table.index,
+              score: bestBalanceA.score,
+              pickedColumns: {
+                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+                previous: null,
+                debug: pickedBalA.debug,
+              },
+            },
+            note: "No balance table found in file B; used file A latest only.",
+          };
+        }
+      } else {
+        balanceExtract =
+          latestBalColA != null
+            ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, prevBalColA)
+            : {};
+        balancePicked = {
+          fileA: {
+            tableIndex: bestBalanceA.table.index,
+            score: bestBalanceA.score,
+            pickedColumns: {
+              latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+              previous: noCompare
+                ? null
+                : pickedBalA.previous
+                ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
+                : null,
+              debug: pickedBalA.debug,
+            },
+          },
+        };
+      }
+    }
 
     return send(200, {
       ok: true,
@@ -509,7 +677,7 @@ module.exports = async function (context, req) {
           noCompare,
           usingTwoFiles,
           rule: noCompare
-            ? "No compare selected -> use latest column only (even if file contains multiple years)."
+            ? "No compare selected -> pick latest year/period only."
             : usingTwoFiles
             ? "Compare selected + 2 files -> current from file A (latest) vs previous from file B (latest)."
             : "Compare selected -> pick latest + previous from same file (prefer same period type).",
@@ -531,9 +699,21 @@ module.exports = async function (context, req) {
           hasNote: c.hasNote,
         })),
 
-        pickedColumns: pickedColumnsForResponse,
+        pickedColumns: {
+          latest: pickedA.latest
+            ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null }
+            : null,
+          previous: pickedA.previous
+            ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null }
+            : null,
+          debug: pickedA.debug,
+        },
 
         incomeStatementLite: incomeExtract,
+
+        // NEW OUTPUT
+        balanceSheetLite: balanceExtract,
+        balancePickInfo: balancePicked,
 
         sample: bestA.table.sample?.slice(0, 12) || [],
       },
