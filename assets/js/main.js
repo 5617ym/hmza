@@ -282,7 +282,7 @@ btnShow?.addEventListener("click", async () => {
       payload.normalizedPrev = dataB.normalized;
     }
 
-    const fin = await extractFinancial(payload);
+    const fin = await extractFinancial({ ...payload, diag: 1 });
     const selectionInfo = fin?.financial?.selectionPolicy || null;
 
     cardsEl.innerHTML = `
