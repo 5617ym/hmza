@@ -486,6 +486,20 @@ module.exports = async function (context, req) {
       incomeExtract = latestColA != null ? extractIncomeSingleTable(bestA.table, latestColA, prevColA) : {};
     }
 
+    // ✅ مهم: حتى لو اكتشفنا previous داخل الملف، نخفيه إذا noCompare = true
+    const pickedColumnsForResponse = {
+      latest: pickedA.latest
+        ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null }
+        : null,
+      previous:
+        noCompare
+          ? null
+          : pickedA.previous
+          ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null }
+          : null,
+      debug: pickedA.debug,
+    };
+
     return send(200, {
       ok: true,
       financial: {
@@ -495,7 +509,7 @@ module.exports = async function (context, req) {
           noCompare,
           usingTwoFiles,
           rule: noCompare
-            ? "No compare selected -> pick latest year/period only."
+            ? "No compare selected -> use latest column only (even if file contains multiple years)."
             : usingTwoFiles
             ? "Compare selected + 2 files -> current from file A (latest) vs previous from file B (latest)."
             : "Compare selected -> pick latest + previous from same file (prefer same period type).",
@@ -517,15 +531,7 @@ module.exports = async function (context, req) {
           hasNote: c.hasNote,
         })),
 
-        pickedColumns: {
-          latest: pickedA.latest
-            ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null }
-            : null,
-          previous: pickedA.previous
-            ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null }
-            : null,
-          debug: pickedA.debug,
-        },
+        pickedColumns: pickedColumnsForResponse,
 
         incomeStatementLite: incomeExtract,
 
