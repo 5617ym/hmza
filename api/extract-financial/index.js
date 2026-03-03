@@ -20,22 +20,20 @@ module.exports = async function (context, req) {
       String(compare).trim() === "" ||
       String(compare).includes("بدون");
 
-    // === DIAG FLAGS (NEW) ===
-    // diag=1 -> يرجّع مرشحين الميزانية فقط (بدون استخراج قائمة الدخل)
+    // === DIAG FLAGS ===
+    // diag=1 -> يرجّع مرشحين الميزانية فقط
     const diag =
       String(req.query?.diag || body.diag || "").toLowerCase() === "1" ||
       String(req.query?.diag || body.diag || "").toLowerCase() === "true";
 
-    // target اختياري للمستقبل (balance / income)
+    // target اختياري (balance / income)
     const target = String(req.query?.target || body.target || "").toLowerCase();
 
     if (!normalized || typeof normalized !== "object") {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
 
-    // عندك الآن tablesPreview (ليس tables)
     const tablesPreview = Array.isArray(normalized.tablesPreview) ? normalized.tablesPreview : [];
-
     const pagesMeta = normalized?.meta || null;
 
     /* =========================
@@ -69,7 +67,6 @@ module.exports = async function (context, req) {
     };
 
     const normalizeSeparators = (s) => {
-      // توحيد الفواصل العربية/الأوربية
       return String(s || "")
         .replace(/٫/g, ".") // Arabic decimal
         .replace(/[٬،]/g, ","); // Arabic thousands/comma
@@ -77,32 +74,19 @@ module.exports = async function (context, req) {
 
     const norm = (s) => toLatinDigits(normalizeSeparators(String(s || ""))).toLowerCase().trim();
 
-    /**
-     * parseNumberSmart (FIXED)
-     * - يتعامل مع:
-     *   (1,234,567)
-     *   ١٬٢٣٤٬٥٦٧
-     *   ٢٫٢١٨,٦٦٢٫٧٣٥  => 2218662735  (تجميع آلاف مختلط)
-     *   1,234,567.89
-     *   1.234.567,89 (لو حصلت)
-     */
     const parseNumberSmart = (raw) => {
       if (raw === null || raw === undefined) return null;
 
       let s = toLatinDigits(normalizeSeparators(String(raw))).trim();
       if (!s) return null;
 
-      // سالب بين أقواس
       let neg = false;
       if (s.includes("(") && s.includes(")")) {
         neg = true;
         s = s.replace(/[()]/g, "");
       }
 
-      // إزالة أي شيء غير الأرقام والفواصل والنقاط والإشارة
       s = s.replace(/[^\d.,\-+]/g, "");
-
-      // أحيانًا يكون فيه أكثر من إشارة، نظفها
       s = s.replace(/(?!^)[\-+]/g, "");
 
       const hasDot = s.includes(".");
@@ -110,35 +94,27 @@ module.exports = async function (context, req) {
 
       const isGroupedThousands = (x) => /^\d{1,3}([.,]\d{3})+$/.test(x);
 
-      // حالة نمط تجميع آلاف واضح
       if (isGroupedThousands(s)) {
         const n = Number(s.replace(/[.,]/g, ""));
         return Number.isFinite(n) ? (neg ? -n : n) : null;
       }
 
-      // إذا فيه نقط + فواصل مع بعض:
       if (hasDot && hasComma) {
-        // لو آخر جزء بعد آخر فاصلة/نقطة طوله 3 غالباً تجميع آلاف
         const lastSep = Math.max(s.lastIndexOf("."), s.lastIndexOf(","));
         const tail = s.slice(lastSep + 1);
 
         if (/^\d{3}$/.test(tail)) {
-          // اعتبرها كلها تجميع آلاف (مثل 2.218,662.735)
           const n = Number(s.replace(/[.,]/g, ""));
           return Number.isFinite(n) ? (neg ? -n : n) : null;
         }
 
-        // غير ذلك: حدّد العشري من آخر فاصل (الأقرب أنه عشري)
-        // إذا آخر فاصل هو ',' -> عشري أوروبي
         if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
-          // احذف نقاط التجميع، وحول آخر ',' إلى '.'
           const parts = s.split(",");
-          const dec = parts.pop(); // آخر جزء
+          const dec = parts.pop();
           const intPart = parts.join("").replace(/\./g, "");
           const n = Number(intPart + "." + dec);
           return Number.isFinite(n) ? (neg ? -n : n) : null;
         } else {
-          // آخر فاصل هو '.' -> عشري أمريكي
           const parts = s.split(".");
           const dec = parts.pop();
           const intPart = parts.join("").replace(/,/g, "");
@@ -147,31 +123,24 @@ module.exports = async function (context, req) {
         }
       }
 
-      // إذا فقط فاصلة
       if (!hasDot && hasComma) {
-        // إن كان نمط 1,234,567 اعتبره تجميع آلاف
         if (/^\d{1,3}(,\d{3})+$/.test(s)) {
           const n = Number(s.replace(/,/g, ""));
           return Number.isFinite(n) ? (neg ? -n : n) : null;
         }
-        // وإلا اعتبرها عشري (1,23)
         const n = Number(s.replace(",", "."));
         return Number.isFinite(n) ? (neg ? -n : n) : null;
       }
 
-      // إذا فقط نقطة
       if (hasDot && !hasComma) {
-        // إن كان نمط 1.234.567 اعتبره تجميع آلاف
         if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
           const n = Number(s.replace(/\./g, ""));
           return Number.isFinite(n) ? (neg ? -n : n) : null;
         }
-        // وإلا عشري عادي
         const n = Number(s);
         return Number.isFinite(n) ? (neg ? -n : n) : null;
       }
 
-      // لا فواصل ولا نقاط
       const n = Number(s);
       return Number.isFinite(n) ? (neg ? -n : n) : null;
     };
@@ -184,8 +153,8 @@ module.exports = async function (context, req) {
       return y >= 2000 && y <= 2100 ? y : null;
     };
 
-    const headerRowLimit = 5;
-    const detectColumns = (table) => {
+    // ✅ detectColumns: نوسّع قراءة الهيدر (مهم للربع السنوي)
+    const detectColumns = (table, headerRowsLimit = 12) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const colCount = Number(table?.columnCount || 0);
 
@@ -199,7 +168,7 @@ module.exports = async function (context, req) {
         headerText: "",
       }));
 
-      const topRows = rows.slice(0, headerRowLimit);
+      const topRows = rows.slice(0, Math.max(1, headerRowsLimit));
 
       for (const r of topRows) {
         for (let c = 0; c < colCount; c++) {
@@ -212,12 +181,15 @@ module.exports = async function (context, req) {
           const y = findYear(t);
           if (y) cols[c].years.push(y);
 
-          if (t.includes("الثلاثة") && t.includes("أشهر")) cols[c].hasThreeMonths = true;
-          if (t.includes("التسعة") && t.includes("أشهر")) cols[c].hasNineMonths = true;
+          // فترات (ربع سنوي)
+          if ((t.includes("الثلاثة") || t.includes("3")) && t.includes("أشهر")) cols[c].hasThreeMonths = true;
+          if ((t.includes("التسعة") || t.includes("9")) && t.includes("أشهر")) cols[c].hasNineMonths = true;
 
-          if (t.includes("ديسمبر") || t.includes("السنة") || t.includes("منتهية")) cols[c].hasAnnual = true;
+          // سنوي
+          if (t.includes("ديسمبر") || t.includes("السنة") || t.includes("منتهية") || t.includes("سنة")) cols[c].hasAnnual = true;
 
-          if (t.includes("إيضاح") || t.includes("ايضاح") || t === "إيضاح") cols[c].hasNote = true;
+          // عمود الإيضاحات
+          if (t.includes("إيضاح") || t.includes("ايضاح")) cols[c].hasNote = true;
         }
       }
 
@@ -228,7 +200,12 @@ module.exports = async function (context, req) {
       return cols;
     };
 
-    const pickLatestColumns = (cols) => {
+    /**
+     * pickLatestColumns:
+     * - إذا لقى سنوات: يختار أحدث سنة (ويفضل 3 أشهر إن وجد)
+     * - إذا ما لقى سنوات (شائع بالربع السنوي): fallback رقمي + يفضّل 3 أشهر ثم 9 أشهر
+     */
+    const pickLatestColumns = (cols, tableForFallback = null) => {
       const candidates = cols.filter((c) => !c.hasNote);
 
       const withYears = candidates
@@ -239,35 +216,145 @@ module.exports = async function (context, req) {
         }))
         .filter((c) => c.latestYear);
 
-      if (!withYears.length)
-        return { latest: null, previous: null, debug: { reason: "no years detected" } };
+      // ✅ الحالة الطبيعية: سنوات موجودة
+      if (withYears.length) {
+        const maxYear = Math.max(...withYears.map((c) => c.latestYear));
 
-      const maxYear = Math.max(...withYears.map((c) => c.latestYear));
-
-      const latestCandidates = withYears
-        .filter((c) => c.latestYear === maxYear)
-        .sort((a, b) => {
-          if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore;
-          return b.col - a.col;
-        });
-
-      const latest = latestCandidates[0];
-
-      const yearsAll = Array.from(new Set(withYears.map((c) => c.latestYear))).sort((a, b) => a - b);
-      const prevYear = yearsAll.length >= 2 ? yearsAll[yearsAll.length - 2] : null;
-
-      let previous = null;
-      if (prevYear) {
-        const prevCandidates = withYears
-          .filter((c) => c.latestYear === prevYear)
+        const latestCandidates = withYears
+          .filter((c) => c.latestYear === maxYear)
           .sort((a, b) => {
             if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore;
             return b.col - a.col;
           });
-        previous = prevCandidates[0] || null;
+
+        const latest = latestCandidates[0];
+
+        const yearsAll = Array.from(new Set(withYears.map((c) => c.latestYear))).sort((a, b) => a - b);
+        const prevYear = yearsAll.length >= 2 ? yearsAll[yearsAll.length - 2] : null;
+
+        let previous = null;
+        if (prevYear) {
+          const prevCandidates = withYears
+            .filter((c) => c.latestYear === prevYear)
+            .sort((a, b) => {
+              if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore;
+              return b.col - a.col;
+            });
+          previous = prevCandidates[0] || null;
+        }
+
+        return { latest, previous, debug: { maxYear, prevYear, yearsAll, mode: "years" } };
       }
 
-      return { latest, previous, debug: { maxYear, prevYear, yearsAll } };
+      // ✅ Fallback: ما فيه سنوات -> اختيار رقمي
+      if (!tableForFallback) {
+        return { latest: null, previous: null, debug: { reason: "no years detected", mode: "no_table_for_fallback" } };
+      }
+
+      const rows = Array.isArray(tableForFallback?.sample) ? tableForFallback.sample : [];
+      const colCount = Number(tableForFallback?.columnCount || 0);
+
+      const isNumericCell = (v) => {
+        const n = parseNumberSmart(v);
+        return typeof n === "number" && Number.isFinite(n);
+      };
+
+      // نحدد عمود الوصف (أكثر عمود نصي)
+      const textScores = Array.from({ length: colCount }, (_, c) => {
+        let text = 0;
+        let total = 0;
+        for (let r = 0; r < Math.min(rows.length, 25); r++) {
+          const cell = rows[r]?.[c];
+          if (cell === null || cell === undefined) continue;
+          const t = String(cell).trim();
+          if (!t) continue;
+          total++;
+          if (!isNumericCell(t)) text++;
+        }
+        return { col: c, textRatio: total ? text / total : 0, total };
+      });
+
+      const labelCol =
+        textScores
+          .filter((x) => x.total >= 5)
+          .sort((a, b) => b.textRatio - a.textRatio)[0]?.col ?? null;
+
+      // ✅ تفضيل الربع سنوي: لو فيه أعمدة hasThreeMonths نركز عليها، ثم 9 أشهر، ثم الكل
+      let preferredCols = candidates.map((c) => c.col);
+      const three = candidates.filter((c) => c.hasThreeMonths).map((c) => c.col);
+      const nine = candidates.filter((c) => c.hasNineMonths).map((c) => c.col);
+
+      if (three.length) preferredCols = three;
+      else if (nine.length) preferredCols = nine;
+
+      const numericScores = Array.from({ length: colCount }, (_, c) => {
+        if (c === labelCol) return { col: c, numericHits: 0 };
+        if (!preferredCols.includes(c)) return { col: c, numericHits: 0 };
+        let hits = 0;
+        for (let r = 0; r < Math.min(rows.length, 25); r++) {
+          const cell = rows[r]?.[c];
+          if (isNumericCell(cell)) hits++;
+        }
+        return { col: c, numericHits: hits };
+      })
+        .filter((x) => x.numericHits > 0)
+        .sort((a, b) => b.numericHits - a.numericHits || b.col - a.col);
+
+      if (!numericScores.length) {
+        // fallback أخير: جرّب كل الأعمدة عدا labelCol
+        const numericScores2 = Array.from({ length: colCount }, (_, c) => {
+          if (c === labelCol) return { col: c, numericHits: 0 };
+          let hits = 0;
+          for (let r = 0; r < Math.min(rows.length, 25); r++) {
+            const cell = rows[r]?.[c];
+            if (isNumericCell(cell)) hits++;
+          }
+          return { col: c, numericHits: hits };
+        })
+          .filter((x) => x.numericHits > 0)
+          .sort((a, b) => b.numericHits - a.numericHits || b.col - a.col);
+
+        if (!numericScores2.length) {
+          return {
+            latest: null,
+            previous: null,
+            debug: { reason: "no years detected", mode: "numeric_fallback_failed", labelCol },
+          };
+        }
+
+        const top = numericScores2.slice(0, 4).map((x) => x.col).sort((a, b) => a - b);
+        const latestCol = top[top.length - 1] ?? null;
+        const prevCol = top.length >= 2 ? top[top.length - 2] : null;
+
+        return {
+          latest: latestCol != null ? { col: latestCol, years: [] } : null,
+          previous: prevCol != null ? { col: prevCol, years: [] } : null,
+          debug: {
+            reason: "no years detected",
+            mode: "numeric_fallback_all_cols",
+            labelCol,
+            chosen: { latestCol, prevCol },
+            numericScores: numericScores2.slice(0, 6),
+          },
+        };
+      }
+
+      const topCols = numericScores.slice(0, 4).map((x) => x.col).sort((a, b) => a - b);
+      const latestCol = topCols[topCols.length - 1] ?? null;
+      const prevCol = topCols.length >= 2 ? topCols[topCols.length - 2] : null;
+
+      return {
+        latest: latestCol != null ? { col: latestCol, years: [] } : null,
+        previous: prevCol != null ? { col: prevCol, years: [] } : null,
+        debug: {
+          reason: "no years detected",
+          mode: three.length ? "numeric_fallback_prefer_3m" : nine.length ? "numeric_fallback_prefer_9m" : "numeric_fallback",
+          labelCol,
+          chosen: { latestCol, prevCol },
+          numericScores: numericScores.slice(0, 6),
+          preferredCols: preferredCols.slice(0, 12),
+        },
+      };
     };
 
     const scoreIncomeTable = (table) => {
@@ -305,10 +392,7 @@ module.exports = async function (context, req) {
 
       const want = [
         { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "Revenue"] },
-        {
-          key: "costOfRevenue",
-          names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"],
-        },
+        { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"] },
         { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
         { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
         { key: "netProfitBeforeZakat", names: ["صافي ربح الفترة قبل الزكاة", "صافي ربح السنة قبل الزكاة"] },
@@ -350,7 +434,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       DIAG: Balance Sheet candidates from tablesPreview (NEW)
+       DIAG: Balance Sheet candidates from tablesPreview
        ========================= */
 
     const normText2 = (s) =>
@@ -402,7 +486,6 @@ module.exports = async function (context, req) {
       for (const k of keysStrong) if (text.includes(normText2(k))) score += 50;
       for (const k of keysSupport) if (text.includes(normText2(k))) score += 10;
 
-      // مكافأة إذا ظهر "متداولة/غير متداولة" لأنها عادة بالميزانية
       if (text.includes("متداولة") || text.includes("غير متداولة")) score += 8;
 
       return score;
@@ -460,17 +543,17 @@ module.exports = async function (context, req) {
     }
 
     /* =========================
-       2) تحديد أعمدة السنة الأحدث (ومقارنة إن وجدت)
+       2) تحديد أعمدة السنة/الفترة الأحدث (ومقارنة إن وجدت)
        ========================= */
 
-    const cols = detectColumns(bestIncome.table);
-    const picked = pickLatestColumns(cols);
+    const cols = detectColumns(bestIncome.table, 12);
+    const picked = pickLatestColumns(cols, bestIncome.table);
 
     const latestCol = picked.latest?.col ?? null;
     const prevCol = !noCompare ? picked.previous?.col ?? null : null;
 
     /* =========================
-       3) استخراج أرقام قائمة الدخل من نفس الجدول
+       3) استخراج أرقام قائمة الدخل
        ========================= */
 
     const incomeExtract =
@@ -478,16 +561,14 @@ module.exports = async function (context, req) {
 
     /* =========================
        4) استخراج قائمة المركز المالي (Balance Sheet) من index ثابت = 2
-       - بدون مقارنة: أحدث سنة فقط
-       - مع مقارنة: أحدث سنة + السنة السابقة
        ========================= */
 
     const BALANCE_TABLE_INDEX = 2;
     const balanceTable = tablesPreview.find((t) => Number(t?.index) === BALANCE_TABLE_INDEX) || null;
 
-    const balanceCols = balanceTable ? detectColumns(balanceTable) : [];
+    const balanceCols = balanceTable ? detectColumns(balanceTable, 12) : [];
     const balancePicked = balanceTable
-      ? pickLatestColumns(balanceCols)
+      ? pickLatestColumns(balanceCols, balanceTable)
       : { latest: null, previous: null, debug: { reason: "balance table not found" } };
 
     const balanceLatestCol = balancePicked.latest?.col ?? null;
@@ -498,12 +579,24 @@ module.exports = async function (context, req) {
 
       const want = [
         { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الاصول", "total assets"] },
-        { key: "currentAssets", names: ["إجمالي الأصول المتداولة", "اجمالي الاصول المتداولة", "الأصول المتداولة", "الاصول المتداولة", "current assets"] },
-        { key: "nonCurrentAssets", names: ["إجمالي الأصول غير المتداولة", "اجمالي الاصول غير المتداولة", "الأصول غير المتداولة", "الاصول غير المتداولة", "non-current assets"] },
+        {
+          key: "currentAssets",
+          names: ["إجمالي الأصول المتداولة", "اجمالي الاصول المتداولة", "الأصول المتداولة", "الاصول المتداولة", "current assets"],
+        },
+        {
+          key: "nonCurrentAssets",
+          names: ["إجمالي الأصول غير المتداولة", "اجمالي الاصول غير المتداولة", "الأصول غير المتداولة", "الاصول غير المتداولة", "non-current assets"],
+        },
 
         { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "total liabilities"] },
-        { key: "currentLiabilities", names: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "المطلوبات المتداولة", "current liabilities"] },
-        { key: "nonCurrentLiabilities", names: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "المطلوبات غير المتداولة", "non-current liabilities"] },
+        {
+          key: "currentLiabilities",
+          names: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "المطلوبات المتداولة", "current liabilities"],
+        },
+        {
+          key: "nonCurrentLiabilities",
+          names: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "المطلوبات غير المتداولة", "non-current liabilities"],
+        },
 
         { key: "totalEquity", names: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "حقوق الملكية", "total equity", "equity"] },
       ];
@@ -545,7 +638,7 @@ module.exports = async function (context, req) {
     const balanceSheetLite =
       balanceTable && balanceLatestCol != null
         ? extractBalanceFromTable(balanceTable, balanceLatestCol, balancePrevCol)
-        : { note: "Balance table not found or columns not detected", tableIndex: BALANCE_TABLE_INDEX };
+        : { note: "Balance columns not detected", tableIndex: BALANCE_TABLE_INDEX, debug: balancePicked.debug || null };
 
     return send(200, {
       ok: true,
@@ -555,8 +648,8 @@ module.exports = async function (context, req) {
         selectionPolicy: {
           noCompare,
           rule: noCompare
-            ? "No compare selected -> pick latest year only (prefer 3-month if quarterly)."
-            : "Compare selected -> pick latest year + previous year (prefer same period type).",
+            ? "No compare selected -> pick latest period/year only (prefer 3-month if quarterly)."
+            : "Compare selected -> pick latest + previous (prefer same period type).",
         },
 
         bestIncomeTable: {
@@ -577,15 +670,13 @@ module.exports = async function (context, req) {
 
         pickedColumns: {
           latest: picked.latest ? { col: picked.latest.col, year: picked.latest.years?.slice(-1)?.[0] ?? null } : null,
-          previous: picked.previous
-            ? { col: picked.previous.col, year: picked.previous.years?.slice(-1)?.[0] ?? null }
-            : null,
+          previous: picked.previous ? { col: picked.previous.col, year: picked.previous.years?.slice(-1)?.[0] ?? null } : null,
           debug: picked.debug,
         },
 
         incomeStatementLite: incomeExtract,
 
-        // ✅ Balance Sheet additions
+        // ✅ Balance additions
         balanceSheetTable: balanceTable
           ? { index: balanceTable.index, columnCount: balanceTable.columnCount, rowCount: balanceTable.rowCount }
           : null,
@@ -600,12 +691,8 @@ module.exports = async function (context, req) {
         })),
 
         balancePickedColumns: {
-          latest: balancePicked.latest
-            ? { col: balancePicked.latest.col, year: balancePicked.latest.years?.slice(-1)?.[0] ?? null }
-            : null,
-          previous: balancePicked.previous
-            ? { col: balancePicked.previous.col, year: balancePicked.previous.years?.slice(-1)?.[0] ?? null }
-            : null,
+          latest: balancePicked.latest ? { col: balancePicked.latest.col, year: balancePicked.latest.years?.slice(-1)?.[0] ?? null } : null,
+          previous: balancePicked.previous ? { col: balancePicked.previous.col, year: balancePicked.previous.years?.slice(-1)?.[0] ?? null } : null,
           debug: balancePicked.debug,
         },
 
