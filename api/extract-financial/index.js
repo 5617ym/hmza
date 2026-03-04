@@ -14,7 +14,6 @@ module.exports = async function (context, req) {
     const normalizedPrev = body.normalizedPrev || null;
 
     const compareRaw = body.compare ?? null;
-
     const compareStr =
       compareRaw === null || compareRaw === undefined
         ? ""
@@ -36,14 +35,6 @@ module.exports = async function (context, req) {
 
     const target = String(req.query?.target || body.target || "").toLowerCase();
 
-    // OPTIONAL override to force a balance table index
-    const balanceTableIndexOverrideRaw =
-      body.balanceTableIndex ?? body.balanceIndex ?? body.balance_table_index ?? null;
-    const balanceTableIndexOverride =
-      balanceTableIndexOverrideRaw === null || balanceTableIndexOverrideRaw === undefined
-        ? null
-        : Number(balanceTableIndexOverrideRaw);
-
     if (!normalized || typeof normalized !== "object") {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
@@ -63,26 +54,10 @@ module.exports = async function (context, req) {
 
     const toLatinDigits = (s) => {
       const map = {
-        "٠": "0",
-        "١": "1",
-        "٢": "2",
-        "٣": "3",
-        "٤": "4",
-        "٥": "5",
-        "٦": "6",
-        "٧": "7",
-        "٨": "8",
-        "٩": "9",
-        "۰": "0",
-        "۱": "1",
-        "۲": "2",
-        "۳": "3",
-        "۴": "4",
-        "۵": "5",
-        "۶": "6",
-        "۷": "7",
-        "۸": "8",
-        "۹": "9",
+        "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+        "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+        "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
+        "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
       };
       return String(s || "").replace(/[٠-٩۰-۹]/g, (ch) => map[ch] ?? ch);
     };
@@ -93,7 +68,45 @@ module.exports = async function (context, req) {
         .replace(/[٬،]/g, ",");
     };
 
-    const norm = (s) => toLatinDigits(normalizeSeparators(String(s || ""))).toLowerCase().trim();
+    // Arabic text normalization (very important for matching)
+    const normalizeArabicText = (s) => {
+      let x = String(s || "");
+
+      // remove tatweel & diacritics
+      x = x.replace(/ـ/g, "");
+      x = x.replace(/[\u064B-\u065F\u0670]/g, "");
+
+      // normalize alef forms
+      x = x.replace(/[أإآٱ]/g, "ا");
+
+      // normalize ya/ya maksura
+      x = x.replace(/[ى]/g, "ي");
+
+      // normalize taa marbuta
+      x = x.replace(/[ة]/g, "ه");
+
+      // normalize hamza on waw/ya
+      x = x.replace(/[ؤ]/g, "و").replace(/[ئ]/g, "ي");
+
+      // collapse spaces
+      x = x.replace(/\s+/g, " ").trim();
+
+      return x;
+    };
+
+    const norm = (s) =>
+      normalizeArabicText(
+        toLatinDigits(normalizeSeparators(String(s || "")))
+      )
+        .toLowerCase()
+        .trim();
+
+    const isMostlyNumberLike = (t) => {
+      const s = norm(t);
+      if (!s) return true;
+      // numbers, punctuation, parentheses, commas, dots, plus/minus
+      return /^[\d\s,().+\-/%]+$/.test(s);
+    };
 
     const parseNumberSmart = (raw) => {
       if (raw === null || raw === undefined) return null;
@@ -167,7 +180,7 @@ module.exports = async function (context, req) {
     };
 
     const findYear = (text) => {
-      const s = toLatinDigits(normalizeSeparators(text));
+      const s = norm(text);
       const m = s.match(/\b(20\d{2})\b/);
       if (!m) return null;
       const y = Number(m[1]);
@@ -202,12 +215,12 @@ module.exports = async function (context, req) {
           const y = findYear(t);
           if (y) cols[c].years.push(y);
 
-          if (t.includes("الثلاثة") && t.includes("أشهر")) cols[c].hasThreeMonths = true;
-          if (t.includes("التسعة") && t.includes("أشهر")) cols[c].hasNineMonths = true;
+          if (t.includes("الثلاثه") && t.includes("اشهر")) cols[c].hasThreeMonths = true;
+          if (t.includes("التسعه") && t.includes("اشهر")) cols[c].hasNineMonths = true;
 
-          if (t.includes("ديسمبر") || t.includes("السنة") || t.includes("منتهية")) cols[c].hasAnnual = true;
+          if (t.includes("ديسمبر") || t.includes("السنه") || t.includes("منتهيه")) cols[c].hasAnnual = true;
 
-          if (t.includes("إيضاح") || t.includes("ايضاح") || t === "إيضاح") cols[c].hasNote = true;
+          if (t.includes("ايضاح") || t === "ايضاح") cols[c].hasNote = true;
         }
       }
 
@@ -260,87 +273,102 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Row label detection (STRONG)
+       Robust row label detection (works for BOTH income & balance)
        ========================= */
 
-    const isNumericish = (txt) => {
-      const t = norm(txt);
-      if (!t) return true;
-      // allow parentheses, commas, dots, plus/minus only
-      return /^[\d\s().,+-]+$/.test(t);
-    };
+    const getRowLabel = (row) => {
+      if (!Array.isArray(row)) return "";
 
-    const isLikelyLabel = (txt) => {
-      const raw = String(txt || "").trim();
-      if (!raw) return false;
-      const t = norm(raw);
-      if (!t) return false;
-      if (t.length < 3) return false;
-      // if it's basically a number, not label
-      if (isNumericish(t)) return false;
-      // must contain some letters (arabic or latin)
-      const hasLetters = /[a-z\u0600-\u06FF]/i.test(raw);
-      return hasLetters;
-    };
+      let best = "";
+      let bestScore = -1;
 
-    const getRowLabel = (r) => {
-      if (!Array.isArray(r)) return "";
-
-      // prefer scanning from end (often label is last cell in Arabic tables)
-      for (let i = r.length - 1; i >= 0; i--) {
-        const cell = r[i];
+      for (let i = 0; i < row.length; i++) {
+        const cell = row[i];
         if (!cell) continue;
-        if (isLikelyLabel(cell)) return norm(cell);
+
+        const raw = String(cell).trim();
+        if (!raw) continue;
+
+        const t = norm(raw);
+        if (!t) continue;
+
+        // skip typical header-like cells
+        if (t.includes("ديسمبر") || t.includes("السنه") || t.includes("منتهيه")) continue;
+        if (t === "ايضاح" || t.includes("ايضاح")) continue;
+
+        // skip number-like
+        if (isMostlyNumberLike(t)) continue;
+
+        // prefer cells with more letters
+        const letters = t.replace(/[^a-z\u0600-\u06ff]/g, ""); // latin + arabic letters
+        const score = letters.length * 10 + t.length;
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = t;
+        }
       }
 
-      // fallback: scan from start
-      for (let i = 0; i < r.length; i++) {
-        const cell = r[i];
-        if (!cell) continue;
-        if (isLikelyLabel(cell)) return norm(cell);
+      // fallback: try last then first non-empty
+      if (!best) {
+        const last = row[row.length - 1];
+        if (last && !isMostlyNumberLike(last)) return norm(last);
+        const first = row[0];
+        if (first && !isMostlyNumberLike(first)) return norm(first);
       }
 
-      return "";
+      return best || "";
     };
 
-    const findRowByLabel = (rows, names) => {
-      if (!Array.isArray(rows)) return null;
+    const bestMatchRow = (rows, names, opts = {}) => {
+      const mustInclude = (opts.mustInclude || []).map(norm);
+      const mustNotInclude = (opts.mustNotInclude || []).map(norm);
 
-      // 1) Prefer rows that contain إجمالي/total when looking for totals
-      for (const r of rows) {
+      let best = null;
+
+      for (const r of rows || []) {
         if (!Array.isArray(r)) continue;
         const label = getRowLabel(r);
         if (!label) continue;
 
-        const labelNorm = norm(label);
+        const ln = norm(label);
+
+        // must include terms
+        if (mustInclude.length && !mustInclude.every((k) => ln.includes(k))) continue;
+
+        // must not include terms
+        if (mustNotInclude.length && mustNotInclude.some((k) => ln.includes(k))) continue;
+
+        // base match: any of names
+        let hit = false;
+        let hitStrength = 0;
+
+        for (const n of names) {
+          const nn = norm(n);
+          if (nn && ln.includes(nn)) {
+            hit = true;
+            // prefer longer/more specific matches
+            hitStrength = Math.max(hitStrength, nn.length);
+          }
+        }
+        if (!hit) continue;
+
         const hasTotalWord =
-          labelNorm.includes(norm("إجمالي")) ||
-          labelNorm.includes(norm("اجمالي")) ||
-          labelNorm.includes(norm("المجموع")) ||
-          labelNorm.includes("total");
+          ln.includes(norm("اجمالي")) || ln.includes(norm("اجمالى")) || ln.includes("total");
 
-        if (!hasTotalWord) continue;
+        // scoring: prefer "إجمالي" for total fields, and more specific match
+        const score = (hasTotalWord ? 200 : 0) + hitStrength;
 
-        const ok = names.some((n) => labelNorm.includes(norm(n)));
-        if (ok) return { row: r, label };
+        if (!best || score > best.score) {
+          best = { row: r, label, score };
+        }
       }
 
-      // 2) Fallback: normal matching
-      for (const r of rows) {
-        if (!Array.isArray(r)) continue;
-        const label = getRowLabel(r);
-        if (!label) continue;
-
-        const labelNorm = norm(label);
-        const ok = names.some((n) => labelNorm.includes(norm(n)));
-        if (ok) return { row: r, label };
-      }
-
-      return null;
+      return best ? { row: best.row, label: best.label } : null;
     };
 
     /* =========================
-       Income extraction (existing)
+       INCOME
        ========================= */
 
     const scoreIncomeTable = (table) => {
@@ -348,24 +376,16 @@ module.exports = async function (context, req) {
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
       const hits = [
-        "الإيرادات",
-        "الايرادات",
-        "تكلفة الإيرادات",
-        "تكلفة الايرادات",
-        "مجمل الربح",
-        "الربح التشغيلي",
-        "صافي الربح",
-        "قائمة الدخل",
-        "قائمة الربح والخسارة",
-        "لفترة",
-        "الثلاثة أشهر",
-        "التسعة أشهر",
+        "الايرادات", "تكلفه الايرادات", "مجمل الربح",
+        "الربح التشغيلي", "صافي الربح",
+        "قائمه الدخل", "قائمه الربح والخساره",
+        "لفتره", "الثلاثه اشهر", "التسعه اشهر",
       ];
 
       let score = 0;
       for (const k of hits) if (joined.includes(norm(k))) score += 2;
 
-      if (joined.includes("إيضاح") || joined.includes("ايضاح")) score += 1;
+      if (joined.includes("ايضاح")) score += 1;
 
       const cc = Number(table?.columnCount || 0);
       if (cc >= 5) score += 1;
@@ -374,7 +394,7 @@ module.exports = async function (context, req) {
     };
 
     const wantIncome = [
-      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "Revenue"] },
+      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "Revenue"] },
       { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"] },
       { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
       { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
@@ -388,7 +408,7 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantIncome) {
-        const hit = findRowByLabel(rows, item.names);
+        const hit = bestMatchRow(rows, item.names);
         if (!hit) {
           out[item.key] = null;
           continue;
@@ -407,8 +427,8 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantIncome) {
-        const hitA = findRowByLabel(rowsA, item.names);
-        const hitB = findRowByLabel(rowsB, item.names);
+        const hitA = bestMatchRow(rowsA, item.names);
+        const hitB = bestMatchRow(rowsB, item.names);
 
         const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
         const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
@@ -425,36 +445,53 @@ module.exports = async function (context, req) {
 
     /* =========================
        BALANCE SHEET
+       - Pick best table(s)
+       - Extract from best source per metric
        ========================= */
 
+    const scoreBalanceTable = (table) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+
+      const strong = [
+        "قائمة المركز المالي",
+        "الميزانية",
+        "الميزانية العمومية",
+        "قائمة الوضع المالي",
+        "balance sheet",
+        "statement of financial position",
+      ];
+
+      const support = [
+        "الموجودات", "الاصول",
+        "المطلوبات", "الالتزامات", "الخصوم",
+        "حقوق الملكية", "حقوق المساهمين",
+        "اجمالي الموجودات", "اجمالي الاصول", "total assets",
+        "اجمالي المطلوبات", "اجمالي الالتزامات", "total liabilities",
+        "اجمالي حقوق الملكية", "total equity",
+        "حقوق الملكية والمطلوبات",
+      ];
+
+      let score = 0;
+      for (const k of strong) if (joined.includes(norm(k))) score += 40;
+      for (const k of support) if (joined.includes(norm(k))) score += 8;
+
+      if (joined.includes(norm("متداولة")) && joined.includes(norm("غير متداولة"))) score += 10;
+
+      return score;
+    };
+
+    // IMPORTANT: disambiguation rules to prevent picking subtotal as total
     const wantBalance = [
       {
         key: "totalAssets",
-        names: [
-          "إجمالي الأصول",
-          "اجمالي الأصول",
-          "إجمالي الموجودات",
-          "اجمالي الموجودات",
-          "مجموع الأصول",
-          "مجموع الموجودات",
-          "إجمالي الموجودات",
-          "إجمالي الموجودات",
-          "Total assets",
-        ],
+        names: ["إجمالي الموجودات", "اجمالي الموجودات", "إجمالي الأصول", "اجمالي الأصول", "مجموع الموجودات", "مجموع الأصول", "Total assets"],
+        opts: { mustInclude: ["اجمالي"], mustNotInclude: ["غير متداولة", "متداولة"] },
       },
       {
         key: "totalLiabilities",
-        names: [
-          "إجمالي المطلوبات",
-          "اجمالي المطلوبات",
-          "إجمالي الالتزامات",
-          "اجمالي الالتزامات",
-          "إجمالي الخصوم",
-          "اجمالي الخصوم",
-          "مجموع المطلوبات",
-          "مجموع الالتزامات",
-          "Total liabilities",
-        ],
+        names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "إجمالي الخصوم", "اجمالي الخصوم", "Total liabilities"],
+        opts: { mustInclude: ["اجمالي"], mustNotInclude: ["غير متداولة", "متداولة"] },
       },
       {
         key: "totalEquity",
@@ -464,146 +501,81 @@ module.exports = async function (context, req) {
           "إجمالي حقوق المساهمين",
           "اجمالي حقوق المساهمين",
           "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
-          "إجمالي حقوق الملكية العائدة لمساهمي الشركة الام",
-          "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
+          "اجمالي حقوق الملكية العائدة لمساهمي الشركة الام",
           "Total equity",
           "Total shareholders' equity",
         ],
+        opts: { mustInclude: ["اجمالي"], mustNotInclude: ["غير المسيطرة"] },
       },
-      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "Current assets"] },
-      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
-      {
-        key: "currentLiabilities",
-        names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"],
-      },
-      {
-        key: "nonCurrentLiabilities",
-        names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"],
-      },
+      { key: "currentAssets", names: ["إجمالي الموجودات المتداولة", "اجمالي الموجودات المتداولة", "الأصول المتداولة", "اصول متداولة", "Current assets"], opts: { mustInclude: ["متداولة"] } },
+      { key: "nonCurrentAssets", names: ["إجمالي الموجودات غير المتداولة", "اجمالي الموجودات غير المتداولة", "الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"], opts: { mustInclude: ["غير متداولة"] } },
+      { key: "currentLiabilities", names: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"], opts: { mustInclude: ["متداولة"] } },
+      { key: "nonCurrentLiabilities", names: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"], opts: { mustInclude: ["غير متداولة"] } },
     ];
 
-    const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
+    const extractBalanceFromAnyTables = (tables, latestColIdx, prevColIdx) => {
+      // We pick the best hit across ALL candidate tables per metric
       const out = {};
+      const debugHits = {};
 
       for (const item of wantBalance) {
-        const hit = findRowByLabel(rows, item.names);
-        if (!hit) {
+        let bestHit = null;
+        let bestTableIndex = null;
+
+        for (const t of tables || []) {
+          const rows = Array.isArray(t?.sample) ? t.sample : [];
+          const hit = bestMatchRow(rows, item.names, item.opts || {});
+          if (!hit) continue;
+
+          // quality score: prefer tables with higher balance score
+          const tScore = scoreBalanceTable(t);
+          const labelLen = (hit.label || "").length;
+          const q = tScore * 1000 + labelLen;
+
+          if (!bestHit || q > bestHit.q) {
+            bestHit = { ...hit, q };
+            bestTableIndex = t?.index ?? null;
+          }
+        }
+
+        if (!bestHit) {
           out[item.key] = null;
           continue;
         }
-        const cur = latestColIdx != null ? parseNumberSmart(hit.row?.[latestColIdx]) : null;
-        const prev = prevColIdx != null ? parseNumberSmart(hit.row?.[prevColIdx]) : null;
-        out[item.key] = { label: hit.label, current: cur, previous: prev };
+
+        const cur = latestColIdx != null ? parseNumberSmart(bestHit.row?.[latestColIdx]) : null;
+        const prev = prevColIdx != null ? parseNumberSmart(bestHit.row?.[prevColIdx]) : null;
+
+        out[item.key] = { label: bestHit.label, current: cur, previous: prev };
+        debugHits[item.key] = { tableIndex: bestTableIndex, label: bestHit.label };
       }
 
-      return out;
-    };
-
-    const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
-      const rowsA = Array.isArray(tableA?.sample) ? tableA.sample : [];
-      const rowsB = Array.isArray(tableB?.sample) ? tableB.sample : [];
-      const out = {};
-
-      for (const item of wantBalance) {
-        const hitA = findRowByLabel(rowsA, item.names);
-        const hitB = findRowByLabel(rowsB, item.names);
-
-        const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
-        const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
-
-        out[item.key] = {
-          label: hitA?.label || hitB?.label || null,
-          current: cur,
-          previous: prev,
-        };
-      }
-
-      return out;
+      return { out, debugHits };
     };
 
     /* =========================
-       DIAG: pick best balance table (STRICT)
+       DIAG: rank balance tables (show why we pick)
        ========================= */
-
-    const normText2 = (s) =>
-      String(s || "")
-        .toLowerCase()
-        .replace(/\s+/g, " ")
-        .trim();
 
     const tableTextQuick = (t) => {
       const rows = Array.isArray(t?.sample) ? t.sample : [];
       const out = [];
-      for (let r = 0; r < rows.length && r < 40; r++) {
+      for (let r = 0; r < rows.length && r < 30; r++) {
         const row = rows[r];
         if (!Array.isArray(row)) continue;
-        for (let c = 0; c < row.length && c < 14; c++) {
+        for (let c = 0; c < row.length && c < 12; c++) {
           const v = row[c];
-          if (v) out.push(v);
+          if (v !== null && v !== undefined && String(v).trim() !== "") out.push(String(v));
         }
       }
-      return normText2(out.join(" | "));
-    };
-
-    const hasAny = (text, arr) => arr.some((k) => text.includes(normText2(k)));
-
-    const scoreBalanceSheetText = (text) => {
-      const strongTitle = [
-        "قائمة المركز المالي",
-        "الميزانية",
-        "الميزانية العمومية",
-        "قائمة الوضع المالي",
-        "statement of financial position",
-        "balance sheet",
-      ];
-
-      const assetsKeys = ["الأصول", "الموجودات", "assets"];
-      const liabKeys = ["المطلوبات", "الالتزامات", "الخصوم", "liabilities"];
-      const eqKeys = ["حقوق الملكية", "حقوق المساهمين", "equity"];
-
-      const hasTitle = hasAny(text, strongTitle);
-      const hasAssets = hasAny(text, assetsKeys);
-      const hasLiab = hasAny(text, liabKeys);
-      const hasEq = hasAny(text, eqKeys);
-
-      // STRICT GATE:
-      // Accept only if hasTitle OR (assets+liabilities+equity all present)
-      const passesGate = hasTitle || (hasAssets && hasLiab && hasEq);
-      if (!passesGate) return 0;
-
-      let score = 0;
-
-      if (hasTitle) score += 120;
-
-      if (hasAssets) score += 40;
-      if (hasLiab) score += 40;
-      if (hasEq) score += 40;
-
-      // totals are strong hints
-      const totals = [
-        "إجمالي الأصول",
-        "إجمالي الموجودات",
-        "إجمالي المطلوبات",
-        "إجمالي الالتزامات",
-        "إجمالي حقوق الملكية",
-        "إجمالي حقوق المساهمين",
-        "total assets",
-        "total liabilities",
-        "total equity",
-      ];
-      for (const t of totals) if (text.includes(normText2(t))) score += 18;
-
-      if (text.includes("متداولة") && text.includes("غير متداولة")) score += 15;
-
-      return score;
+      return norm(out.join(" | "));
     };
 
     const pickBestBalanceSheetTable = (tables) => {
       const ranked = (Array.isArray(tables) ? tables : [])
         .map((t) => {
-          const text = tableTextQuick(t);
-          const score = scoreBalanceSheetText(text);
+          const snippet = tableTextQuick(t);
+          const score = scoreBalanceTable(t);
 
           return {
             index: t?.index ?? null,
@@ -611,10 +583,9 @@ module.exports = async function (context, req) {
             page: t?.pageNumber ?? t?.page ?? null,
             columnCount: t?.columnCount ?? null,
             rowCount: t?.rowCount ?? null,
-            snippet: text.slice(0, 260),
+            snippet: snippet.slice(0, 260),
           };
         })
-        .filter((x) => x.score > 0)
         .sort((a, b) => b.score - a.score);
 
       const best = ranked[0] || null;
@@ -622,11 +593,10 @@ module.exports = async function (context, req) {
       return {
         bestTableIndex: best?.index ?? null,
         bestScore: best?.score ?? null,
-        candidates: ranked.slice(0, 5),
+        candidates: ranked.slice(0, 8),
       };
     };
 
-    // If diag endpoint requested for balance: return candidates directly (no extraction)
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
       const bsDiag = pickBestBalanceSheetTable(tablesPreview);
 
@@ -640,8 +610,7 @@ module.exports = async function (context, req) {
         bestScore: bsDiag.bestScore,
         found: bsDiag.candidates.length,
         ranked: bsDiag.candidates,
-        hint:
-          "إذا ranked فارغ أو bestTableIndex غلط: أرسل balanceTableIndex في body لتثبيت جدول الميزانية يدويًا.",
+        hint: "خذ bestTableIndex من ranked (أعلى score). إذا كانت الميزانية موزعة على أكثر من جدول، نقدر نلتقط البنود من أكثر من جدول تلقائياً (وهذا مفعّل هنا).",
       });
     }
 
@@ -695,154 +664,101 @@ module.exports = async function (context, req) {
     }
 
     /* =========================
-       2) pick best balance table (file A)
+       2) Balance extraction
+       - Use ALL tables (not just one), because your PDF splits sections
        ========================= */
 
-    // 2.1) if override provided, use it
-    let bestBalanceA = null;
-    let bsDiagA = pickBestBalanceSheetTable(tablesPreview);
+    // pick columns for balance: we use best balance table just to detect columns
+    const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
 
-    if (balanceTableIndexOverride !== null && Number.isFinite(balanceTableIndexOverride)) {
-      const forced = tablesPreview.find((x) => Number(x?.index) === Number(balanceTableIndexOverride));
-      if (forced) {
-        bestBalanceA = { table: forced, score: scoreBalanceSheetText(tableTextQuick(forced)), pickedBy: "override" };
-      }
+    // choose a table to detect columns from (best score)
+    let balColsSource = null;
+    if (bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
+      balColsSource = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex)) || null;
     }
-
-    // 2.2) else use diag
-    if (!bestBalanceA && bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
-      const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
-      if (t) bestBalanceA = { table: t, score: scoreBalanceSheetText(tableTextQuick(t)), pickedBy: "diag" };
-    }
-
-    // 2.3) else fallback by strict scoring
-    if (!bestBalanceA) {
-      for (const t of tablesPreview) {
-        const s = scoreBalanceSheetText(tableTextQuick(t));
-        if (s <= 0) continue;
-        if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s, pickedBy: "fallbackScore" };
-      }
-    }
+    if (!balColsSource) balColsSource = tablesPreview[0] || null;
 
     let balanceExtract = {};
     let balancePicked = null;
 
-    if (bestBalanceA?.table) {
-      const colsBalA = detectColumns(bestBalanceA.table);
+    if (balColsSource) {
+      const colsBalA = detectColumns(balColsSource);
       const pickedBalA = pickLatestColumns(colsBalA);
 
       const latestBalColA = pickedBalA.latest?.col ?? null;
       const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
 
+      // extract from ANY tables in file A
+      const balA = extractBalanceFromAnyTables(tablesPreview, latestBalColA, prevBalColA);
+
+      balanceExtract = balA.out;
+
+      balancePicked = {
+        fileA: {
+          columnsFromTableIndex: balColsSource.index,
+          diag: bsDiagA,
+          pickedColumns: {
+            latest: pickedBalA.latest
+              ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
+              : null,
+            previous: noCompare
+              ? null
+              : pickedBalA.previous
+              ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
+              : null,
+            debug: pickedBalA.debug,
+          },
+          hits: balA.debugHits,
+        },
+        note:
+          "Balance metrics are extracted by searching across ALL tables (because some PDFs split Assets/Liabilities/Equity across multiple tables).",
+      };
+
       if (usingTwoFiles) {
-        // file B: allow same override name but with suffix
-        const balanceTableIndexOverridePrevRaw =
-          body.balanceTableIndexPrev ?? body.balanceIndexPrev ?? body.balance_table_index_prev ?? null;
-        const balanceTableIndexOverridePrev =
-          balanceTableIndexOverridePrevRaw === null || balanceTableIndexOverridePrevRaw === undefined
-            ? null
-            : Number(balanceTableIndexOverridePrevRaw);
+        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
+        let balColsSourceB = null;
 
-        let bestBalanceB = null;
-        let bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
-
-        if (balanceTableIndexOverridePrev !== null && Number.isFinite(balanceTableIndexOverridePrev)) {
-          const forced = tablesPreviewPrev.find((x) => Number(x?.index) === Number(balanceTableIndexOverridePrev));
-          if (forced) {
-            bestBalanceB = { table: forced, score: scoreBalanceSheetText(tableTextQuick(forced)), pickedBy: "override" };
-          }
+        if (bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
+          balColsSourceB =
+            tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex)) || null;
         }
+        if (!balColsSourceB) balColsSourceB = tablesPreviewPrev[0] || null;
 
-        if (!bestBalanceB && bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
-          const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
-          if (t) bestBalanceB = { table: t, score: scoreBalanceSheetText(tableTextQuick(t)), pickedBy: "diag" };
-        }
-
-        if (!bestBalanceB) {
-          for (const t of tablesPreviewPrev) {
-            const s = scoreBalanceSheetText(tableTextQuick(t));
-            if (s <= 0) continue;
-            if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s, pickedBy: "fallbackScore" };
-          }
-        }
-
-        if (bestBalanceB?.table) {
-          const colsBalB = detectColumns(bestBalanceB.table);
+        if (balColsSourceB) {
+          const colsBalB = detectColumns(balColsSourceB);
           const pickedBalB = pickLatestColumns(colsBalB);
           const latestBalColB = pickedBalB.latest?.col ?? null;
 
-          balanceExtract = extractBalanceTwoFiles(bestBalanceA.table, latestBalColA, bestBalanceB.table, latestBalColB);
+          const balB = extractBalanceFromAnyTables(tablesPreviewPrev, latestBalColB, null);
 
-          balancePicked = {
-            fileA: {
-              tableIndex: bestBalanceA.table.index,
-              score: bestBalanceA.score,
-              pickedBy: bestBalanceA.pickedBy,
-              pickedColumns: {
-                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
-                previous: pickedBalA.previous ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null } : null,
-                debug: pickedBalA.debug,
-              },
-              diag: bsDiagA,
-              override: balanceTableIndexOverride,
+          // merge: current from A, previous from B when compare + 2 files
+          const merged = {};
+          for (const item of wantBalance) {
+            const k = item.key;
+            const curObj = balanceExtract?.[k] || null;
+            const prevObj = balB.out?.[k] || null;
+            merged[k] = {
+              label: (curObj?.label || prevObj?.label || null),
+              current: curObj?.current ?? null,
+              previous: prevObj?.current ?? null, // B "current" is previous year for comparison
+            };
+          }
+
+          balanceExtract = merged;
+
+          balancePicked.fileB = {
+            columnsFromTableIndex: balColsSourceB.index,
+            diag: bsDiagB,
+            pickedColumns: {
+              latest: pickedBalB.latest
+                ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null }
+                : null,
+              debug: pickedBalB.debug,
             },
-            fileB: {
-              tableIndex: bestBalanceB.table.index,
-              score: bestBalanceB.score,
-              pickedBy: bestBalanceB.pickedBy,
-              pickedColumns: {
-                latest: pickedBalB.latest ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null } : null,
-                debug: pickedBalB.debug,
-              },
-              diag: bsDiagB,
-              override: balanceTableIndexOverridePrev,
-            },
-          };
-        } else {
-          balanceExtract = latestBalColA != null ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null) : {};
-          balancePicked = {
-            fileA: {
-              tableIndex: bestBalanceA.table.index,
-              score: bestBalanceA.score,
-              pickedBy: bestBalanceA.pickedBy,
-              pickedColumns: {
-                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
-                previous: null,
-                debug: pickedBalA.debug,
-              },
-              diag: bsDiagA,
-              override: balanceTableIndexOverride,
-            },
-            note: "No balance table found in file B; used file A latest only.",
+            hits: balB.debugHits,
           };
         }
-      } else {
-        balanceExtract = latestBalColA != null ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, prevBalColA) : {};
-        balancePicked = {
-          fileA: {
-            tableIndex: bestBalanceA.table.index,
-            score: bestBalanceA.score,
-            pickedBy: bestBalanceA.pickedBy,
-            pickedColumns: {
-              latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
-              previous: noCompare
-                ? null
-                : pickedBalA.previous
-                ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
-                : null,
-              debug: pickedBalA.debug,
-            },
-            diag: bsDiagA,
-            override: balanceTableIndexOverride,
-          },
-        };
       }
-    } else {
-      balancePicked = {
-        note: "No balance sheet table passed strict gate (assets+liabilities+equity or title). Try DIAG or set balanceTableIndex override.",
-        diag: bsDiagA,
-        override: balanceTableIndexOverride,
-      };
     }
 
     return send(200, {
@@ -877,13 +793,18 @@ module.exports = async function (context, req) {
         })),
 
         pickedColumns: {
-          latest: pickedA.latest ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null } : null,
-          previous: pickedA.previous ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null } : null,
+          latest: pickedA.latest
+            ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null }
+            : null,
+          previous: pickedA.previous
+            ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null }
+            : null,
           debug: pickedA.debug,
         },
 
         incomeStatementLite: incomeExtract,
 
+        // Balance outputs
         balanceSheetLite: balanceExtract,
         balancePickInfo: balancePicked,
 
