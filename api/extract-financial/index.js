@@ -294,24 +294,12 @@ module.exports = async function (context, req) {
     const getRowLabel = (r) => {
   if (!Array.isArray(r)) return "";
 
-  // ابحث عن أول خلية نصية طويلة (غالبًا هي اسم البند)
-  for (let i = 0; i < r.length; i++) {
-    const cell = r[i];
-    if (!cell) continue;
+  // اسم البند في بياناتك موجود في آخر عمود
+  const last = r[r.length - 1];
+  if (last) return norm(last);
 
-    const raw = String(cell).trim();
-    if (!raw) continue;
-
-    const normalized = norm(raw);
-
-    // تجاهل القيم الرقمية
-    if (/^[\d.,()\-\s]+$/.test(normalized)) continue;
-
-    // أول نص حقيقي نعتبره label
-    if (normalized.length > 2) {
-      return normalized;
-    }
-  }
+  const prev = r[r.length - 2];
+  if (prev) return norm(prev);
 
   return "";
 };
