@@ -252,85 +252,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Row label + matching
-       ========================= */
-
-    const getRowLabel = (r) => {
-      if (!Array.isArray(r)) return "";
-      // حسب sample عندك: اسم البند في آخر عمود
-      const last = r[r.length - 1];
-      if (last) return norm(last);
-      const prev = r[r.length - 2];
-      if (prev) return norm(prev);
-      return "";
-    };
-
-    const includesAny = (text, arr) => {
-      if (!text || !Array.isArray(arr) || !arr.length) return false;
-      for (const w of arr) {
-        if (!w) continue;
-        if (text.includes(norm(w))) return true;
-      }
-      return false;
-    };
-
-    /**
-     * findRowByLabel(rows, names, opts)
-     * opts:
-     * - requireTotal: boolean (يطلب وجود إجمالي/total)
-     * - excludeIfIncludes: string[] (إذا label يحتوي أي منها -> استبعاد)
-     */
-    const findRowByLabel = (rows, names, opts = {}) => {
-      if (!Array.isArray(rows)) return null;
-
-      const requireTotal = Boolean(opts.requireTotal);
-      const excludeIfIncludes = Array.isArray(opts.excludeIfIncludes) ? opts.excludeIfIncludes : [];
-
-      const isAllowed = (labelNorm) => {
-        if (requireTotal) {
-          const hasTotalWord =
-            labelNorm.includes(norm("إجمالي")) ||
-            labelNorm.includes(norm("اجمالي")) ||
-            labelNorm.includes("total");
-          if (!hasTotalWord) return false;
-        }
-        if (excludeIfIncludes.length) {
-          if (includesAny(labelNorm, excludeIfIncludes)) return false;
-        }
-        return true;
-      };
-
-      // pass 1: strict (respect opts)
-      for (const r of rows) {
-        if (!Array.isArray(r)) continue;
-        const label = getRowLabel(r);
-        if (!label) continue;
-
-        const labelNorm = norm(label);
-        if (!isAllowed(labelNorm)) continue;
-
-        const ok = names.some((n) => labelNorm.includes(norm(n)));
-        if (ok) return { row: r, label };
-      }
-
-      // pass 2: looser (ignore requireTotal, still respect excludes)
-      for (const r of rows) {
-        if (!Array.isArray(r)) continue;
-        const label = getRowLabel(r);
-        if (!label) continue;
-
-        const labelNorm = norm(label);
-        if (excludeIfIncludes.length && includesAny(labelNorm, excludeIfIncludes)) continue;
-
-        const ok = names.some((n) => labelNorm.includes(norm(n)));
-        if (ok) return { row: r, label };
-      }
-
-      return null;
-    };
-
-    /* =========================
-       INCOME STATEMENT
+       Income Statement
        ========================= */
 
     const scoreIncomeTable = (table) => {
@@ -364,21 +286,104 @@ module.exports = async function (context, req) {
     };
 
     const wantIncome = [
-      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "Revenue"] },
-      { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"] },
-      { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
-      { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
+      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "revenue"] },
+      { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "cost of revenue"] },
+      { key: "grossProfit", names: ["مجمل الربح", "gross profit"] },
+      { key: "operatingProfit", names: ["الربح التشغيلي", "operating profit", "الربح من العمليات"] },
       { key: "netProfitBeforeZakat", names: ["صافي ربح الفترة قبل الزكاة", "صافي ربح السنة قبل الزكاة"] },
       { key: "zakat", names: ["الزكاة"] },
-      { key: "netProfit", names: ["صافي ربح الفترة", "صافي ربح السنة", "صافي الربح", "Net profit"] },
+      { key: "netProfit", names: ["صافي ربح الفترة", "صافي ربح السنة", "صافي الربح", "net profit"] },
     ];
+
+    /* =========================
+       Row Label Detection (FIXED)
+       - robust for Balance Sheet tables
+       ========================= */
+
+    const getRowLabel = (r) => {
+      if (!Array.isArray(r)) return "";
+
+      // pick best textual cell in the row (ignore numbers / note column / tiny tokens)
+      let best = "";
+      for (let i = 0; i < r.length; i++) {
+        const cell = r[i];
+        if (!cell) continue;
+
+        const raw = String(cell).trim();
+        if (!raw) continue;
+
+        const rawDigits = toLatinDigits(normalizeSeparators(raw));
+
+        // ignore pure numeric cells
+        if (/^[\d\s.,()\-+]+$/.test(rawDigits)) continue;
+
+        const n = norm(raw);
+        if (!n) continue;
+
+        // ignore note labels
+        if (n === "ايضاح" || n === "إيضاح" || n.includes("ايضاح") || n.includes("إيضاح")) continue;
+
+        // ignore very short tokens
+        if (n.length < 3) continue;
+
+        // choose longest text as label candidate
+        if (n.length > best.length) best = n;
+      }
+
+      // fallback: last/prev if everything was filtered
+      if (best) return best;
+
+      const last = r[r.length - 1];
+      if (last) return norm(last);
+
+      const prev = r[r.length - 2];
+      if (prev) return norm(prev);
+
+      return "";
+    };
+
+    const findRowByLabel = (rows, names) => {
+      if (!Array.isArray(rows)) return null;
+
+      // 1) Prefer TOTAL rows (إجمالي / مجموع / total)
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r); // already normalized
+        if (!label) continue;
+
+        const labelNorm = label;
+        const hasTotalWord =
+          labelNorm.includes(norm("إجمالي")) ||
+          labelNorm.includes(norm("اجمالي")) ||
+          labelNorm.includes(norm("مجموع")) ||
+          labelNorm.includes("total");
+
+        if (!hasTotalWord) continue;
+
+        const ok = (names || []).some((n) => labelNorm.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+
+      // 2) Fallback normal matching
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r); // already normalized
+        if (!label) continue;
+
+        const labelNorm = label;
+        const ok = (names || []).some((n) => labelNorm.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+
+      return null;
+    };
 
     const extractIncomeSingleTable = (table, latestColIdx, prevColIdx) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const out = {};
 
       for (const item of wantIncome) {
-        const hit = findRowByLabel(rows, item.names); // no special opts for income
+        const hit = findRowByLabel(rows, item.names);
         if (!hit) {
           out[item.key] = null;
           continue;
@@ -414,7 +419,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       BALANCE SHEET
+       Balance Sheet
        ========================= */
 
     const scoreBalanceTable = (table) => {
@@ -438,11 +443,11 @@ module.exports = async function (context, req) {
         "الالتزامات",
         "حقوق الملكية",
         "equity",
-        "إجمالي الموجودات",
-        "إجمالي المطلوبات",
-        "إجمالي حقوق الملكية",
+        "إجمالي الأصول",
         "total assets",
+        "إجمالي المطلوبات",
         "total liabilities",
+        "إجمالي حقوق الملكية",
         "total equity",
       ];
 
@@ -450,22 +455,37 @@ module.exports = async function (context, req) {
       for (const k of strong) if (joined.includes(norm(k))) score += 20;
       for (const k of support) if (joined.includes(norm(k))) score += 6;
 
+      // bonus for current/non-current structure
       if (joined.includes(norm("متداولة")) && joined.includes(norm("غير متداولة"))) score += 6;
 
       return score;
     };
 
     const wantBalance = [
-      // TOTALS (must be total, and must NOT be current/non-current totals)
       {
         key: "totalAssets",
-        names: ["إجمالي الموجودات", "اجمالي الموجودات", "إجمالي الأصول", "اجمالي الأصول", "مجموع الموجودات", "مجموع الأصول", "Total assets"],
-        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة", "غير المتداولة"] },
+        names: [
+          "إجمالي الأصول",
+          "اجمالي الأصول",
+          "إجمالي الموجودات",
+          "اجمالي الموجودات",
+          "مجموع الأصول",
+          "مجموع الموجودات",
+          "total assets",
+        ],
       },
       {
         key: "totalLiabilities",
-        names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "إجمالي الخصوم", "اجمالي الخصوم", "Total liabilities"],
-        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة", "غير المتداولة"] },
+        names: [
+          "إجمالي المطلوبات",
+          "اجمالي المطلوبات",
+          "إجمالي الالتزامات",
+          "اجمالي الالتزامات",
+          "إجمالي الخصوم",
+          "اجمالي الخصوم",
+          "مجموع المطلوبات",
+          "total liabilities",
+        ],
       },
       {
         key: "totalEquity",
@@ -475,33 +495,16 @@ module.exports = async function (context, req) {
           "إجمالي حقوق المساهمين",
           "اجمالي حقوق المساهمين",
           "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
-          "Total equity",
-          "Total shareholders' equity",
+          "حقوق الملكية العائدة لمساهمي الشركة الأم",
+          "إجمالي حقوق الملكية العائدة لمساهمي الشركة الام",
+          "total equity",
+          "total shareholders' equity",
         ],
-        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة", "غير المتداولة"] },
       },
-
-      // SECTION TOTALS
-      {
-        key: "currentAssets",
-        names: ["إجمالي الموجودات المتداولة", "اجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة", "اجمالي الأصول المتداولة", "Current assets"],
-        opts: { requireTotal: true, excludeIfIncludes: ["غير المتداولة"] },
-      },
-      {
-        key: "nonCurrentAssets",
-        names: ["إجمالي الموجودات غير المتداولة", "اجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة", "اجمالي الأصول غير المتداولة", "Non-current assets"],
-        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة"] },
-      },
-      {
-        key: "currentLiabilities",
-        names: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة", "اجمالي الالتزامات المتداولة", "Current liabilities"],
-        opts: { requireTotal: true, excludeIfIncludes: ["غير المتداولة"] },
-      },
-      {
-        key: "nonCurrentLiabilities",
-        names: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة", "اجمالي الالتزامات غير المتداولة", "Non-current liabilities"],
-        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة"] },
-      },
+      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "current assets"] },
+      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "non-current assets"] },
+      { key: "currentLiabilities", names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "current liabilities"] },
+      { key: "nonCurrentLiabilities", names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "non-current liabilities"] },
     ];
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
@@ -509,7 +512,7 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantBalance) {
-        const hit = findRowByLabel(rows, item.names, item.opts || {});
+        const hit = findRowByLabel(rows, item.names);
         if (!hit) {
           out[item.key] = null;
           continue;
@@ -528,8 +531,8 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantBalance) {
-        const hitA = findRowByLabel(rowsA, item.names, item.opts || {});
-        const hitB = findRowByLabel(rowsB, item.names, item.opts || {});
+        const hitA = findRowByLabel(rowsA, item.names);
+        const hitB = findRowByLabel(rowsB, item.names);
 
         const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
         const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
@@ -579,14 +582,15 @@ module.exports = async function (context, req) {
         "financial position",
       ];
       const keysSupport = [
-        "الموجودات",
+        "الأصول",
         "assets",
+        "الموجودات",
         "المطلوبات",
         "liabilities",
         "الالتزامات",
         "حقوق الملكية",
         "equity",
-        "إجمالي الموجودات",
+        "إجمالي الأصول",
         "total assets",
         "إجمالي المطلوبات",
         "total liabilities",
@@ -697,7 +701,7 @@ module.exports = async function (context, req) {
     }
 
     /* =========================
-       2) pick best balance table (file A)
+       2) pick best balance table (file A) using DIAG first
        ========================= */
 
     const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
