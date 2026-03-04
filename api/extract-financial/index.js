@@ -423,9 +423,9 @@ const findRowByLabel = (rows, names) => {
     };
 
     const wantBalance = [
-      { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الأصول", "Total assets"] },
-      { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "Total liabilities"] },
-      { key: "totalEquity", names: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "Total equity"] },
+      { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الأصول", "إجمالي الموجودات", "اجمالي الموجودات", "مجموع الأصول", "مجموع الموجودات", "Total assets"] },
+      { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "إجمالي الخصوم", "اجمالي الخصوم", "مجموع المطلوبات", "Total liabilities"] },
+      { key: "totalEquity", names: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "إجمالي حقوق المساهمين", "اجمالي حقوق المساهمين", "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم", "Total equity", "Total shareholders' equity"] },
       { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "Current assets"] },
       { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
       { key: "currentLiabilities", names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"] },
