@@ -243,59 +243,37 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Row matching (FINAL)
+       Row matching (FINAL ✅)
        - scan ALL cells for label
        - ignore numeric cells
        - support exclude
        ========================= */
 
     const findRowByLabel = (rows, item) => {
-  if (!Array.isArray(rows)) return null;
+      if (!Array.isArray(rows)) return null;
 
-  const names = Array.isArray(item?.names) ? item.names : [];
-  const exclude = Array.isArray(item?.exclude) ? item.exclude : [];
+      const names = Array.isArray(item?.names) ? item.names : [];
+      const exclude = Array.isArray(item?.exclude) ? item.exclude : [];
 
-  const isExcluded = (cellNorm) =>
-    exclude.some((e) => cellNorm.includes(norm(e)));
+      const isExcluded = (cellNorm) => exclude.some((e) => cellNorm.includes(norm(e)));
 
-  for (const r of rows) {
-    if (!Array.isArray(r)) continue;
-
-    for (let i = 0; i < r.length; i++) {
-      const cell = r[i];
-      const cellNorm = norm(cell);
-
-      if (!cellNorm) continue;
-
-      if (isExcluded(cellNorm)) continue;
-
-      const ok = names.some((n) => cellNorm.includes(norm(n)));
-
-      if (ok) {
-        return {
-          row: r,
-          label: cellNorm,
-          labelCellIndex: i,
-        };
-      }
-    }
-  }
-
-  return null;
-};
-
-      // Fallback: any matching text cell
       for (const r of rows) {
         if (!Array.isArray(r)) continue;
+
         for (let i = 0; i < r.length; i++) {
           const cell = r[i];
           const cellNorm = norm(cell);
           if (!cellNorm) continue;
+
+          // مهم: تجاهل الخلايا الرقمية
           if (isProbablyNumberCell(cell)) continue;
+
           if (isExcluded(cellNorm)) continue;
 
           const ok = names.some((n) => cellNorm.includes(norm(n)));
-          if (ok) return { row: r, label: cellNorm, labelCellIndex: i };
+          if (ok) {
+            return { row: r, label: cellNorm, labelCellIndex: i };
+          }
         }
       }
 
@@ -378,9 +356,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       BALANCE SHEET (FINAL)
-       - strict excludes to prevent totalAssets matching nonCurrent totals
-       - derivation rules if missing lines
+       BALANCE SHEET (your logic)
        ========================= */
 
     const normText2 = (s) =>
@@ -491,7 +467,6 @@ module.exports = async function (context, req) {
           "مجموع الموجودات",
           "Total assets",
         ],
-        // الحماية النهائية من الالتقاط الخاطئ
         exclude: [
           "غير المتداولة",
           "غير المتداوله",
@@ -546,7 +521,6 @@ module.exports = async function (context, req) {
         out[item.key] = { label: hit.label, current: cur, previous: prev };
       }
 
-      // Derivation rules (FINAL SAFETY)
       const a = out.totalAssets?.current ?? null;
       const l = out.totalLiabilities?.current ?? null;
       const e = out.totalEquity?.current ?? null;
@@ -579,7 +553,6 @@ module.exports = async function (context, req) {
         };
       }
 
-      // Derivation for current (fileA)
       const a = out.totalAssets?.current ?? null;
       const l = out.totalLiabilities?.current ?? null;
       const e = out.totalEquity?.current ?? null;
@@ -593,7 +566,6 @@ module.exports = async function (context, req) {
       return out;
     };
 
-    // DIAG endpoint
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
       const bsDiag = pickBestBalanceSheetTable(tablesPreview);
       return send(200, {
