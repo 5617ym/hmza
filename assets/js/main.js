@@ -1,4 +1,4 @@
-console.log("MAIN_JS_VERSION = 3B_COMPARE_NORMALIZE_AND_2FILES_2026-03-03");
+console.log("MAIN_JS_VERSION = 3B_COMPARE_NORMALIZE_AND_2FILES_WITH_LASTNORMALIZED_2026-03-04");
 console.log("main.js loaded ✅");
 
 const fileInput = document.getElementById("fileInput");
@@ -40,6 +40,13 @@ function clearUI() {
   resultsSection?.classList.add("hidden");
   if (btnShow) btnShow.disabled = true;
   setStatus("");
+
+  // ✅ reset debug cache too
+  window.lastAnalyzeA = null;
+  window.lastAnalyzeB = null;
+  window.lastNormalized = null;
+  window.lastNormalizedPrev = null;
+  window.lastUiSelection = null;
 }
 
 function renderSelectedFiles() {
@@ -82,21 +89,17 @@ async function safeJson(res) {
 function getUiSelection() {
   const periodRaw = (periodEl?.value || "").trim();
 
-  // Normalize period to canonical values expected by backend/logs
   let period = null;
   if (periodRaw) {
     const p = periodRaw.toLowerCase();
     if (p.includes("ربع") || p === "quarterly") period = "quarterly";
     else if (p.includes("سن") || p === "annual" || p === "yearly") period = "annual";
     else if (p.includes("12") || p.includes("ttm") || p.includes("آخر") || p.includes("اخر")) period = "ttm";
-    else period = periodRaw; // fallback if you add new options later
+    else period = periodRaw;
   }
 
   const compareRaw = (compareEl?.value || "").trim();
 
-  // Normalize compare to canonical values:
-  // - "none" means no comparison
-  // - "compare" means user wants comparison
   let compare = "none";
   if (compareRaw) {
     const c = compareRaw.toLowerCase();
@@ -221,6 +224,55 @@ async function extractFinancial(payload) {
 }
 
 /* ==============================================
+   ✅ Debug helpers for Console (IMPORTANT)
+   بعد ما تضغط "عرض النتائج" تقدر تشغل:
+   window.runBalanceDiag()
+   window.runExtractAgain()
+   ============================================== */
+
+window.runBalanceDiag = async function () {
+  const normA = window.lastNormalized;
+  if (!normA) {
+    console.warn("لا يوجد lastNormalized. اضغط (عرض النتائج) أولاً.");
+    return;
+  }
+
+  const r = await fetch("/api/extract-financial?diag=1&target=balance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      normalized: normA,
+      normalizedPrev: window.lastNormalizedPrev || null,
+      period: window.lastUiSelection?.period || null,
+      compare: window.lastUiSelection?.compare || "none",
+    }),
+  });
+
+  const j = await safeJson(r);
+  console.log("BALANCE-DIAG:", j);
+  return j;
+};
+
+window.runExtractAgain = async function () {
+  const normA = window.lastNormalized;
+  if (!normA) {
+    console.warn("لا يوجد lastNormalized. اضغط (عرض النتائج) أولاً.");
+    return;
+  }
+
+  const payload = {
+    normalized: normA,
+    period: window.lastUiSelection?.period || null,
+    compare: window.lastUiSelection?.compare || "none",
+  };
+  if (window.lastNormalizedPrev) payload.normalizedPrev = window.lastNormalizedPrev;
+
+  const j = await extractFinancial(payload);
+  console.log("EXTRACT-AGAIN:", j);
+  return j;
+};
+
+/* ==============================================
    🎯 Events
    ============================================== */
 
@@ -246,8 +298,8 @@ btnShow?.addEventListener("click", async () => {
   }
 
   const ui = getUiSelection();
+  window.lastUiSelection = ui; // ✅ cache
 
-  // إذا بدون مقارنة وتم اختيار أكثر من ملف -> سنحلل أول ملف فقط
   if (ui.compare === "none" && selectedFiles.length > 1) {
     setStatus("تم اختيار أكثر من ملف مع (بدون مقارنة). سيتم تحليل أول ملف فقط.", "warn");
   }
@@ -260,14 +312,45 @@ btnShow?.addEventListener("click", async () => {
 
     const dataA = await analyzeSingleFile(selectedFiles[0], ui);
 
+    // ✅ cache for console diagnostics
+    window.lastAnalyzeA = dataA;
+    window.lastNormalized = dataA?.normalized || null;
+
     const pagesA = Number(dataA?.normalized?.meta?.pages || 0);
     const tablesA = Number(dataA?.normalized?.meta?.tables || 0);
     const textLengthA = Number(dataA?.normalized?.meta?.textLength || 0);
+    const tablesPreviewCountA = Array.isArray(dataA?.normalized?.tablesPreview)
+      ? dataA.normalized.tablesPreview.length
+      : 0;
 
     let dataB = null;
+    let pagesB = 0;
+    let tablesB = 0;
+    let textLengthB = 0;
+    let tablesPreviewCountB = 0;
+
     if (ui.compare === "compare" && selectedFiles.length >= 2) {
       setStatus("تم تحليل الملف الأول ✅ — جاري تحليل الملف الثاني للمقارنة...", "info");
       dataB = await analyzeSingleFile(selectedFiles[1], ui);
+
+      // ✅ cache for console diagnostics
+      window.lastAnalyzeB = dataB;
+      window.lastNormalizedPrev = dataB?.normalized || null;
+
+      pagesB = Number(dataB?.normalized?.meta?.pages || 0);
+      tablesB = Number(dataB?.normalized?.meta?.tables || 0);
+      textLengthB = Number(dataB?.normalized?.meta?.textLength || 0);
+      tablesPreviewCountB = Array.isArray(dataB?.normalized?.tablesPreview)
+        ? dataB.normalized.tablesPreview.length
+        : 0;
+    } else {
+      window.lastAnalyzeB = null;
+      window.lastNormalizedPrev = null;
+    }
+
+    // ✅ حط تنبيه واضح إذا tablesPreview صفر (هذا سبب ranked:[])
+    if (!tablesPreviewCountA) {
+      console.warn("⚠️ normalized.tablesPreview = 0. هذا يعني extract-financial لن يجد الجداول.");
     }
 
     setStatus("تم التحليل ✅ — جاري استخراج البيانات المالية...", "info");
@@ -289,6 +372,18 @@ btnShow?.addEventListener("click", async () => {
       <div class="card">ملف 1 — الصفحات: <b>${pagesA}</b></div>
       <div class="card">ملف 1 — الجداول: <b>${tablesA}</b></div>
       <div class="card">ملف 1 — طول النص: <b>${textLengthA}</b></div>
+      <div class="card">ملف 1 — tablesPreview: <b>${tablesPreviewCountA}</b></div>
+
+      ${
+        dataB
+          ? `
+      <div class="card">ملف 2 — الصفحات: <b>${pagesB}</b></div>
+      <div class="card">ملف 2 — الجداول: <b>${tablesB}</b></div>
+      <div class="card">ملف 2 — طول النص: <b>${textLengthB}</b></div>
+      <div class="card">ملف 2 — tablesPreview: <b>${tablesPreviewCountB}</b></div>
+      `
+          : ""
+      }
 
       <div class="card">
         <div class="muted small">اختيارك:</div>
@@ -301,6 +396,21 @@ btnShow?.addEventListener("click", async () => {
         <div class="muted small">Policy (من السيرفر):</div>
         <pre class="small" style="white-space:pre-wrap;max-height:180px;overflow:auto;margin:8px 0 0;">${escapeHtml(
           JSON.stringify(selectionInfo ?? {}, null, 2)
+        )}</pre>
+      </div>
+
+      <div class="card">
+        <div class="muted small">🧪 Debug سريع:</div>
+        <pre class="small" style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:8px 0 0;">${escapeHtml(
+          JSON.stringify(
+            {
+              hasLastNormalized: Boolean(window.lastNormalized),
+              hasLastNormalizedPrev: Boolean(window.lastNormalizedPrev),
+              tip: "افتح Console ثم شغّل: window.runBalanceDiag()",
+            },
+            null,
+            2
+          )
         )}</pre>
       </div>
 
