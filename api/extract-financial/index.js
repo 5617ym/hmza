@@ -14,6 +14,7 @@ module.exports = async function (context, req) {
     const normalizedPrev = body.normalizedPrev || null;
 
     const compareRaw = body.compare ?? null;
+
     const compareStr =
       compareRaw === null || compareRaw === undefined
         ? ""
@@ -54,10 +55,26 @@ module.exports = async function (context, req) {
 
     const toLatinDigits = (s) => {
       const map = {
-        "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
-        "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
-        "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
-        "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
+        "٠": "0",
+        "١": "1",
+        "٢": "2",
+        "٣": "3",
+        "٤": "4",
+        "٥": "5",
+        "٦": "6",
+        "٧": "7",
+        "٨": "8",
+        "٩": "9",
+        "۰": "0",
+        "۱": "1",
+        "۲": "2",
+        "۳": "3",
+        "۴": "4",
+        "۵": "5",
+        "۶": "6",
+        "۷": "7",
+        "۸": "8",
+        "۹": "9",
       };
       return String(s || "").replace(/[٠-٩۰-۹]/g, (ch) => map[ch] ?? ch);
     };
@@ -68,45 +85,7 @@ module.exports = async function (context, req) {
         .replace(/[٬،]/g, ",");
     };
 
-    // Arabic text normalization (very important for matching)
-    const normalizeArabicText = (s) => {
-      let x = String(s || "");
-
-      // remove tatweel & diacritics
-      x = x.replace(/ـ/g, "");
-      x = x.replace(/[\u064B-\u065F\u0670]/g, "");
-
-      // normalize alef forms
-      x = x.replace(/[أإآٱ]/g, "ا");
-
-      // normalize ya/ya maksura
-      x = x.replace(/[ى]/g, "ي");
-
-      // normalize taa marbuta
-      x = x.replace(/[ة]/g, "ه");
-
-      // normalize hamza on waw/ya
-      x = x.replace(/[ؤ]/g, "و").replace(/[ئ]/g, "ي");
-
-      // collapse spaces
-      x = x.replace(/\s+/g, " ").trim();
-
-      return x;
-    };
-
-    const norm = (s) =>
-      normalizeArabicText(
-        toLatinDigits(normalizeSeparators(String(s || "")))
-      )
-        .toLowerCase()
-        .trim();
-
-    const isMostlyNumberLike = (t) => {
-      const s = norm(t);
-      if (!s) return true;
-      // numbers, punctuation, parentheses, commas, dots, plus/minus
-      return /^[\d\s,().+\-/%]+$/.test(s);
-    };
+    const norm = (s) => toLatinDigits(normalizeSeparators(String(s || ""))).toLowerCase().trim();
 
     const parseNumberSmart = (raw) => {
       if (raw === null || raw === undefined) return null;
@@ -180,7 +159,7 @@ module.exports = async function (context, req) {
     };
 
     const findYear = (text) => {
-      const s = norm(text);
+      const s = toLatinDigits(normalizeSeparators(text));
       const m = s.match(/\b(20\d{2})\b/);
       if (!m) return null;
       const y = Number(m[1]);
@@ -215,12 +194,12 @@ module.exports = async function (context, req) {
           const y = findYear(t);
           if (y) cols[c].years.push(y);
 
-          if (t.includes("الثلاثه") && t.includes("اشهر")) cols[c].hasThreeMonths = true;
-          if (t.includes("التسعه") && t.includes("اشهر")) cols[c].hasNineMonths = true;
+          if (t.includes("الثلاثة") && t.includes("أشهر")) cols[c].hasThreeMonths = true;
+          if (t.includes("التسعة") && t.includes("أشهر")) cols[c].hasNineMonths = true;
 
-          if (t.includes("ديسمبر") || t.includes("السنه") || t.includes("منتهيه")) cols[c].hasAnnual = true;
+          if (t.includes("ديسمبر") || t.includes("السنة") || t.includes("منتهية")) cols[c].hasAnnual = true;
 
-          if (t.includes("ايضاح") || t === "ايضاح") cols[c].hasNote = true;
+          if (t.includes("إيضاح") || t.includes("ايضاح") || t === "إيضاح") cols[c].hasNote = true;
         }
       }
 
@@ -272,120 +251,29 @@ module.exports = async function (context, req) {
       return { latest, previous, debug: { maxYear, prevYear, yearsAll } };
     };
 
-    /* =========================
-       Robust row label detection (works for BOTH income & balance)
-       ========================= */
-
-    const getRowLabel = (row) => {
-      if (!Array.isArray(row)) return "";
-
-      let best = "";
-      let bestScore = -1;
-
-      for (let i = 0; i < row.length; i++) {
-        const cell = row[i];
-        if (!cell) continue;
-
-        const raw = String(cell).trim();
-        if (!raw) continue;
-
-        const t = norm(raw);
-        if (!t) continue;
-
-        // skip typical header-like cells
-        if (t.includes("ديسمبر") || t.includes("السنه") || t.includes("منتهيه")) continue;
-        if (t === "ايضاح" || t.includes("ايضاح")) continue;
-
-        // skip number-like
-        if (isMostlyNumberLike(t)) continue;
-
-        // prefer cells with more letters
-        const letters = t.replace(/[^a-z\u0600-\u06ff]/g, ""); // latin + arabic letters
-        const score = letters.length * 10 + t.length;
-
-        if (score > bestScore) {
-          bestScore = score;
-          best = t;
-        }
-      }
-
-      // fallback: try last then first non-empty
-      if (!best) {
-        const last = row[row.length - 1];
-        if (last && !isMostlyNumberLike(last)) return norm(last);
-        const first = row[0];
-        if (first && !isMostlyNumberLike(first)) return norm(first);
-      }
-
-      return best || "";
-    };
-
-    const bestMatchRow = (rows, names, opts = {}) => {
-      const mustInclude = (opts.mustInclude || []).map(norm);
-      const mustNotInclude = (opts.mustNotInclude || []).map(norm);
-
-      let best = null;
-
-      for (const r of rows || []) {
-        if (!Array.isArray(r)) continue;
-        const label = getRowLabel(r);
-        if (!label) continue;
-
-        const ln = norm(label);
-
-        // must include terms
-        if (mustInclude.length && !mustInclude.every((k) => ln.includes(k))) continue;
-
-        // must not include terms
-        if (mustNotInclude.length && mustNotInclude.some((k) => ln.includes(k))) continue;
-
-        // base match: any of names
-        let hit = false;
-        let hitStrength = 0;
-
-        for (const n of names) {
-          const nn = norm(n);
-          if (nn && ln.includes(nn)) {
-            hit = true;
-            // prefer longer/more specific matches
-            hitStrength = Math.max(hitStrength, nn.length);
-          }
-        }
-        if (!hit) continue;
-
-        const hasTotalWord =
-          ln.includes(norm("اجمالي")) || ln.includes(norm("اجمالى")) || ln.includes("total");
-
-        // scoring: prefer "إجمالي" for total fields, and more specific match
-        const score = (hasTotalWord ? 200 : 0) + hitStrength;
-
-        if (!best || score > best.score) {
-          best = { row: r, label, score };
-        }
-      }
-
-      return best ? { row: best.row, label: best.label } : null;
-    };
-
-    /* =========================
-       INCOME
-       ========================= */
-
     const scoreIncomeTable = (table) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
       const hits = [
-        "الايرادات", "تكلفه الايرادات", "مجمل الربح",
-        "الربح التشغيلي", "صافي الربح",
-        "قائمه الدخل", "قائمه الربح والخساره",
-        "لفتره", "الثلاثه اشهر", "التسعه اشهر",
+        "الإيرادات",
+        "الايرادات",
+        "تكلفة الإيرادات",
+        "تكلفة الايرادات",
+        "مجمل الربح",
+        "الربح التشغيلي",
+        "صافي الربح",
+        "قائمة الدخل",
+        "قائمة الربح والخسارة",
+        "لفترة",
+        "الثلاثة أشهر",
+        "التسعة أشهر",
       ];
 
       let score = 0;
       for (const k of hits) if (joined.includes(norm(k))) score += 2;
 
-      if (joined.includes("ايضاح")) score += 1;
+      if (joined.includes("إيضاح") || joined.includes("ايضاح")) score += 1;
 
       const cc = Number(table?.columnCount || 0);
       if (cc >= 5) score += 1;
@@ -394,7 +282,7 @@ module.exports = async function (context, req) {
     };
 
     const wantIncome = [
-      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "Revenue"] },
+      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "Revenue"] },
       { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"] },
       { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
       { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
@@ -403,12 +291,89 @@ module.exports = async function (context, req) {
       { key: "netProfit", names: ["صافي ربح الفترة", "صافي ربح السنة", "صافي الربح", "Net profit"] },
     ];
 
+    // ✅ NEW: detect numeric-ish cells to avoid picking them as labels
+    const isMostlyNumberLike = (v) => {
+      const s = norm(v);
+      if (!s) return false;
+
+      // notes like "6" or "(3)" or "14"
+      if (/^\(?\d+(\.\d+)?\)?$/.test(s)) return true;
+
+      // currency-like, thousands separators, parentheses, signs
+      if (/^[\(\)\d\.,\-\+]+$/.test(s)) return true;
+
+      // common short noise
+      if (s === "—" || s === "--" || s === "-" || s === "—-") return true;
+
+      return false;
+    };
+
+    // ✅ NEW: smarter label picker:
+    // scan from end to start and pick the first meaningful TEXT cell (not number / not note / not empty)
+    const getRowLabel = (r) => {
+      if (!Array.isArray(r)) return "";
+
+      for (let i = r.length - 1; i >= 0; i--) {
+        const cell = r[i];
+        const t = norm(cell);
+        if (!t) continue;
+
+        // skip note header cells
+        if (t === norm("إيضاح") || t === norm("ايضاح")) continue;
+
+        // skip numeric-ish
+        if (isMostlyNumberLike(t)) continue;
+
+        // skip pure punctuation
+        if (/^[\|\s]+$/.test(t)) continue;
+
+        return t;
+      }
+
+      return "";
+    };
+
+    const findRowByLabel = (rows, names) => {
+      if (!Array.isArray(rows)) return null;
+
+      // 1) First pass: prefer rows that contain إجمالي/total
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r);
+        if (!label) continue;
+
+        const labelNorm = norm(label);
+        const hasTotalWord =
+          labelNorm.includes(norm("إجمالي")) ||
+          labelNorm.includes(norm("اجمالي")) ||
+          labelNorm.includes("total");
+
+        if (!hasTotalWord) continue;
+
+        const ok = names.some((n) => labelNorm.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+
+      // 2) Fallback: normal matching
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r);
+        if (!label) continue;
+
+        const labelNorm = norm(label);
+        const ok = names.some((n) => labelNorm.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+
+      return null;
+    };
+
     const extractIncomeSingleTable = (table, latestColIdx, prevColIdx) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const out = {};
 
       for (const item of wantIncome) {
-        const hit = bestMatchRow(rows, item.names);
+        const hit = findRowByLabel(rows, item.names);
         if (!hit) {
           out[item.key] = null;
           continue;
@@ -427,8 +392,8 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantIncome) {
-        const hitA = bestMatchRow(rowsA, item.names);
-        const hitB = bestMatchRow(rowsB, item.names);
+        const hitA = findRowByLabel(rowsA, item.names);
+        const hitB = findRowByLabel(rowsB, item.names);
 
         const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
         const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
@@ -445,8 +410,6 @@ module.exports = async function (context, req) {
 
     /* =========================
        BALANCE SHEET
-       - Pick best table(s)
-       - Extract from best source per metric
        ========================= */
 
     const scoreBalanceTable = (table) => {
@@ -461,37 +424,58 @@ module.exports = async function (context, req) {
         "balance sheet",
         "statement of financial position",
       ];
-
       const support = [
-        "الموجودات", "الاصول",
-        "المطلوبات", "الالتزامات", "الخصوم",
-        "حقوق الملكية", "حقوق المساهمين",
-        "اجمالي الموجودات", "اجمالي الاصول", "total assets",
-        "اجمالي المطلوبات", "اجمالي الالتزامات", "total liabilities",
-        "اجمالي حقوق الملكية", "total equity",
-        "حقوق الملكية والمطلوبات",
+        "الأصول",
+        "الموجودات",
+        "assets",
+        "المطلوبات",
+        "liabilities",
+        "الالتزامات",
+        "حقوق الملكية",
+        "equity",
+        "إجمالي الأصول",
+        "total assets",
+        "إجمالي المطلوبات",
+        "total liabilities",
+        "إجمالي حقوق الملكية",
+        "total equity",
       ];
 
       let score = 0;
-      for (const k of strong) if (joined.includes(norm(k))) score += 40;
-      for (const k of support) if (joined.includes(norm(k))) score += 8;
+      for (const k of strong) if (joined.includes(norm(k))) score += 20;
+      for (const k of support) if (joined.includes(norm(k))) score += 6;
 
-      if (joined.includes(norm("متداولة")) && joined.includes(norm("غير متداولة"))) score += 10;
+      // small bonus for current/non-current structure
+      if (joined.includes(norm("متداولة")) && joined.includes(norm("غير متداولة"))) score += 6;
 
       return score;
     };
 
-    // IMPORTANT: disambiguation rules to prevent picking subtotal as total
     const wantBalance = [
       {
         key: "totalAssets",
-        names: ["إجمالي الموجودات", "اجمالي الموجودات", "إجمالي الأصول", "اجمالي الأصول", "مجموع الموجودات", "مجموع الأصول", "Total assets"],
-        opts: { mustInclude: ["اجمالي"], mustNotInclude: ["غير متداولة", "متداولة"] },
+        names: [
+          "إجمالي الموجودات",
+          "اجمالي الموجودات",
+          "إجمالي الأصول",
+          "اجمالي الأصول",
+          "مجموع الموجودات",
+          "مجموع الأصول",
+          "Total assets",
+        ],
       },
       {
         key: "totalLiabilities",
-        names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "إجمالي الخصوم", "اجمالي الخصوم", "Total liabilities"],
-        opts: { mustInclude: ["اجمالي"], mustNotInclude: ["غير متداولة", "متداولة"] },
+        names: [
+          "إجمالي المطلوبات",
+          "اجمالي المطلوبات",
+          "إجمالي الالتزامات",
+          "اجمالي الالتزامات",
+          "إجمالي الخصوم",
+          "اجمالي الخصوم",
+          "مجموع المطلوبات",
+          "Total liabilities",
+        ],
       },
       {
         key: "totalEquity",
@@ -500,62 +484,70 @@ module.exports = async function (context, req) {
           "اجمالي حقوق الملكية",
           "إجمالي حقوق المساهمين",
           "اجمالي حقوق المساهمين",
+          "حقوق الملكية العائدة لمساهمي الشركة الأم",
           "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
-          "اجمالي حقوق الملكية العائدة لمساهمي الشركة الام",
           "Total equity",
           "Total shareholders' equity",
         ],
-        opts: { mustInclude: ["اجمالي"], mustNotInclude: ["غير المسيطرة"] },
       },
-      { key: "currentAssets", names: ["إجمالي الموجودات المتداولة", "اجمالي الموجودات المتداولة", "الأصول المتداولة", "اصول متداولة", "Current assets"], opts: { mustInclude: ["متداولة"] } },
-      { key: "nonCurrentAssets", names: ["إجمالي الموجودات غير المتداولة", "اجمالي الموجودات غير المتداولة", "الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"], opts: { mustInclude: ["غير متداولة"] } },
-      { key: "currentLiabilities", names: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"], opts: { mustInclude: ["متداولة"] } },
-      { key: "nonCurrentLiabilities", names: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"], opts: { mustInclude: ["غير متداولة"] } },
+      { key: "currentAssets", names: ["إجمالي الموجودات المتداولة", "اجمالي الموجودات المتداولة", "الأصول المتداولة", "اصول متداولة", "Current assets"] },
+      { key: "nonCurrentAssets", names: ["إجمالي الموجودات غير المتداولة", "اجمالي الموجودات غير المتداولة", "الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
+      { key: "currentLiabilities", names: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"] },
+      { key: "nonCurrentLiabilities", names: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"] },
     ];
 
-    const extractBalanceFromAnyTables = (tables, latestColIdx, prevColIdx) => {
-      // We pick the best hit across ALL candidate tables per metric
+    // ✅ NEW: extract balance across MULTIPLE tables
+    const extractBalanceFromTables = (tables, noCompareFlag) => {
       const out = {};
-      const debugHits = {};
+      const hits = {}; // per key: where it was found
 
-      for (const item of wantBalance) {
-        let bestHit = null;
-        let bestTableIndex = null;
+      // init
+      for (const item of wantBalance) out[item.key] = null;
 
-        for (const t of tables || []) {
-          const rows = Array.isArray(t?.sample) ? t.sample : [];
-          const hit = bestMatchRow(rows, item.names, item.opts || {});
+      const list = (Array.isArray(tables) ? tables : []).filter(Boolean);
+
+      for (const t of list) {
+        const rows = Array.isArray(t?.sample) ? t.sample : [];
+        if (!rows.length) continue;
+
+        const cols = detectColumns(t);
+        const picked = pickLatestColumns(cols);
+
+        const latestCol = picked.latest?.col ?? null;
+        const prevCol = noCompareFlag ? null : picked.previous?.col ?? null;
+
+        // if we can't pick numeric columns, skip this table
+        if (latestCol == null) continue;
+
+        for (const item of wantBalance) {
+          if (out[item.key]) continue; // don't override
+          const hit = findRowByLabel(rows, item.names);
           if (!hit) continue;
 
-          // quality score: prefer tables with higher balance score
-          const tScore = scoreBalanceTable(t);
-          const labelLen = (hit.label || "").length;
-          const q = tScore * 1000 + labelLen;
+          const cur = latestCol != null ? parseNumberSmart(hit.row?.[latestCol]) : null;
+          const prev = prevCol != null ? parseNumberSmart(hit.row?.[prevCol]) : null;
 
-          if (!bestHit || q > bestHit.q) {
-            bestHit = { ...hit, q };
-            bestTableIndex = t?.index ?? null;
-          }
+          out[item.key] = { label: hit.label, current: cur, previous: prev };
+          hits[item.key] = {
+            tableIndex: t?.index ?? null,
+            latestCol,
+            prevCol,
+          };
         }
-
-        if (!bestHit) {
-          out[item.key] = null;
-          continue;
-        }
-
-        const cur = latestColIdx != null ? parseNumberSmart(bestHit.row?.[latestColIdx]) : null;
-        const prev = prevColIdx != null ? parseNumberSmart(bestHit.row?.[prevColIdx]) : null;
-
-        out[item.key] = { label: bestHit.label, current: cur, previous: prev };
-        debugHits[item.key] = { tableIndex: bestTableIndex, label: bestHit.label };
       }
 
-      return { out, debugHits };
+      return { out, hits };
     };
 
     /* =========================
-       DIAG: rank balance tables (show why we pick)
+       DIAG: pick best balance table
        ========================= */
+
+    const normText2 = (s) =>
+      String(s || "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
 
     const tableTextQuick = (t) => {
       const rows = Array.isArray(t?.sample) ? t.sample : [];
@@ -565,17 +557,53 @@ module.exports = async function (context, req) {
         if (!Array.isArray(row)) continue;
         for (let c = 0; c < row.length && c < 12; c++) {
           const v = row[c];
-          if (v !== null && v !== undefined && String(v).trim() !== "") out.push(String(v));
+          if (v) out.push(v);
         }
       }
-      return norm(out.join(" | "));
+      return normText2(out.join(" | "));
+    };
+
+    const scoreBalanceSheetText = (text) => {
+      const keysStrong = [
+        "قائمة المركز المالي",
+        "الميزانية",
+        "الميزانية العمومية",
+        "قائمة الوضع المالي",
+        "statement of financial position",
+        "balance sheet",
+        "financial position",
+      ];
+      const keysSupport = [
+        "الأصول",
+        "assets",
+        "الموجودات",
+        "المطلوبات",
+        "liabilities",
+        "الالتزامات",
+        "حقوق الملكية",
+        "equity",
+        "إجمالي الأصول",
+        "total assets",
+        "إجمالي المطلوبات",
+        "total liabilities",
+        "إجمالي حقوق الملكية",
+        "total equity",
+      ];
+
+      let score = 0;
+      for (const k of keysStrong) if (text.includes(normText2(k))) score += 50;
+      for (const k of keysSupport) if (text.includes(normText2(k))) score += 10;
+
+      if (text.includes("متداولة") || text.includes("غير متداولة")) score += 8;
+
+      return score;
     };
 
     const pickBestBalanceSheetTable = (tables) => {
       const ranked = (Array.isArray(tables) ? tables : [])
         .map((t) => {
-          const snippet = tableTextQuick(t);
-          const score = scoreBalanceTable(t);
+          const text = tableTextQuick(t);
+          const score = scoreBalanceSheetText(text);
 
           return {
             index: t?.index ?? null,
@@ -583,9 +611,10 @@ module.exports = async function (context, req) {
             page: t?.pageNumber ?? t?.page ?? null,
             columnCount: t?.columnCount ?? null,
             rowCount: t?.rowCount ?? null,
-            snippet: snippet.slice(0, 260),
+            snippet: text.slice(0, 260),
           };
         })
+        .filter((x) => x.score > 0)
         .sort((a, b) => b.score - a.score);
 
       const best = ranked[0] || null;
@@ -593,10 +622,11 @@ module.exports = async function (context, req) {
       return {
         bestTableIndex: best?.index ?? null,
         bestScore: best?.score ?? null,
-        candidates: ranked.slice(0, 8),
+        candidates: ranked.slice(0, 5),
       };
     };
 
+    // DIAG endpoint
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
       const bsDiag = pickBestBalanceSheetTable(tablesPreview);
 
@@ -610,12 +640,12 @@ module.exports = async function (context, req) {
         bestScore: bsDiag.bestScore,
         found: bsDiag.candidates.length,
         ranked: bsDiag.candidates,
-        hint: "خذ bestTableIndex من ranked (أعلى score). إذا كانت الميزانية موزعة على أكثر من جدول، نقدر نلتقط البنود من أكثر من جدول تلقائياً (وهذا مفعّل هنا).",
+        hint: "اختر الجدول الأعلى Score (bestTableIndex). سنثبت استخراج الميزانية منه في الخطوة التالية.",
       });
     }
 
     /* =========================
-       1) pick best income table (file A)
+       1) pick best income table
        ========================= */
 
     let bestA = null;
@@ -664,101 +694,82 @@ module.exports = async function (context, req) {
     }
 
     /* =========================
-       2) Balance extraction
-       - Use ALL tables (not just one), because your PDF splits sections
+       2) balance: search across best + candidates
        ========================= */
 
-    // pick columns for balance: we use best balance table just to detect columns
     const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
 
-    // choose a table to detect columns from (best score)
-    let balColsSource = null;
-    if (bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
-      balColsSource = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex)) || null;
+    // build list of candidate tables to search (best + top candidates)
+    const candidateTablesA = [];
+    if (bsDiagA?.candidates?.length) {
+      for (const c of bsDiagA.candidates) {
+        const t = tablesPreview.find((x) => Number(x?.index) === Number(c.index));
+        if (t) candidateTablesA.push(t);
+      }
+    } else if (bsDiagA.bestTableIndex != null) {
+      const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
+      if (t) candidateTablesA.push(t);
     }
-    if (!balColsSource) balColsSource = tablesPreview[0] || null;
+
+    // fallback: if diag found nothing, still try all tables
+    const tablesToSearchA = candidateTablesA.length ? candidateTablesA : tablesPreview;
 
     let balanceExtract = {};
     let balancePicked = null;
 
-    if (balColsSource) {
-      const colsBalA = detectColumns(balColsSource);
-      const pickedBalA = pickLatestColumns(colsBalA);
+    if (usingTwoFiles) {
+      const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
+      const candidateTablesB = [];
+      if (bsDiagB?.candidates?.length) {
+        for (const c of bsDiagB.candidates) {
+          const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(c.index));
+          if (t) candidateTablesB.push(t);
+        }
+      } else if (bsDiagB.bestTableIndex != null) {
+        const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
+        if (t) candidateTablesB.push(t);
+      }
 
-      const latestBalColA = pickedBalA.latest?.col ?? null;
-      const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
+      const tablesToSearchB = candidateTablesB.length ? candidateTablesB : tablesPreviewPrev;
 
-      // extract from ANY tables in file A
-      const balA = extractBalanceFromAnyTables(tablesPreview, latestBalColA, prevBalColA);
+      // current from A (latest), previous from B (latest)
+      const a = extractBalanceFromTables(tablesToSearchA, true);
+      const b = extractBalanceFromTables(tablesToSearchB, true);
 
-      balanceExtract = balA.out;
+      const out = {};
+      for (const item of wantBalance) {
+        const k = item.key;
+        out[k] = {
+          label: a.out[k]?.label || b.out[k]?.label || null,
+          current: a.out[k]?.current ?? null,
+          previous: b.out[k]?.current ?? null, // previous year comes from fileB latest
+        };
+      }
 
+      balanceExtract = out;
       balancePicked = {
         fileA: {
-          columnsFromTableIndex: balColsSource.index,
           diag: bsDiagA,
-          pickedColumns: {
-            latest: pickedBalA.latest
-              ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
-              : null,
-            previous: noCompare
-              ? null
-              : pickedBalA.previous
-              ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
-              : null,
-            debug: pickedBalA.debug,
-          },
-          hits: balA.debugHits,
+          searchedTableIndexes: tablesToSearchA.map((t) => t.index),
+          hits: a.hits,
         },
-        note:
-          "Balance metrics are extracted by searching across ALL tables (because some PDFs split Assets/Liabilities/Equity across multiple tables).",
+        fileB: {
+          diag: bsDiagB,
+          searchedTableIndexes: tablesToSearchB.map((t) => t.index),
+          hits: b.hits,
+        },
       };
+    } else {
+      const a = extractBalanceFromTables(tablesToSearchA, noCompare);
 
-      if (usingTwoFiles) {
-        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
-        let balColsSourceB = null;
-
-        if (bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
-          balColsSourceB =
-            tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex)) || null;
-        }
-        if (!balColsSourceB) balColsSourceB = tablesPreviewPrev[0] || null;
-
-        if (balColsSourceB) {
-          const colsBalB = detectColumns(balColsSourceB);
-          const pickedBalB = pickLatestColumns(colsBalB);
-          const latestBalColB = pickedBalB.latest?.col ?? null;
-
-          const balB = extractBalanceFromAnyTables(tablesPreviewPrev, latestBalColB, null);
-
-          // merge: current from A, previous from B when compare + 2 files
-          const merged = {};
-          for (const item of wantBalance) {
-            const k = item.key;
-            const curObj = balanceExtract?.[k] || null;
-            const prevObj = balB.out?.[k] || null;
-            merged[k] = {
-              label: (curObj?.label || prevObj?.label || null),
-              current: curObj?.current ?? null,
-              previous: prevObj?.current ?? null, // B "current" is previous year for comparison
-            };
-          }
-
-          balanceExtract = merged;
-
-          balancePicked.fileB = {
-            columnsFromTableIndex: balColsSourceB.index,
-            diag: bsDiagB,
-            pickedColumns: {
-              latest: pickedBalB.latest
-                ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null }
-                : null,
-              debug: pickedBalB.debug,
-            },
-            hits: balB.debugHits,
-          };
-        }
-      }
+      balanceExtract = a.out;
+      balancePicked = {
+        fileA: {
+          diag: bsDiagA,
+          searchedTableIndexes: tablesToSearchA.map((t) => t.index),
+          hits: a.hits,
+        },
+      };
     }
 
     return send(200, {
@@ -804,7 +815,7 @@ module.exports = async function (context, req) {
 
         incomeStatementLite: incomeExtract,
 
-        // Balance outputs
+        // ✅ Balance outputs
         balanceSheetLite: balanceExtract,
         balancePickInfo: balancePicked,
 
