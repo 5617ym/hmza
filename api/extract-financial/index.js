@@ -68,12 +68,24 @@ module.exports = async function (context, req) {
         .replace(/[٬،]/g, ",");
     };
 
-    const norm = (s) => toLatinDigits(normalizeSeparators(String(s || ""))).toLowerCase().trim();
+    // ✅ أهم إضافة: تنظيف محارف RTL/Bidi + tatweel + مسافات غريبة
+    const stripInvisible = (s) => {
+      return String(s || "")
+        .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "") // bidi marks
+        .replace(/\u0640/g, "") // tatweel
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const norm = (s) =>
+      stripInvisible(toLatinDigits(normalizeSeparators(String(s || ""))))
+        .toLowerCase()
+        .trim();
 
     const parseNumberSmart = (raw) => {
       if (raw === null || raw === undefined) return null;
 
-      let s = toLatinDigits(normalizeSeparators(String(raw))).trim();
+      let s = stripInvisible(toLatinDigits(normalizeSeparators(String(raw)))).trim();
       if (!s) return null;
 
       let neg = false;
@@ -243,7 +255,11 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Row matching (FINAL ✅)
+       Row matching (FINAL ✅✅)
+       - يبحث داخل "نص السطر كامل" أولاً (يعالج تقسيم العنوان)
+       - ثم يبحث داخل خلية واحدة
+       - يتجاهل الخلايا الرقمية
+       - يدعم exclude
        ========================= */
 
     const findRowByLabel = (rows, item) => {
@@ -252,8 +268,41 @@ module.exports = async function (context, req) {
       const names = Array.isArray(item?.names) ? item.names : [];
       const exclude = Array.isArray(item?.exclude) ? item.exclude : [];
 
-      const isExcluded = (cellNorm) => exclude.some((e) => cellNorm.includes(norm(e)));
+      const namesN = names.map((x) => norm(x)).filter(Boolean);
+      const exclN = exclude.map((x) => norm(x)).filter(Boolean);
 
+      const isExcluded = (textNorm) => exclN.some((e) => textNorm.includes(e));
+
+      // 1) ✅ محاولة: مطابقة داخل نص السطر كامل (دمج الخلايا النصية)
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+
+        const textCells = [];
+        for (let i = 0; i < r.length; i++) {
+          const cell = r[i];
+          if (!cell) continue;
+          if (isProbablyNumberCell(cell)) continue;
+          const cn = norm(cell);
+          if (!cn) continue;
+          textCells.push({ idx: i, text: cn });
+        }
+
+        if (!textCells.length) continue;
+
+        const rowText = textCells.map((x) => x.text).join(" ");
+        if (isExcluded(rowText)) continue;
+
+        const ok = namesN.some((n) => rowText.includes(n));
+        if (ok) {
+          return {
+            row: r,
+            label: rowText,
+            labelCellIndex: textCells[0]?.idx ?? null,
+          };
+        }
+      }
+
+      // 2) fallback: مطابقة داخل خلية واحدة
       for (const r of rows) {
         if (!Array.isArray(r)) continue;
 
@@ -261,13 +310,11 @@ module.exports = async function (context, req) {
           const cell = r[i];
           const cellNorm = norm(cell);
           if (!cellNorm) continue;
-
-          // تجاهل الخلايا الرقمية
           if (isProbablyNumberCell(cell)) continue;
 
           if (isExcluded(cellNorm)) continue;
 
-          const ok = names.some((n) => cellNorm.includes(norm(n)));
+          const ok = namesN.some((n) => cellNorm.includes(n));
           if (ok) return { row: r, label: cellNorm, labelCellIndex: i };
         }
       }
@@ -351,10 +398,11 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       BALANCE SHEET (FIXED ✅)
+       BALANCE SHEET
        ========================= */
 
-    const normText2 = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+    const normText2 = (s) =>
+      stripInvisible(String(s || "")).toLowerCase().replace(/\s+/g, " ").trim();
 
     const tableTextQuick = (t) => {
       const rows = Array.isArray(t?.sample) ? t.sample : [];
@@ -449,6 +497,7 @@ module.exports = async function (context, req) {
       return score;
     };
 
+    // ✅ أضفت كلمات "إجمالي الموجودات" و "إجمالي المطلوبات وحقوق الملكية" بشكل آمن
     const wantBalance = [
       {
         key: "totalAssets",
@@ -461,7 +510,7 @@ module.exports = async function (context, req) {
           "مجموع الموجودات",
           "Total assets",
         ],
-        // ✅ حماية أساسية: لا تلتقط "إجمالي غير المتداولة/المتداولة"
+        // يمنع السطور الجزئية الشائعة (غير/متداولة) من أنها تنخطف كإجمالي
         exclude: [
           "غير المتداولة",
           "غير المتداوله",
@@ -469,14 +518,17 @@ module.exports = async function (context, req) {
           "متداوله",
           "non-current",
           "current",
+          "موجودات حق الإستخدام",
+          "الممتلكات والمعدات",
+          "الشهرة",
         ],
       },
       {
         key: "currentAssets",
         names: [
           "إجمالي الموجودات المتداولة",
-          "الموجودات المتداولة",
           "إجمالي الأصول المتداولة",
+          "الموجودات المتداولة",
           "الأصول المتداولة",
           "اصول متداولة",
           "Current assets",
@@ -486,8 +538,8 @@ module.exports = async function (context, req) {
         key: "nonCurrentAssets",
         names: [
           "إجمالي الموجودات غير المتداولة",
-          "الموجودات غير المتداولة",
           "إجمالي الأصول غير المتداولة",
+          "الموجودات غير المتداولة",
           "الأصول غير المتداولة",
           "اصول غير متداولة",
           "Non-current assets",
@@ -504,8 +556,8 @@ module.exports = async function (context, req) {
           "اجمالي الخصوم",
           "Total liabilities",
         ],
-        // ✅ حماية: لا تلتقط "إجمالي المطلوبات وحقوق الملكية"
-        exclude: ["وحقوق", "and equity"],
+        // لو جاء "إجمالي المطلوبات وحقوق الملكية" لا نعتبره totalLiabilities
+        exclude: ["وحقوق الملكية", "and equity"],
       },
       {
         key: "currentLiabilities",
@@ -556,6 +608,7 @@ module.exports = async function (context, req) {
         out[item.key] = { label: hit.label, current: cur, previous: prev };
       }
 
+      // Derivation rules
       const a = out.totalAssets?.current ?? null;
       const l = out.totalLiabilities?.current ?? null;
       const e = out.totalEquity?.current ?? null;
@@ -601,6 +654,7 @@ module.exports = async function (context, req) {
       return out;
     };
 
+    // DIAG endpoint
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
       const bsDiag = pickBestBalanceSheetTable(tablesPreview);
       return send(200, {
