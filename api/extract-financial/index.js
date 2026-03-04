@@ -250,34 +250,39 @@ module.exports = async function (context, req) {
        ========================= */
 
     const findRowByLabel = (rows, item) => {
-      if (!Array.isArray(rows)) return null;
+  if (!Array.isArray(rows)) return null;
 
-      const names = Array.isArray(item?.names) ? item.names : [];
-      const exclude = Array.isArray(item?.exclude) ? item.exclude : [];
+  const names = Array.isArray(item?.names) ? item.names : [];
+  const exclude = Array.isArray(item?.exclude) ? item.exclude : [];
 
-      const isExcluded = (cellNorm) => exclude.some((e) => cellNorm.includes(norm(e)));
+  const isExcluded = (cellNorm) =>
+    exclude.some((e) => cellNorm.includes(norm(e)));
 
-      const hasTotalWord = (cellNorm) =>
-        cellNorm.includes(norm("إجمالي")) ||
-        cellNorm.includes(norm("اجمالي")) ||
-        cellNorm.includes("total");
+  for (const r of rows) {
+    if (!Array.isArray(r)) continue;
 
-      // Prefer rows where matching cell also contains إجمالي/total
-      for (const r of rows) {
-        if (!Array.isArray(r)) continue;
-        for (let i = 0; i < r.length; i++) {
-          const cell = r[i];
-          const cellNorm = norm(cell);
-          if (!cellNorm) continue;
-          if (isProbablyNumberCell(cell)) continue;
-          if (isExcluded(cellNorm)) continue;
+    for (let i = 0; i < r.length; i++) {
+      const cell = r[i];
+      const cellNorm = norm(cell);
 
-          const ok = names.some((n) => cellNorm.includes(norm(n)));
-          if (!ok) continue;
+      if (!cellNorm) continue;
 
-          if (hasTotalWord(cellNorm)) return { row: r, label: cellNorm, labelCellIndex: i };
-        }
+      if (isExcluded(cellNorm)) continue;
+
+      const ok = names.some((n) => cellNorm.includes(norm(n)));
+
+      if (ok) {
+        return {
+          row: r,
+          label: cellNorm,
+          labelCellIndex: i,
+        };
       }
+    }
+  }
+
+  return null;
+};
 
       // Fallback: any matching text cell
       for (const r of rows) {
