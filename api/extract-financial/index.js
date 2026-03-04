@@ -251,6 +251,88 @@ module.exports = async function (context, req) {
       return { latest, previous, debug: { maxYear, prevYear, yearsAll } };
     };
 
+    /* =========================
+       Row label + matching
+       ========================= */
+
+    const getRowLabel = (r) => {
+      if (!Array.isArray(r)) return "";
+      // حسب sample عندك: اسم البند في آخر عمود
+      const last = r[r.length - 1];
+      if (last) return norm(last);
+      const prev = r[r.length - 2];
+      if (prev) return norm(prev);
+      return "";
+    };
+
+    const includesAny = (text, arr) => {
+      if (!text || !Array.isArray(arr) || !arr.length) return false;
+      for (const w of arr) {
+        if (!w) continue;
+        if (text.includes(norm(w))) return true;
+      }
+      return false;
+    };
+
+    /**
+     * findRowByLabel(rows, names, opts)
+     * opts:
+     * - requireTotal: boolean (يطلب وجود إجمالي/total)
+     * - excludeIfIncludes: string[] (إذا label يحتوي أي منها -> استبعاد)
+     */
+    const findRowByLabel = (rows, names, opts = {}) => {
+      if (!Array.isArray(rows)) return null;
+
+      const requireTotal = Boolean(opts.requireTotal);
+      const excludeIfIncludes = Array.isArray(opts.excludeIfIncludes) ? opts.excludeIfIncludes : [];
+
+      const isAllowed = (labelNorm) => {
+        if (requireTotal) {
+          const hasTotalWord =
+            labelNorm.includes(norm("إجمالي")) ||
+            labelNorm.includes(norm("اجمالي")) ||
+            labelNorm.includes("total");
+          if (!hasTotalWord) return false;
+        }
+        if (excludeIfIncludes.length) {
+          if (includesAny(labelNorm, excludeIfIncludes)) return false;
+        }
+        return true;
+      };
+
+      // pass 1: strict (respect opts)
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r);
+        if (!label) continue;
+
+        const labelNorm = norm(label);
+        if (!isAllowed(labelNorm)) continue;
+
+        const ok = names.some((n) => labelNorm.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+
+      // pass 2: looser (ignore requireTotal, still respect excludes)
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r);
+        if (!label) continue;
+
+        const labelNorm = norm(label);
+        if (excludeIfIncludes.length && includesAny(labelNorm, excludeIfIncludes)) continue;
+
+        const ok = names.some((n) => labelNorm.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+
+      return null;
+    };
+
+    /* =========================
+       INCOME STATEMENT
+       ========================= */
+
     const scoreIncomeTable = (table) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
@@ -291,60 +373,12 @@ module.exports = async function (context, req) {
       { key: "netProfit", names: ["صافي ربح الفترة", "صافي ربح السنة", "صافي الربح", "Net profit"] },
     ];
 
-    const getRowLabel = (r) => {
-  if (!Array.isArray(r)) return "";
-
-  // اسم البند في بياناتك موجود في آخر عمود
-  const last = r[r.length - 1];
-  if (last) return norm(last);
-
-  const prev = r[r.length - 2];
-  if (prev) return norm(prev);
-
-  return "";
-};
-
-const findRowByLabel = (rows, names) => {
-  if (!Array.isArray(rows)) return null;
-
-  // 1) First pass: prefer rows that contain إجمالي/total
-  for (const r of rows) {
-    if (!Array.isArray(r)) continue;
-    const label = getRowLabel(r);
-    if (!label) continue;
-
-    const labelNorm = norm(label);
-    const hasTotalWord =
-      labelNorm.includes(norm("إجمالي")) ||
-      labelNorm.includes(norm("اجمالي")) ||
-      labelNorm.includes("total");
-
-    if (!hasTotalWord) continue;
-
-    const ok = names.some((n) => labelNorm.includes(norm(n)));
-    if (ok) return { row: r, label };
-  }
-
-  // 2) Fallback: normal matching
-  for (const r of rows) {
-    if (!Array.isArray(r)) continue;
-    const label = getRowLabel(r);
-    if (!label) continue;
-
-    const labelNorm = norm(label);
-    const ok = names.some((n) => labelNorm.includes(norm(n)));
-    if (ok) return { row: r, label };
-  }
-
-  return null;
-};
-
     const extractIncomeSingleTable = (table, latestColIdx, prevColIdx) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
       const out = {};
 
       for (const item of wantIncome) {
-        const hit = findRowByLabel(rows, item.names);
+        const hit = findRowByLabel(rows, item.names); // no special opts for income
         if (!hit) {
           out[item.key] = null;
           continue;
@@ -380,7 +414,7 @@ const findRowByLabel = (rows, names) => {
     };
 
     /* =========================
-       BALANCE SHEET (NEW)
+       BALANCE SHEET
        ========================= */
 
     const scoreBalanceTable = (table) => {
@@ -404,11 +438,11 @@ const findRowByLabel = (rows, names) => {
         "الالتزامات",
         "حقوق الملكية",
         "equity",
-        "إجمالي الأصول",
-        "total assets",
+        "إجمالي الموجودات",
         "إجمالي المطلوبات",
-        "total liabilities",
         "إجمالي حقوق الملكية",
+        "total assets",
+        "total liabilities",
         "total equity",
       ];
 
@@ -416,20 +450,58 @@ const findRowByLabel = (rows, names) => {
       for (const k of strong) if (joined.includes(norm(k))) score += 20;
       for (const k of support) if (joined.includes(norm(k))) score += 6;
 
-      // small bonus for current/non-current structure
       if (joined.includes(norm("متداولة")) && joined.includes(norm("غير متداولة"))) score += 6;
 
       return score;
     };
 
     const wantBalance = [
-      { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الأصول", "إجمالي الموجودات", "اجمالي الموجودات", "مجموع الأصول", "مجموع الموجودات", "Total assets"] },
-      { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "إجمالي الخصوم", "اجمالي الخصوم", "مجموع المطلوبات", "Total liabilities"] },
-      { key: "totalEquity", names: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "إجمالي حقوق المساهمين", "اجمالي حقوق المساهمين", "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم", "Total equity", "Total shareholders' equity"] },
-      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "Current assets"] },
-      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
-      { key: "currentLiabilities", names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"] },
-      { key: "nonCurrentLiabilities", names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"] },
+      // TOTALS (must be total, and must NOT be current/non-current totals)
+      {
+        key: "totalAssets",
+        names: ["إجمالي الموجودات", "اجمالي الموجودات", "إجمالي الأصول", "اجمالي الأصول", "مجموع الموجودات", "مجموع الأصول", "Total assets"],
+        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة", "غير المتداولة"] },
+      },
+      {
+        key: "totalLiabilities",
+        names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "إجمالي الخصوم", "اجمالي الخصوم", "Total liabilities"],
+        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة", "غير المتداولة"] },
+      },
+      {
+        key: "totalEquity",
+        names: [
+          "إجمالي حقوق الملكية",
+          "اجمالي حقوق الملكية",
+          "إجمالي حقوق المساهمين",
+          "اجمالي حقوق المساهمين",
+          "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
+          "Total equity",
+          "Total shareholders' equity",
+        ],
+        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة", "غير المتداولة"] },
+      },
+
+      // SECTION TOTALS
+      {
+        key: "currentAssets",
+        names: ["إجمالي الموجودات المتداولة", "اجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة", "اجمالي الأصول المتداولة", "Current assets"],
+        opts: { requireTotal: true, excludeIfIncludes: ["غير المتداولة"] },
+      },
+      {
+        key: "nonCurrentAssets",
+        names: ["إجمالي الموجودات غير المتداولة", "اجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة", "اجمالي الأصول غير المتداولة", "Non-current assets"],
+        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة"] },
+      },
+      {
+        key: "currentLiabilities",
+        names: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة", "اجمالي الالتزامات المتداولة", "Current liabilities"],
+        opts: { requireTotal: true, excludeIfIncludes: ["غير المتداولة"] },
+      },
+      {
+        key: "nonCurrentLiabilities",
+        names: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة", "اجمالي الالتزامات غير المتداولة", "Non-current liabilities"],
+        opts: { requireTotal: true, excludeIfIncludes: ["المتداولة"] },
+      },
     ];
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
@@ -437,7 +509,7 @@ const findRowByLabel = (rows, names) => {
       const out = {};
 
       for (const item of wantBalance) {
-        const hit = findRowByLabel(rows, item.names);
+        const hit = findRowByLabel(rows, item.names, item.opts || {});
         if (!hit) {
           out[item.key] = null;
           continue;
@@ -456,8 +528,8 @@ const findRowByLabel = (rows, names) => {
       const out = {};
 
       for (const item of wantBalance) {
-        const hitA = findRowByLabel(rowsA, item.names);
-        const hitB = findRowByLabel(rowsB, item.names);
+        const hitA = findRowByLabel(rowsA, item.names, item.opts || {});
+        const hitB = findRowByLabel(rowsB, item.names, item.opts || {});
 
         const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
         const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
@@ -473,7 +545,7 @@ const findRowByLabel = (rows, names) => {
     };
 
     /* =========================
-       DIAG: pick best balance table (stable, no hardcoded index)
+       DIAG: pick best balance table
        ========================= */
 
     const normText2 = (s) =>
@@ -507,15 +579,14 @@ const findRowByLabel = (rows, names) => {
         "financial position",
       ];
       const keysSupport = [
-        "الأصول",
-        "assets",
         "الموجودات",
+        "assets",
         "المطلوبات",
         "liabilities",
         "الالتزامات",
         "حقوق الملكية",
         "equity",
-        "إجمالي الأصول",
+        "إجمالي الموجودات",
         "total assets",
         "إجمالي المطلوبات",
         "total liabilities",
@@ -559,7 +630,6 @@ const findRowByLabel = (rows, names) => {
       };
     };
 
-    // If diag endpoint requested for balance: return candidates directly (no extraction)
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
       const bsDiag = pickBestBalanceSheetTable(tablesPreview);
 
@@ -627,7 +697,7 @@ const findRowByLabel = (rows, names) => {
     }
 
     /* =========================
-       2) pick best balance table (file A) using DIAG first (stable)
+       2) pick best balance table (file A)
        ========================= */
 
     const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
@@ -804,7 +874,6 @@ const findRowByLabel = (rows, names) => {
 
         incomeStatementLite: incomeExtract,
 
-        // Balance outputs
         balanceSheetLite: balanceExtract,
         balancePickInfo: balancePicked,
 
