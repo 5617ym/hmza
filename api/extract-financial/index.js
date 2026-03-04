@@ -244,9 +244,6 @@ module.exports = async function (context, req) {
 
     /* =========================
        Row matching (FINAL ✅)
-       - scan ALL cells for label
-       - ignore numeric cells
-       - support exclude
        ========================= */
 
     const findRowByLabel = (rows, item) => {
@@ -265,15 +262,13 @@ module.exports = async function (context, req) {
           const cellNorm = norm(cell);
           if (!cellNorm) continue;
 
-          // مهم: تجاهل الخلايا الرقمية
+          // تجاهل الخلايا الرقمية
           if (isProbablyNumberCell(cell)) continue;
 
           if (isExcluded(cellNorm)) continue;
 
           const ok = names.some((n) => cellNorm.includes(norm(n)));
-          if (ok) {
-            return { row: r, label: cellNorm, labelCellIndex: i };
-          }
+          if (ok) return { row: r, label: cellNorm, labelCellIndex: i };
         }
       }
 
@@ -356,11 +351,10 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       BALANCE SHEET (your logic)
+       BALANCE SHEET (FIXED ✅)
        ========================= */
 
-    const normText2 = (s) =>
-      String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+    const normText2 = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
     const tableTextQuick = (t) => {
       const rows = Array.isArray(t?.sample) ? t.sample : [];
@@ -467,6 +461,7 @@ module.exports = async function (context, req) {
           "مجموع الموجودات",
           "Total assets",
         ],
+        // ✅ حماية أساسية: لا تلتقط "إجمالي غير المتداولة/المتداولة"
         exclude: [
           "غير المتداولة",
           "غير المتداوله",
@@ -474,6 +469,28 @@ module.exports = async function (context, req) {
           "متداوله",
           "non-current",
           "current",
+        ],
+      },
+      {
+        key: "currentAssets",
+        names: [
+          "إجمالي الموجودات المتداولة",
+          "الموجودات المتداولة",
+          "إجمالي الأصول المتداولة",
+          "الأصول المتداولة",
+          "اصول متداولة",
+          "Current assets",
+        ],
+      },
+      {
+        key: "nonCurrentAssets",
+        names: [
+          "إجمالي الموجودات غير المتداولة",
+          "الموجودات غير المتداولة",
+          "إجمالي الأصول غير المتداولة",
+          "الأصول غير المتداولة",
+          "اصول غير متداولة",
+          "Non-current assets",
         ],
       },
       {
@@ -486,6 +503,28 @@ module.exports = async function (context, req) {
           "إجمالي الخصوم",
           "اجمالي الخصوم",
           "Total liabilities",
+        ],
+        // ✅ حماية: لا تلتقط "إجمالي المطلوبات وحقوق الملكية"
+        exclude: ["وحقوق", "and equity"],
+      },
+      {
+        key: "currentLiabilities",
+        names: [
+          "إجمالي المطلوبات المتداولة",
+          "المطلوبات المتداولة",
+          "الالتزامات المتداولة",
+          "الخصوم المتداولة",
+          "Current liabilities",
+        ],
+      },
+      {
+        key: "nonCurrentLiabilities",
+        names: [
+          "إجمالي المطلوبات غير المتداولة",
+          "المطلوبات غير المتداولة",
+          "الالتزامات غير المتداولة",
+          "الخصوم غير المتداولة",
+          "Non-current liabilities",
         ],
       },
       {
@@ -500,10 +539,6 @@ module.exports = async function (context, req) {
           "Total shareholders' equity",
         ],
       },
-      { key: "currentAssets", names: ["إجمالي الأصول المتداولة", "الأصول المتداولة", "اصول متداولة", "Current assets"] },
-      { key: "nonCurrentAssets", names: ["إجمالي الأصول غير المتداولة", "الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
-      { key: "currentLiabilities", names: ["إجمالي المطلوبات المتداولة", "المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"] },
-      { key: "nonCurrentLiabilities", names: ["إجمالي المطلوبات غير المتداولة", "المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"] },
     ];
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
