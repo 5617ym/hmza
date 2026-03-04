@@ -36,6 +36,14 @@ module.exports = async function (context, req) {
 
     const target = String(req.query?.target || body.target || "").toLowerCase();
 
+    // OPTIONAL override to force a balance table index
+    const balanceTableIndexOverrideRaw =
+      body.balanceTableIndex ?? body.balanceIndex ?? body.balance_table_index ?? null;
+    const balanceTableIndexOverride =
+      balanceTableIndexOverrideRaw === null || balanceTableIndexOverrideRaw === undefined
+        ? null
+        : Number(balanceTableIndexOverrideRaw);
+
     if (!normalized || typeof normalized !== "object") {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
@@ -252,7 +260,87 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Income Statement
+       Row label detection (STRONG)
+       ========================= */
+
+    const isNumericish = (txt) => {
+      const t = norm(txt);
+      if (!t) return true;
+      // allow parentheses, commas, dots, plus/minus only
+      return /^[\d\s().,+-]+$/.test(t);
+    };
+
+    const isLikelyLabel = (txt) => {
+      const raw = String(txt || "").trim();
+      if (!raw) return false;
+      const t = norm(raw);
+      if (!t) return false;
+      if (t.length < 3) return false;
+      // if it's basically a number, not label
+      if (isNumericish(t)) return false;
+      // must contain some letters (arabic or latin)
+      const hasLetters = /[a-z\u0600-\u06FF]/i.test(raw);
+      return hasLetters;
+    };
+
+    const getRowLabel = (r) => {
+      if (!Array.isArray(r)) return "";
+
+      // prefer scanning from end (often label is last cell in Arabic tables)
+      for (let i = r.length - 1; i >= 0; i--) {
+        const cell = r[i];
+        if (!cell) continue;
+        if (isLikelyLabel(cell)) return norm(cell);
+      }
+
+      // fallback: scan from start
+      for (let i = 0; i < r.length; i++) {
+        const cell = r[i];
+        if (!cell) continue;
+        if (isLikelyLabel(cell)) return norm(cell);
+      }
+
+      return "";
+    };
+
+    const findRowByLabel = (rows, names) => {
+      if (!Array.isArray(rows)) return null;
+
+      // 1) Prefer rows that contain إجمالي/total when looking for totals
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r);
+        if (!label) continue;
+
+        const labelNorm = norm(label);
+        const hasTotalWord =
+          labelNorm.includes(norm("إجمالي")) ||
+          labelNorm.includes(norm("اجمالي")) ||
+          labelNorm.includes(norm("المجموع")) ||
+          labelNorm.includes("total");
+
+        if (!hasTotalWord) continue;
+
+        const ok = names.some((n) => labelNorm.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+
+      // 2) Fallback: normal matching
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r);
+        if (!label) continue;
+
+        const labelNorm = norm(label);
+        const ok = names.some((n) => labelNorm.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+
+      return null;
+    };
+
+    /* =========================
+       Income extraction (existing)
        ========================= */
 
     const scoreIncomeTable = (table) => {
@@ -286,97 +374,14 @@ module.exports = async function (context, req) {
     };
 
     const wantIncome = [
-      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "revenue"] },
-      { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "cost of revenue"] },
-      { key: "grossProfit", names: ["مجمل الربح", "gross profit"] },
-      { key: "operatingProfit", names: ["الربح التشغيلي", "operating profit", "الربح من العمليات"] },
+      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "Revenue"] },
+      { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"] },
+      { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
+      { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
       { key: "netProfitBeforeZakat", names: ["صافي ربح الفترة قبل الزكاة", "صافي ربح السنة قبل الزكاة"] },
       { key: "zakat", names: ["الزكاة"] },
-      { key: "netProfit", names: ["صافي ربح الفترة", "صافي ربح السنة", "صافي الربح", "net profit"] },
+      { key: "netProfit", names: ["صافي ربح الفترة", "صافي ربح السنة", "صافي الربح", "Net profit"] },
     ];
-
-    /* =========================
-       Row Label Detection (FIXED)
-       - robust for Balance Sheet tables
-       ========================= */
-
-    const getRowLabel = (r) => {
-      if (!Array.isArray(r)) return "";
-
-      // pick best textual cell in the row (ignore numbers / note column / tiny tokens)
-      let best = "";
-      for (let i = 0; i < r.length; i++) {
-        const cell = r[i];
-        if (!cell) continue;
-
-        const raw = String(cell).trim();
-        if (!raw) continue;
-
-        const rawDigits = toLatinDigits(normalizeSeparators(raw));
-
-        // ignore pure numeric cells
-        if (/^[\d\s.,()\-+]+$/.test(rawDigits)) continue;
-
-        const n = norm(raw);
-        if (!n) continue;
-
-        // ignore note labels
-        if (n === "ايضاح" || n === "إيضاح" || n.includes("ايضاح") || n.includes("إيضاح")) continue;
-
-        // ignore very short tokens
-        if (n.length < 3) continue;
-
-        // choose longest text as label candidate
-        if (n.length > best.length) best = n;
-      }
-
-      // fallback: last/prev if everything was filtered
-      if (best) return best;
-
-      const last = r[r.length - 1];
-      if (last) return norm(last);
-
-      const prev = r[r.length - 2];
-      if (prev) return norm(prev);
-
-      return "";
-    };
-
-    const findRowByLabel = (rows, names) => {
-      if (!Array.isArray(rows)) return null;
-
-      // 1) Prefer TOTAL rows (إجمالي / مجموع / total)
-      for (const r of rows) {
-        if (!Array.isArray(r)) continue;
-        const label = getRowLabel(r); // already normalized
-        if (!label) continue;
-
-        const labelNorm = label;
-        const hasTotalWord =
-          labelNorm.includes(norm("إجمالي")) ||
-          labelNorm.includes(norm("اجمالي")) ||
-          labelNorm.includes(norm("مجموع")) ||
-          labelNorm.includes("total");
-
-        if (!hasTotalWord) continue;
-
-        const ok = (names || []).some((n) => labelNorm.includes(norm(n)));
-        if (ok) return { row: r, label };
-      }
-
-      // 2) Fallback normal matching
-      for (const r of rows) {
-        if (!Array.isArray(r)) continue;
-        const label = getRowLabel(r); // already normalized
-        if (!label) continue;
-
-        const labelNorm = label;
-        const ok = (names || []).some((n) => labelNorm.includes(norm(n)));
-        if (ok) return { row: r, label };
-      }
-
-      return null;
-    };
 
     const extractIncomeSingleTable = (table, latestColIdx, prevColIdx) => {
       const rows = Array.isArray(table?.sample) ? table.sample : [];
@@ -419,47 +424,8 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Balance Sheet
+       BALANCE SHEET
        ========================= */
-
-    const scoreBalanceTable = (table) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
-      const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
-
-      const strong = [
-        "قائمة المركز المالي",
-        "الميزانية",
-        "الميزانية العمومية",
-        "قائمة الوضع المالي",
-        "balance sheet",
-        "statement of financial position",
-      ];
-      const support = [
-        "الأصول",
-        "الموجودات",
-        "assets",
-        "المطلوبات",
-        "liabilities",
-        "الالتزامات",
-        "حقوق الملكية",
-        "equity",
-        "إجمالي الأصول",
-        "total assets",
-        "إجمالي المطلوبات",
-        "total liabilities",
-        "إجمالي حقوق الملكية",
-        "total equity",
-      ];
-
-      let score = 0;
-      for (const k of strong) if (joined.includes(norm(k))) score += 20;
-      for (const k of support) if (joined.includes(norm(k))) score += 6;
-
-      // bonus for current/non-current structure
-      if (joined.includes(norm("متداولة")) && joined.includes(norm("غير متداولة"))) score += 6;
-
-      return score;
-    };
 
     const wantBalance = [
       {
@@ -471,7 +437,9 @@ module.exports = async function (context, req) {
           "اجمالي الموجودات",
           "مجموع الأصول",
           "مجموع الموجودات",
-          "total assets",
+          "إجمالي الموجودات",
+          "إجمالي الموجودات",
+          "Total assets",
         ],
       },
       {
@@ -484,7 +452,8 @@ module.exports = async function (context, req) {
           "إجمالي الخصوم",
           "اجمالي الخصوم",
           "مجموع المطلوبات",
-          "total liabilities",
+          "مجموع الالتزامات",
+          "Total liabilities",
         ],
       },
       {
@@ -495,16 +464,22 @@ module.exports = async function (context, req) {
           "إجمالي حقوق المساهمين",
           "اجمالي حقوق المساهمين",
           "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
-          "حقوق الملكية العائدة لمساهمي الشركة الأم",
           "إجمالي حقوق الملكية العائدة لمساهمي الشركة الام",
-          "total equity",
-          "total shareholders' equity",
+          "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
+          "Total equity",
+          "Total shareholders' equity",
         ],
       },
-      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "current assets"] },
-      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "non-current assets"] },
-      { key: "currentLiabilities", names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "current liabilities"] },
-      { key: "nonCurrentLiabilities", names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "non-current liabilities"] },
+      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "Current assets"] },
+      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
+      {
+        key: "currentLiabilities",
+        names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"],
+      },
+      {
+        key: "nonCurrentLiabilities",
+        names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"],
+      },
     ];
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
@@ -548,7 +523,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       DIAG: pick best balance table
+       DIAG: pick best balance table (STRICT)
        ========================= */
 
     const normText2 = (s) =>
@@ -560,10 +535,10 @@ module.exports = async function (context, req) {
     const tableTextQuick = (t) => {
       const rows = Array.isArray(t?.sample) ? t.sample : [];
       const out = [];
-      for (let r = 0; r < rows.length && r < 30; r++) {
+      for (let r = 0; r < rows.length && r < 40; r++) {
         const row = rows[r];
         if (!Array.isArray(row)) continue;
-        for (let c = 0; c < row.length && c < 12; c++) {
+        for (let c = 0; c < row.length && c < 14; c++) {
           const v = row[c];
           if (v) out.push(v);
         }
@@ -571,38 +546,55 @@ module.exports = async function (context, req) {
       return normText2(out.join(" | "));
     };
 
+    const hasAny = (text, arr) => arr.some((k) => text.includes(normText2(k)));
+
     const scoreBalanceSheetText = (text) => {
-      const keysStrong = [
+      const strongTitle = [
         "قائمة المركز المالي",
         "الميزانية",
         "الميزانية العمومية",
         "قائمة الوضع المالي",
         "statement of financial position",
         "balance sheet",
-        "financial position",
       ];
-      const keysSupport = [
-        "الأصول",
-        "assets",
-        "الموجودات",
-        "المطلوبات",
-        "liabilities",
-        "الالتزامات",
-        "حقوق الملكية",
-        "equity",
-        "إجمالي الأصول",
-        "total assets",
-        "إجمالي المطلوبات",
-        "total liabilities",
-        "إجمالي حقوق الملكية",
-        "total equity",
-      ];
+
+      const assetsKeys = ["الأصول", "الموجودات", "assets"];
+      const liabKeys = ["المطلوبات", "الالتزامات", "الخصوم", "liabilities"];
+      const eqKeys = ["حقوق الملكية", "حقوق المساهمين", "equity"];
+
+      const hasTitle = hasAny(text, strongTitle);
+      const hasAssets = hasAny(text, assetsKeys);
+      const hasLiab = hasAny(text, liabKeys);
+      const hasEq = hasAny(text, eqKeys);
+
+      // STRICT GATE:
+      // Accept only if hasTitle OR (assets+liabilities+equity all present)
+      const passesGate = hasTitle || (hasAssets && hasLiab && hasEq);
+      if (!passesGate) return 0;
 
       let score = 0;
-      for (const k of keysStrong) if (text.includes(normText2(k))) score += 50;
-      for (const k of keysSupport) if (text.includes(normText2(k))) score += 10;
 
-      if (text.includes("متداولة") || text.includes("غير متداولة")) score += 8;
+      if (hasTitle) score += 120;
+
+      if (hasAssets) score += 40;
+      if (hasLiab) score += 40;
+      if (hasEq) score += 40;
+
+      // totals are strong hints
+      const totals = [
+        "إجمالي الأصول",
+        "إجمالي الموجودات",
+        "إجمالي المطلوبات",
+        "إجمالي الالتزامات",
+        "إجمالي حقوق الملكية",
+        "إجمالي حقوق المساهمين",
+        "total assets",
+        "total liabilities",
+        "total equity",
+      ];
+      for (const t of totals) if (text.includes(normText2(t))) score += 18;
+
+      if (text.includes("متداولة") && text.includes("غير متداولة")) score += 15;
 
       return score;
     };
@@ -634,6 +626,7 @@ module.exports = async function (context, req) {
       };
     };
 
+    // If diag endpoint requested for balance: return candidates directly (no extraction)
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
       const bsDiag = pickBestBalanceSheetTable(tablesPreview);
 
@@ -647,7 +640,8 @@ module.exports = async function (context, req) {
         bestScore: bsDiag.bestScore,
         found: bsDiag.candidates.length,
         ranked: bsDiag.candidates,
-        hint: "اختر الجدول الأعلى Score (bestTableIndex). سنثبت استخراج الميزانية منه في الخطوة التالية.",
+        hint:
+          "إذا ranked فارغ أو bestTableIndex غلط: أرسل balanceTableIndex في body لتثبيت جدول الميزانية يدويًا.",
       });
     }
 
@@ -701,20 +695,31 @@ module.exports = async function (context, req) {
     }
 
     /* =========================
-       2) pick best balance table (file A) using DIAG first
+       2) pick best balance table (file A)
        ========================= */
 
-    const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
-
+    // 2.1) if override provided, use it
     let bestBalanceA = null;
-    if (bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
-      const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
-      if (t) bestBalanceA = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
+    let bsDiagA = pickBestBalanceSheetTable(tablesPreview);
+
+    if (balanceTableIndexOverride !== null && Number.isFinite(balanceTableIndexOverride)) {
+      const forced = tablesPreview.find((x) => Number(x?.index) === Number(balanceTableIndexOverride));
+      if (forced) {
+        bestBalanceA = { table: forced, score: scoreBalanceSheetText(tableTextQuick(forced)), pickedBy: "override" };
+      }
     }
 
+    // 2.2) else use diag
+    if (!bestBalanceA && bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
+      const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
+      if (t) bestBalanceA = { table: t, score: scoreBalanceSheetText(tableTextQuick(t)), pickedBy: "diag" };
+    }
+
+    // 2.3) else fallback by strict scoring
     if (!bestBalanceA) {
       for (const t of tablesPreview) {
-        const s = scoreBalanceTable(t);
+        const s = scoreBalanceSheetText(tableTextQuick(t));
+        if (s <= 0) continue;
         if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s, pickedBy: "fallbackScore" };
       }
     }
@@ -730,17 +735,33 @@ module.exports = async function (context, req) {
       const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
 
       if (usingTwoFiles) {
-        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
+        // file B: allow same override name but with suffix
+        const balanceTableIndexOverridePrevRaw =
+          body.balanceTableIndexPrev ?? body.balanceIndexPrev ?? body.balance_table_index_prev ?? null;
+        const balanceTableIndexOverridePrev =
+          balanceTableIndexOverridePrevRaw === null || balanceTableIndexOverridePrevRaw === undefined
+            ? null
+            : Number(balanceTableIndexOverridePrevRaw);
 
         let bestBalanceB = null;
-        if (bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
+        let bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
+
+        if (balanceTableIndexOverridePrev !== null && Number.isFinite(balanceTableIndexOverridePrev)) {
+          const forced = tablesPreviewPrev.find((x) => Number(x?.index) === Number(balanceTableIndexOverridePrev));
+          if (forced) {
+            bestBalanceB = { table: forced, score: scoreBalanceSheetText(tableTextQuick(forced)), pickedBy: "override" };
+          }
+        }
+
+        if (!bestBalanceB && bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
           const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
-          if (t) bestBalanceB = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
+          if (t) bestBalanceB = { table: t, score: scoreBalanceSheetText(tableTextQuick(t)), pickedBy: "diag" };
         }
 
         if (!bestBalanceB) {
           for (const t of tablesPreviewPrev) {
-            const s = scoreBalanceTable(t);
+            const s = scoreBalanceSheetText(tableTextQuick(t));
+            if (s <= 0) continue;
             if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s, pickedBy: "fallbackScore" };
           }
         }
@@ -750,12 +771,7 @@ module.exports = async function (context, req) {
           const pickedBalB = pickLatestColumns(colsBalB);
           const latestBalColB = pickedBalB.latest?.col ?? null;
 
-          balanceExtract = extractBalanceTwoFiles(
-            bestBalanceA.table,
-            latestBalColA,
-            bestBalanceB.table,
-            latestBalColB
-          );
+          balanceExtract = extractBalanceTwoFiles(bestBalanceA.table, latestBalColA, bestBalanceB.table, latestBalColB);
 
           balancePicked = {
             fileA: {
@@ -763,65 +779,52 @@ module.exports = async function (context, req) {
               score: bestBalanceA.score,
               pickedBy: bestBalanceA.pickedBy,
               pickedColumns: {
-                latest: pickedBalA.latest
-                  ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
-                  : null,
-                previous: pickedBalA.previous
-                  ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
-                  : null,
+                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+                previous: pickedBalA.previous ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null } : null,
                 debug: pickedBalA.debug,
               },
               diag: bsDiagA,
+              override: balanceTableIndexOverride,
             },
             fileB: {
               tableIndex: bestBalanceB.table.index,
               score: bestBalanceB.score,
               pickedBy: bestBalanceB.pickedBy,
               pickedColumns: {
-                latest: pickedBalB.latest
-                  ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null }
-                  : null,
+                latest: pickedBalB.latest ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null } : null,
                 debug: pickedBalB.debug,
               },
               diag: bsDiagB,
+              override: balanceTableIndexOverridePrev,
             },
           };
         } else {
-          balanceExtract =
-            latestBalColA != null
-              ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null)
-              : {};
+          balanceExtract = latestBalColA != null ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null) : {};
           balancePicked = {
             fileA: {
               tableIndex: bestBalanceA.table.index,
               score: bestBalanceA.score,
               pickedBy: bestBalanceA.pickedBy,
               pickedColumns: {
-                latest: pickedBalA.latest
-                  ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
-                  : null,
+                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
                 previous: null,
                 debug: pickedBalA.debug,
               },
               diag: bsDiagA,
+              override: balanceTableIndexOverride,
             },
             note: "No balance table found in file B; used file A latest only.",
           };
         }
       } else {
-        balanceExtract =
-          latestBalColA != null
-            ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, prevBalColA)
-            : {};
+        balanceExtract = latestBalColA != null ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, prevBalColA) : {};
         balancePicked = {
           fileA: {
             tableIndex: bestBalanceA.table.index,
             score: bestBalanceA.score,
             pickedBy: bestBalanceA.pickedBy,
             pickedColumns: {
-              latest: pickedBalA.latest
-                ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
-                : null,
+              latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
               previous: noCompare
                 ? null
                 : pickedBalA.previous
@@ -830,9 +833,16 @@ module.exports = async function (context, req) {
               debug: pickedBalA.debug,
             },
             diag: bsDiagA,
+            override: balanceTableIndexOverride,
           },
         };
       }
+    } else {
+      balancePicked = {
+        note: "No balance sheet table passed strict gate (assets+liabilities+equity or title). Try DIAG or set balanceTableIndex override.",
+        diag: bsDiagA,
+        override: balanceTableIndexOverride,
+      };
     }
 
     return send(200, {
@@ -867,12 +877,8 @@ module.exports = async function (context, req) {
         })),
 
         pickedColumns: {
-          latest: pickedA.latest
-            ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null }
-            : null,
-          previous: pickedA.previous
-            ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null }
-            : null,
+          latest: pickedA.latest ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null } : null,
+          previous: pickedA.previous ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null } : null,
           debug: pickedA.debug,
         },
 
