@@ -11,210 +11,20 @@ module.exports = async function (context, req) {
   try {
     const body = req.body || {};
     const normalized = body.normalized || null;
-    const period = String(body.period || "annual").toLowerCase();
-    const compare = String(body.compare || "none").toLowerCase();
-    const fileName = body.fileName || "unknown.pdf";
+    const period = String(body.period || "annual").toLowerCase(); // annual | quarterly (مستقبلاً)
+    const compare = String(body.compare || "none").toLowerCase(); // none | yoy
 
-    // ✅ لا نحتاج blobUrl هنا
-    if (!normalized || !normalized.tablesPreview || !Array.isArray(normalized.tablesPreview)) {
-      return send(400, {
-        ok: false,
-        error: "Missing normalized.tablesPreview in request body",
-        hint: "Send { normalized: { tablesPreview: [...] } } from /api/analyze output",
-      });
+    if (!normalized || typeof normalized !== "object") {
+      return send(400, { ok: false, error: "Missing normalized in request body" });
     }
 
-    // -----------------------------
-    // Helpers
-    // -----------------------------
-    const norm = (s) => {
-      s = String(s || "")
-        .replace(/\u0640/g, "") // tatweel
-        .replace(/[^\S\r\n]+/g, " ")
-        .trim()
-        .toLowerCase();
-
-      // توحيد بعض الحروف
-      s = s
-        .replace(/[أإآ]/g, "ا")
-        .replace(/ى/g, "ي")
-        .replace(/ة/g, "ه");
-
-      return s;
-    };
-
-    const toLatinDigits = (s) => {
-      return String(s || "")
-        .replace(/[٠۰]/g, "0")
-        .replace(/[١۱]/g, "1")
-        .replace(/[٢۲]/g, "2")
-        .replace(/[٣۳]/g, "3")
-        .replace(/[٤۴]/g, "4")
-        .replace(/[٥۵]/g, "5")
-        .replace(/[٦۶]/g, "6")
-        .replace(/[٧۷]/g, "7")
-        .replace(/[٨۸]/g, "8")
-        .replace(/[٩۹]/g, "9");
-    };
-
-    const parseNumber = (v) => {
-      let s = String(v ?? "").trim();
-      if (!s) return null;
-
-      // حول الأرقام العربية
-      s = toLatinDigits(s);
-
-      // أقواس = سالب
-      const neg = /^\(.*\)$/.test(s);
-      s = s.replace(/^\(|\)$/g, "");
-
-      // إزالة عملات/مسافات
-      s = s.replace(/[^\d.,\-]/g, "");
-
-      // حالات مثل ٢٫٢١٨,٦٦٢٫٧٣٥ => 2,218,662.735 أو العكس
-      // نحاول فهم الفواصل:
-      // - إذا فيه "," و ".": نفترض "," آلاف و "." عشرية
-      // - إذا فقط ",": إذا تكرر كثير => آلاف، إذا مرة واحدة وقد تكون عشرية
-      // - إذا فقط ".": نفس المنطق
-      const hasComma = s.includes(",");
-      const hasDot = s.includes(".");
-
-      if (hasComma && hasDot) {
-        // remove thousands commas
-        s = s.replace(/,/g, "");
-      } else if (hasComma && !hasDot) {
-        // لو أكثر من فاصلة => آلاف
-        const commaCount = (s.match(/,/g) || []).length;
-        if (commaCount > 1) s = s.replace(/,/g, "");
-        else {
-          // فاصلة واحدة: إذا بعد الفاصلة 3 أرقام غالباً آلاف، وإلا عشرية
-          const parts = s.split(",");
-          if (parts[1] && parts[1].length === 3) s = parts.join("");
-          else s = parts[0] + "." + (parts[1] || "");
-        }
-      } else if (!hasComma && hasDot) {
-        const dotCount = (s.match(/\./g) || []).length;
-        if (dotCount > 1) s = s.replace(/\./g, "");
-        // else keep dot as decimal
-      }
-
-      const n = Number(s);
-      if (!Number.isFinite(n)) return null;
-      return neg ? -n : n;
-    };
-
-    const flattenRows = (t) => {
-      const head = Array.isArray(t.sample) ? t.sample : [];
-      const tail = Array.isArray(t.sampleTail) ? t.sampleTail : [];
-      return [...head, ...tail].map((r) => (Array.isArray(r) ? r : []));
-    };
-
-    const joinTableText = (rows) => rows.map((r) => r.join(" | ")).join("\n");
-
-    const findYearColumns = (rows) => {
-      const yearHits = { y2024: {}, y2023: {} };
-
-      const hit = (map, c) => (map[c] = (map[c] || 0) + 1);
-
-      for (const r of rows) {
-        for (let c = 0; c < r.length; c++) {
-          const cell = toLatinDigits(String(r[c] || ""));
-          if (cell.includes("2024")) hit(yearHits.y2024, c);
-          if (cell.includes("2023")) hit(yearHits.y2023, c);
-        }
-      }
-
-      const pickMaxKey = (obj) => {
-        let best = null;
-        let bestV = 0;
-        for (const k of Object.keys(obj)) {
-          const v = obj[k];
-          if (v > bestV) {
-            bestV = v;
-            best = Number(k);
-          }
-        }
-        return best;
-      };
-
-      return {
-        col2024: pickMaxKey(yearHits.y2024),
-        col2023: pickMaxKey(yearHits.y2023),
-      };
-    };
-
-    // -----------------------------
-    // Balance sheet table scoring
-    // -----------------------------
-    const scoreBalanceTable = (t) => {
-      const rows = flattenRows(t);
-      const joined = norm(joinTableText(rows));
-
-      const strong = [
-        "قائمة المركز المالي",
-        "قائمة الوضع المالي",
-        "statement of financial position",
-        "الموجودات",
-        "المطلوبات",
-        "حقوق الملكيه",
-        "حقوق الملكية",
-      ];
-
-      const support = [
-        "الموجودات غير المتداوله",
-        "الموجودات المتداوله",
-        "المطلوبات غير المتداوله",
-        "المطلوبات المتداوله",
-        "اجمالي الموجودات",
-        "اجمالي المطلوبات",
-        "اجمالي حقوق الملكيه",
-      ];
-
-      let score = 0;
-      for (const k of strong) if (joined.includes(norm(k))) score += 20;
-      for (const k of support) if (joined.includes(norm(k))) score += 6;
-
-      // وجود الثلاثة معاً يعطي تعزيز
-      if (joined.includes(norm("الموجودات")) && joined.includes(norm("المطلوبات")) && joined.includes(norm("حقوق"))) {
-        score += 10;
-      }
-
-      // لو الجدول صغير جداً غالباً ليس قائمة مركز مالي
-      if (Number(t.rowCount || 0) < 8) score -= 20;
-
-      return score;
-    };
-
-    const tables = normalized.tablesPreview;
-
-    const candidates = tables
-      .map((t, idx) => ({
-        index: typeof t?.index !== "undefined" ? t.index : idx,
-        score: scoreBalanceTable(t),
-        pageNumber: t.pageNumber ?? null,
-        rowCount: t.rowCount ?? null,
-        columnCount: t.columnCount ?? null,
-        hasTail: Array.isArray(t.sampleTail) && t.sampleTail.length > 0,
-        snippet: (() => {
-          const rows = flattenRows(t);
-          const first = rows.slice(0, 3).map((r) => r.join(" | ")).join(" / ");
-          return first.slice(0, 160);
-        })(),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 12);
-
-    const best = candidates[0] || null;
-    const bestTable =
-      best ? tables.find((t, idx) => (typeof t?.index !== "undefined" ? t.index : idx) === best.index) : null;
-
-    if (!bestTable || (best?.score ?? 0) < 20) {
+    const tablesPreview = Array.isArray(normalized.tablesPreview) ? normalized.tablesPreview : [];
+    if (!tablesPreview.length) {
       return send(200, {
         ok: true,
-        fileName,
         period,
         compare,
-        balancePickInfo: { candidates, picked: null, reason: "No strong balance sheet table detected" },
+        balancePickInfo: { candidates: [], picked: null },
         balanceSheetLite: {
           totalAssets: null,
           currentAssets: null,
@@ -224,144 +34,427 @@ module.exports = async function (context, req) {
           nonCurrentLiabilities: null,
           totalEquity: null,
         },
+        note: "No tablesPreview received.",
       });
     }
 
-    const rows = flattenRows(bestTable);
-    const { col2024, col2023 } = findYearColumns(rows);
+    // ----------------------------
+    // Helpers: normalize text
+    // ----------------------------
+    const norm = (s) =>
+      String(s || "")
+        .replace(/\u0640/g, "") // tatweel
+        .replace(/[إأآ]/g, "ا")
+        .replace(/ى/g, "ي")
+        .replace(/ة/g, "ه")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
 
-    // -----------------------------
-    // Row matching (Totals)
-    // -----------------------------
-    const findRowByName = (needleList, excludeList = []) => {
-      const ex = excludeList.map(norm);
-      const nd = needleList.map(norm);
+    // Arabic digits -> latin digits
+    const toLatinDigits = (s) =>
+      String(s || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
 
-      for (const r of rows) {
-        const rowText = norm(r.join(" "));
-        if (!rowText) continue;
+    // ----------------------------
+    // ✅ Robust number parsing (fixes 62,585,869 -> 62585869)
+    // Handles:
+    // - Arabic thousands: ٬
+    // - Arabic decimal: ٫
+    // - English thousands: ,
+    // - English decimal: .
+    // - spaces, NBSP
+    // ----------------------------
+    const parseNumberLoose = (value) => {
+      let s = String(value ?? "").trim();
+      if (!s) return null;
 
-        // استبعاد كلمات
-        if (ex.some((x) => x && rowText.includes(x))) continue;
+      // remove common junk
+      s = s.replace(/\u00A0/g, " "); // nbsp
+      s = toLatinDigits(s);
+      s = s.replace(/[()]/g, ""); // ignore parentheses here; handle negative below if needed
 
-        // لازم يطابق أحد المطلوب
-        if (nd.some((n) => n && rowText.includes(n))) {
-          return r;
+      // detect negative in formats like (123) or -123
+      const isNeg = /^\s*\(.*\)\s*$/.test(String(value ?? "").trim()) || /^\s*-/.test(s);
+
+      // keep only digits and separators
+      s = s.replace(/[^0-9.,٬٫-]/g, "");
+      s = s.replace(/^-+/, ""); // remove leading '-' after isNeg capture
+
+      // normalize arabic separators
+      s = s.replace(/٬/g, ","); // thousands
+      s = s.replace(/٫/g, "."); // decimal
+
+      if (!s) return null;
+
+      // If both ',' and '.' exist, decide decimal separator by LAST occurrence
+      const lastComma = s.lastIndexOf(",");
+      const lastDot = s.lastIndexOf(".");
+      if (lastComma !== -1 && lastDot !== -1) {
+        const decimalSep = lastDot > lastComma ? "." : ",";
+        const thousandSep = decimalSep === "." ? "," : ".";
+        s = s.split(thousandSep).join(""); // remove thousands
+        if (decimalSep === ",") s = s.replace(/,/g, ".");
+      } else if (lastComma !== -1) {
+        // only comma exists: usually thousands in financials
+        // BUT if it looks like decimal (e.g. 12,5) we treat it as decimal.
+        // heuristic: if comma has 1-2 digits after it -> decimal, else thousands
+        const parts = s.split(",");
+        const tail = parts[parts.length - 1] || "";
+        if (tail.length >= 1 && tail.length <= 2) {
+          s = parts.slice(0, -1).join("") + "." + tail;
+        } else {
+          s = s.replace(/,/g, "");
+        }
+      } else if (lastDot !== -1) {
+        // only dot exists: could be decimal OR thousands
+        // heuristic: if dot has 1-2 digits after -> decimal, else thousands
+        const parts = s.split(".");
+        const tail = parts[parts.length - 1] || "";
+        if (tail.length >= 1 && tail.length <= 2) {
+          // decimal dot, keep as is but remove any stray commas (none)
+        } else {
+          s = s.replace(/\./g, "");
         }
       }
-      return null;
+
+      if (!/^\d+(\.\d+)?$/.test(s)) return null;
+
+      const n = Number(s);
+      if (!Number.isFinite(n)) return null;
+      return isNeg ? -n : n;
     };
 
-    const readValue = (row, col) => {
-      if (!row || col == null) return null;
-      return parseNumber(row[col]);
+    const rowJoin = (row) => (Array.isArray(row) ? row.filter(Boolean).join(" | ") : "");
+
+    const extractYearsFromRow = (row) => {
+      const text = rowJoin(row);
+      const latin = toLatinDigits(text);
+      const years = [];
+      const re = /20\d{2}/g;
+      let m;
+      while ((m = re.exec(latin))) years.push(Number(m[0]));
+      return years;
     };
 
-    const pickTwoNumbersFallback = (row) => {
-      if (!row) return { v2024: null, v2023: null };
-      const nums = row
-        .map((c) => parseNumber(c))
-        .filter((x) => typeof x === "number" && Number.isFinite(x));
-
-      // لو لقينا رقمين نرجّح أنهم سنتين
-      if (nums.length >= 2) return { v2024: nums[0], v2023: nums[1] };
-      if (nums.length === 1) return { v2024: nums[0], v2023: null };
-      return { v2024: null, v2023: null };
+    const isMostlyNumber = (cell) => {
+      const n = parseNumberLoose(cell);
+      return typeof n === "number" && Number.isFinite(n);
     };
 
-    const extractYearPair = (row) => {
-      // الأفضل: اعتماد أعمدة السنة
-      if (col2024 != null || col2023 != null) {
-        const v2024 = readValue(row, col2024);
-        const v2023 = readValue(row, col2023);
-        // إذا فشل واحد، جرّب fallback
-        if (v2024 == null && v2023 == null) return pickTwoNumbersFallback(row);
-        return { v2024, v2023 };
+    // pick numeric columns for a specific row (ignore first column which is label typically)
+    const getRowNumericByCol = (row) => {
+      const out = [];
+      for (let c = 0; c < row.length; c++) {
+        const raw = row[c];
+        const n = parseNumberLoose(raw);
+        if (n !== null) out.push({ c, n, raw: String(raw ?? "") });
       }
-      return pickTwoNumbersFallback(row);
+      return out;
     };
 
-    // ✅ أسماء الإجماليات كما تظهر في قائمتك (مع استبعاد لمنع الالتقاط الخاطئ)
-    const totalAssetsRow = findRowByName(
-      ["اجمالي الموجودات", "إجمالي الموجودات", "مجموع الموجودات", "Total assets"],
-      ["غير المتداوله", "غير المتداولة", "المتداوله", "المتداولة"]
-    );
+    // ----------------------------
+    // Balance sheet table scoring
+    // ----------------------------
+    const scoreBalanceTable = (t) => {
+      const rows = []
+        .concat(Array.isArray(t.sample) ? t.sample : [])
+        .concat(Array.isArray(t.sampleTail) ? t.sampleTail : []);
+      const joined = norm(rows.map(rowJoin).join(" "));
 
-    const currentAssetsRow = findRowByName(
-      ["اجمالي الموجودات المتداوله", "إجمالي الموجودات المتداولة", "Total current assets"],
-      []
-    );
+      const strong = [
+        "قائمه المركز المالي",
+        "قائمة المركز المالي",
+        "المركز المالي",
+        "statement of financial position",
+        "statement of financial",
+        "financial position",
+        "assets",
+        "liabilities",
+        "equity",
+        "الموجودات",
+        "الاصول",
+        "المطلوبات",
+        "الالتزامات",
+        "حقوق الملكيه",
+        "حقوق الملكية",
+      ].map(norm);
 
-    const nonCurrentAssetsRow = findRowByName(
-      ["اجمالي الموجودات غير المتداوله", "إجمالي الموجودات غير المتداولة", "Non-current assets total", "Total non-current assets"],
-      []
-    );
+      let score = 0;
+      for (const k of strong) if (joined.includes(k)) score += 20;
 
-    const totalLiabilitiesRow = findRowByName(
-      ["اجمالي المطلوبات", "إجمالي المطلوبات", "Total liabilities"],
-      ["غير المتداوله", "غير المتداولة", "المتداوله", "المتداولة"]
-    );
+      // bonus if looks like it has years
+      let hasYear = false;
+      for (const r of rows) {
+        const yrs = extractYearsFromRow(r);
+        if (yrs.length) {
+          hasYear = true;
+          break;
+        }
+      }
+      if (hasYear) score += 10;
 
-    const currentLiabilitiesRow = findRowByName(
-      ["اجمالي المطلوبات المتداوله", "إجمالي المطلوبات المتداولة", "Total current liabilities"],
-      []
-    );
+      // bonus if table looks wide enough (>=3 columns) and has totals words near end
+      if (Number(t.columnCount || 0) >= 3) score += 6;
+      if (joined.includes(norm("اجمالي"))) score += 6;
 
-    const nonCurrentLiabilitiesRow = findRowByName(
-      ["اجمالي المطلوبات غير المتداوله", "إجمالي المطلوبات غير المتداولة", "Total non-current liabilities", "Non-current liabilities total"],
-      []
-    );
-
-    const totalEquityRow = findRowByName(
-      ["اجمالي حقوق الملكيه", "إجمالي حقوق الملكية", "Total equity"],
-      ["العائده لمساهمي", "غير المسيطره", "غير المسيطرة"] // نستبعد التفصيل ونأخذ الإجمالي
-    );
-
-    const a = extractYearPair(totalAssetsRow);
-    const ca = extractYearPair(currentAssetsRow);
-    const nca = extractYearPair(nonCurrentAssetsRow);
-    const l = extractYearPair(totalLiabilitiesRow);
-    const cl = extractYearPair(currentLiabilitiesRow);
-    const ncl = extractYearPair(nonCurrentLiabilitiesRow);
-    const e = extractYearPair(totalEquityRow);
-
-    const balanceSheetLite = {
-      totalAssets: a.v2024 ?? null,
-      currentAssets: ca.v2024 ?? null,
-      nonCurrentAssets: nca.v2024 ?? null,
-      totalLiabilities: l.v2024 ?? null,
-      currentLiabilities: cl.v2024 ?? null,
-      nonCurrentLiabilities: ncl.v2024 ?? null,
-      totalEquity: e.v2024 ?? null,
+      return score;
     };
+
+    const candidates = tablesPreview
+      .map((t) => ({
+        index: t.index,
+        pageNumber: t.pageNumber ?? null,
+        rowCount: t.rowCount ?? null,
+        columnCount: t.columnCount ?? null,
+        hasTail: Array.isArray(t.sampleTail) && t.sampleTail.length > 0,
+        score: scoreBalanceTable(t),
+        snippet: (() => {
+          const rows = []
+            .concat(Array.isArray(t.sample) ? t.sample : [])
+            .concat(Array.isArray(t.sampleTail) ? t.sampleTail : []);
+          const s = rows.map(rowJoin).join(" | ");
+          return s.slice(0, 220);
+        })(),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const picked = candidates[0] || null;
+
+    if (!picked || picked.score < 20) {
+      return send(200, {
+        ok: true,
+        period,
+        compare,
+        balancePickInfo: { candidates, picked: picked || null },
+        balanceSheetLite: {
+          totalAssets: null,
+          currentAssets: null,
+          nonCurrentAssets: null,
+          totalLiabilities: null,
+          currentLiabilities: null,
+          nonCurrentLiabilities: null,
+          totalEquity: null,
+        },
+        note: "No strong balance sheet table found.",
+      });
+    }
+
+    const table = tablesPreview.find((t) => String(t.index) === String(picked.index)) || null;
+    const rows = []
+      .concat(Array.isArray(table?.sample) ? table.sample : [])
+      .concat(Array.isArray(table?.sampleTail) ? table.sampleTail : []);
+
+    // ----------------------------
+    // Determine year columns (best effort)
+    // ----------------------------
+    const yearToCol = new Map(); // year -> col index
+    // scan first ~8 rows for headers containing years
+    for (let i = 0; i < Math.min(8, rows.length); i++) {
+      const r = rows[i] || [];
+      const years = extractYearsFromRow(r);
+      if (!years.length) continue;
+
+      // map years to the columns where they appear
+      for (let c = 0; c < r.length; c++) {
+        const cell = toLatinDigits(String(r[c] ?? ""));
+        const m = cell.match(/20\d{2}/);
+        if (m) {
+          const y = Number(m[0]);
+          if (!yearToCol.has(y)) yearToCol.set(y, c);
+        }
+      }
+    }
+
+    const yearsFound = Array.from(yearToCol.keys()).sort((a, b) => a - b);
+    const latestYear = yearsFound.length ? yearsFound[yearsFound.length - 1] : null;
+    const prevYear = yearsFound.length >= 2 ? yearsFound[yearsFound.length - 2] : null;
+
+    const pickCols = (() => {
+      // If we found year columns, use them
+      if (latestYear && yearToCol.has(latestYear)) {
+        const latestCol = yearToCol.get(latestYear);
+        const prevCol = prevYear && yearToCol.has(prevYear) ? yearToCol.get(prevYear) : null;
+        return { latestYear, prevYear, latestCol, prevCol };
+      }
+
+      // Fallback: choose the last 2 numeric columns by scanning a totals-like row
+      // This is a best-effort fallback if headers not captured in preview.
+      let best = null;
+      for (const r of rows.slice(-10)) {
+        const joined = norm(rowJoin(r));
+        if (!joined.includes(norm("اجمالي"))) continue;
+        const nums = getRowNumericByCol(r).sort((a, b) => a.c - b.c);
+        if (nums.length >= 2) {
+          best = { latestCol: nums[nums.length - 1].c, prevCol: nums[nums.length - 2].c };
+          break;
+        }
+      }
+      if (best) return { latestYear: null, prevYear: null, ...best };
+      return { latestYear: null, prevYear: null, latestCol: null, prevCol: null };
+    })();
+
+    const getValueFromRow = (row, which) => {
+      if (!Array.isArray(row)) return null;
+
+      // prefer year columns if we have them
+      if (which === "latest" && pickCols.latestCol != null) {
+        return parseNumberLoose(row[pickCols.latestCol]);
+      }
+      if (which === "previous" && pickCols.prevCol != null) {
+        return parseNumberLoose(row[pickCols.prevCol]);
+      }
+
+      // fallback: last numeric cell
+      const nums = getRowNumericByCol(row);
+      if (!nums.length) return null;
+      return nums[nums.length - 1].n;
+    };
+
+    // ----------------------------
+    // Row matching with scoring (less fragile than strict include/exclude)
+    // ----------------------------
+    const rowScore = (row, includes, excludes) => {
+      const text = norm(rowJoin(row));
+      let s = 0;
+
+      for (const k of includes) {
+        const kk = norm(k);
+        if (!kk) continue;
+        if (text.includes(kk)) s += 20;
+      }
+
+      // soft penalty for excludes (NOT hard-block)
+      for (const x of excludes) {
+        const xx = norm(x);
+        if (!xx) continue;
+        if (text.includes(xx)) s -= 8;
+      }
+
+      // bonus if row has numbers
+      const nums = getRowNumericByCol(row);
+      if (nums.length >= 1) s += 4;
+      if (nums.length >= 2) s += 3;
+
+      return s;
+    };
+
+    const findBestRow = (includes, excludes = []) => {
+      let best = null;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const score = rowScore(r, includes, excludes);
+        if (!best || score > best.score) best = { i, row: r, score };
+      }
+      // require minimal confidence
+      if (!best || best.score < 18) return null;
+      return best;
+    };
+
+    // ----------------------------
+    // Targets
+    // ----------------------------
+    const targets = {
+      totalAssets: {
+        includes: ["اجمالي الموجودات", "اجمالي الاصول", "مجموع الموجودات", "مجموع الاصول", "total assets"],
+        excludes: ["المتداوله", "غير المتداوله", "current", "non-current"],
+      },
+      currentAssets: {
+        includes: ["اجمالي الموجودات المتداوله", "اجمالي الاصول المتداوله", "مجموع الموجودات المتداوله", "current assets"],
+        excludes: ["غير المتداوله", "non-current"],
+      },
+      nonCurrentAssets: {
+        includes: ["اجمالي الموجودات غير المتداوله", "اجمالي الاصول غير المتداوله", "non-current assets", "non current assets"],
+        excludes: ["المتداوله", "current"],
+      },
+      totalLiabilities: {
+        includes: ["اجمالي المطلوبات", "اجمالي الالتزامات", "total liabilities"],
+        excludes: ["المتداوله", "غير المتداوله", "current", "non-current", "حقوق الملكيه", "and equity", "shareholders"],
+      },
+      currentLiabilities: {
+        includes: ["اجمالي المطلوبات المتداوله", "اجمالي الالتزامات المتداوله", "current liabilities"],
+        excludes: ["غير المتداوله", "non-current"],
+      },
+      nonCurrentLiabilities: {
+        includes: ["اجمالي المطلوبات غير المتداوله", "اجمالي الالتزامات غير المتداوله", "non-current liabilities", "non current liabilities"],
+        excludes: ["المتداوله", "current"],
+      },
+      totalEquity: {
+        includes: ["اجمالي حقوق الملكيه", "حقوق الملكيه العائده", "total equity", "total shareholders' equity", "shareholders' equity"],
+        excludes: ["المتداوله", "غير المتداوله", "current", "non-current", "المطلوبات", "الالتزامات", "liabilities"],
+      },
+    };
+
+    const matchedRows = {};
+    for (const key of Object.keys(targets)) {
+      matchedRows[key] = findBestRow(targets[key].includes, targets[key].excludes);
+    }
+
+    // ----------------------------
+    // Build output (none vs yoy)
+    // ----------------------------
+    const outLite = {
+      totalAssets: null,
+      currentAssets: null,
+      nonCurrentAssets: null,
+      totalLiabilities: null,
+      currentLiabilities: null,
+      nonCurrentLiabilities: null,
+      totalEquity: null,
+    };
+
+    for (const key of Object.keys(outLite)) {
+      const hit = matchedRows[key];
+      if (!hit) continue;
+
+      if (compare === "yoy") {
+        outLite[key] = {
+          latest: getValueFromRow(hit.row, "latest"),
+          previous: getValueFromRow(hit.row, "previous"),
+        };
+      } else {
+        outLite[key] = getValueFromRow(hit.row, "latest");
+      }
+    }
+
+    // ----------------------------
+    // Optional sanity check:
+    // If totalAssets missing but we have totalLiabilities + totalEquity, try derive
+    // ----------------------------
+    const tryNumber = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+    if (compare !== "yoy") {
+      const A = tryNumber(outLite.totalAssets);
+      const L = tryNumber(outLite.totalLiabilities);
+      const E = tryNumber(outLite.totalEquity);
+      if (A == null && L != null && E != null) {
+        outLite.totalAssets = L + E; // fallback derive
+      }
+    }
 
     return send(200, {
       ok: true,
-      fileName,
+      fileName: String(body.fileName || "unknown.pdf"),
       period,
       compare,
+      pickedYear: pickCols.latestYear,
+      previousYear: pickCols.prevYear,
       balancePickInfo: {
-        candidates,
-        picked: {
-          index: best.index,
-          score: best.score,
-          pageNumber: best.pageNumber,
-          rowCount: best.rowCount,
-          columnCount: best.columnCount,
-          col2024,
-          col2023,
-        },
-        matchedRows: {
-          totalAssetsRow: totalAssetsRow ? totalAssetsRow.join(" | ").slice(0, 220) : null,
-          currentAssetsRow: currentAssetsRow ? currentAssetsRow.join(" | ").slice(0, 220) : null,
-          nonCurrentAssetsRow: nonCurrentAssetsRow ? nonCurrentAssetsRow.join(" | ").slice(0, 220) : null,
-          totalLiabilitiesRow: totalLiabilitiesRow ? totalLiabilitiesRow.join(" | ").slice(0, 220) : null,
-          currentLiabilitiesRow: currentLiabilitiesRow ? currentLiabilitiesRow.join(" | ").slice(0, 220) : null,
-          nonCurrentLiabilitiesRow: nonCurrentLiabilitiesRow ? nonCurrentLiabilitiesRow.join(" | ").slice(0, 220) : null,
-          totalEquityRow: totalEquityRow ? totalEquityRow.join(" | ").slice(0, 220) : null,
-        },
+        candidates: candidates.slice(0, 8),
+        picked,
+        matchedRows: Object.fromEntries(
+          Object.entries(matchedRows).map(([k, v]) => [
+            k,
+            v
+              ? {
+                  rowIndex: v.i,
+                  score: v.score,
+                  rowText: rowJoin(v.row).slice(0, 220),
+                }
+              : null,
+          ])
+        ),
       },
-      balanceSheetLite,
+      balanceSheetLite: outLite,
     });
   } catch (e) {
     return send(500, { ok: false, error: e?.message || String(e) });
