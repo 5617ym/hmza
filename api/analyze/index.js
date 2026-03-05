@@ -1,9 +1,4 @@
 // api/analyze/index.js
-// Azure Function (Node.js)
-// Purpose: Call Azure Document Intelligence (prebuilt-layout), poll until done,
-// then normalize output with tablesPreview that includes BOTH sample head + sampleTail
-// so downstream extract-financial can read totals that appear at the bottom of tables.
-
 module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
@@ -17,18 +12,20 @@ module.exports = async function (context, req) {
     const body = req.body || {};
     const blobUrl = body.blobUrl || body.url || body.fileUrl || null;
     const fileName = body.fileName || "unknown.pdf";
-    const contentType = body.contentType || "application/pdf";
-
-    // Optional passthrough
-    const period = body.period ?? null;
-    const compare = body.compare ?? null;
 
     if (!blobUrl || typeof blobUrl !== "string") {
       return send(400, { ok: false, error: "Missing blobUrl in request body" });
     }
 
-    const DI_ENDPOINT = process.env.DI_ENDPOINT || process.env.DOCUMENT_INTELLIGENCE_ENDPOINT;
-    const DI_KEY = process.env.DI_KEY || process.env.DOCUMENT_INTELLIGENCE_KEY;
+    const DI_ENDPOINT =
+      process.env.DI_ENDPOINT ||
+      process.env.DOCUMENT_INTELLIGENCE_ENDPOINT ||
+      process.env.FORM_RECOGNIZER_ENDPOINT;
+
+    const DI_KEY =
+      process.env.DI_KEY ||
+      process.env.DOCUMENT_INTELLIGENCE_KEY ||
+      process.env.FORM_RECOGNIZER_KEY;
 
     if (!DI_ENDPOINT || !DI_KEY) {
       return send(500, {
@@ -42,44 +39,59 @@ module.exports = async function (context, req) {
     const diApiVersion = "2023-07-31";
 
     const base = String(DI_ENDPOINT).replace(/\/+$/, "");
-    const analyzeUrl = `${base}/documentintelligence/documentModels/${encodeURIComponent(
-      diModel
-    )}:analyze?api-version=${encodeURIComponent(diApiVersion)}`;
 
-    // --------------------------
-    // 1) Start analysis
-    // --------------------------
-    const startRes = await fetch(analyzeUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Ocp-Apim-Subscription-Key": DI_KEY,
-      },
-      body: JSON.stringify({ urlSource: blobUrl }),
-    });
+    const makeAnalyzeUrl = (prefix) =>
+      `${base}/${prefix}/documentModels/${encodeURIComponent(
+        diModel
+      )}:analyze?api-version=${encodeURIComponent(diApiVersion)}`;
 
-    const opLoc =
-      startRes.headers.get("operation-location") ||
-      startRes.headers.get("Operation-Location") ||
-      null;
+    const startAnalyze = async (prefix) => {
+      const analyzeUrl = makeAnalyzeUrl(prefix);
 
-    if (!startRes.ok || !opLoc) {
-      const t = await startRes.text().catch(() => "");
+      const res = await fetch(analyzeUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Ocp-Apim-Subscription-Key": DI_KEY,
+        },
+        body: JSON.stringify({ urlSource: blobUrl }),
+      });
+
+      const opLoc =
+        res.headers.get("operation-location") ||
+        res.headers.get("Operation-Location") ||
+        null;
+
+      const txt = await res.text().catch(() => "");
+
+      return { prefix, res, opLoc, txt };
+    };
+
+    // ✅ جرّب المسار الجديد أولاً ثم القديم تلقائياً
+    let started = await startAnalyze("documentintelligence");
+    if (!started.res.ok || !started.opLoc) {
+      // إذا 404 أو ما في operation-location -> جرّب formrecognizer
+      const maybe404 = started.res.status === 404 || /Resource not found/i.test(started.txt || "");
+      if (maybe404 || !started.opLoc) {
+        started = await startAnalyze("formrecognizer");
+      }
+    }
+
+    if (!started.res.ok || !started.opLoc) {
       return send(500, {
         ok: false,
         error: "Failed to start Document Intelligence analyze",
-        status: startRes.status,
-        details: t?.slice(0, 1500) || "",
-        hasOperationLocation: Boolean(opLoc),
+        status: started.res.status,
+        details: (started.txt || "").slice(0, 1500),
+        hasOperationLocation: Boolean(started.opLoc),
+        triedPrefix: started.prefix,
+        hint:
+          "If still 404, your DI_ENDPOINT is wrong. It must look like https://<name>.cognitiveservices.azure.com (no extra path).",
       });
     }
 
-    // --------------------------
-    // 2) Poll results
-    // --------------------------
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-    const maxWaitMs = 120000; // 2 minutes
+    const maxWaitMs = 120000;
     const pollEveryMs = 1200;
     const startedAt = Date.now();
 
@@ -87,7 +99,7 @@ module.exports = async function (context, req) {
     let diStatus = "running";
 
     while (Date.now() - startedAt < maxWaitMs) {
-      const pollRes = await fetch(opLoc, {
+      const pollRes = await fetch(started.opLoc, {
         method: "GET",
         headers: { "Ocp-Apim-Subscription-Key": DI_KEY },
       });
@@ -100,15 +112,12 @@ module.exports = async function (context, req) {
       }
 
       diStatus = String(diJson?.status || "").toLowerCase();
-
       if (diStatus === "succeeded" || diStatus === "failed") break;
 
       await sleep(pollEveryMs);
     }
 
-    if (!diJson) {
-      return send(500, { ok: false, error: "No DI response (empty)" });
-    }
+    if (!diJson) return send(500, { ok: false, error: "No DI response (empty)" });
 
     if (String(diJson?.status || "").toLowerCase() !== "succeeded") {
       return send(500, {
@@ -122,22 +131,16 @@ module.exports = async function (context, req) {
     const analyzeResult = diJson?.analyzeResult || {};
     const diWarnings = analyzeResult?.warnings ?? null;
 
-    // --------------------------
-    // 3) Normalize pages meta
-    // --------------------------
     const pages = Array.isArray(analyzeResult.pages) ? analyzeResult.pages : [];
     const normPages = pages.map((p) => ({
       pageNumber: p.pageNumber ?? null,
       width: p.width ?? null,
       height: p.height ?? null,
       unit: p.unit ?? null,
-      lineCount: Array.isArray(p.lines) ? p.lines.length : (p.lineCount ?? null),
-      wordCount: Array.isArray(p.words) ? p.words.length : (p.wordCount ?? null),
+      lineCount: Array.isArray(p.lines) ? p.lines.length : p.lineCount ?? null,
+      wordCount: Array.isArray(p.words) ? p.words.length : p.wordCount ?? null,
     }));
 
-    // --------------------------
-    // 4) Normalize tables -> tablesPreview with sample + sampleTail
-    // --------------------------
     const tables = Array.isArray(analyzeResult.tables) ? analyzeResult.tables : [];
 
     const buildMatrix = (table) => {
@@ -152,15 +155,12 @@ module.exports = async function (context, req) {
         const r = Number(cell?.rowIndex ?? -1);
         const c = Number(cell?.columnIndex ?? -1);
         if (r >= 0 && r < rowCount && c >= 0 && c < colCount) {
-          // Prefer content (text)
           const content = cell?.content ?? "";
-          // If multiple cells land on same spot, keep longest
           if (!matrix[r][c] || String(content).length > String(matrix[r][c]).length) {
             matrix[r][c] = String(content);
           }
         }
       }
-
       return matrix;
     };
 
@@ -173,12 +173,10 @@ module.exports = async function (context, req) {
     const tablesPreview = tables.map((t, idx) => {
       const rowCount = Number(t?.rowCount || 0);
       const columnCount = Number(t?.columnCount || 0);
-
       const pageNumber =
         (Array.isArray(t?.boundingRegions) && t.boundingRegions[0]?.pageNumber) || null;
 
       const matrix = buildMatrix(t);
-
       const sample = takeHead(matrix, previewHeadRows);
       const sampleTail = rowCount > previewHeadRows ? takeTail(matrix, previewTailRows) : [];
 
@@ -187,22 +185,15 @@ module.exports = async function (context, req) {
         rowCount,
         columnCount,
         pageNumber,
-        // ✅ head (as before)
         sample,
-        // ✅ NEW: tail to capture totals near the end
-        sampleTail,
+        sampleTail, // ✅ هذا مهم للـ totals اللي آخر الجدول
       };
     });
 
-    // --------------------------
-    // 5) Compute textLength (best-effort)
-    // --------------------------
-    // DI provides content at analyzeResult.content (often huge). If missing, approximate from lines.
     let textLength = 0;
     if (typeof analyzeResult.content === "string") {
       textLength = analyzeResult.content.length;
     } else {
-      // approximate from lines content
       let total = 0;
       for (const p of pages) {
         const lines = Array.isArray(p?.lines) ? p.lines : [];
@@ -216,11 +207,6 @@ module.exports = async function (context, req) {
         pages: normPages.length,
         tables: tables.length,
         textLength,
-        // passthrough to help debugging
-        fileName,
-        contentType,
-        period,
-        compare,
       },
       pages: normPages,
       tablesPreview,
@@ -233,6 +219,7 @@ module.exports = async function (context, req) {
       diApiVersion,
       diStatus: "succeeded",
       diWarnings,
+      diRouteUsed: started.prefix, // ✅ يوضح أي مسار اشتغل عندك
       normalized,
     });
   } catch (e) {
