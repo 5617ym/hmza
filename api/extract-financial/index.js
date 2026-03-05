@@ -1,4 +1,4 @@
-// api/extract-financial/index.js
+// api/extract-financial/index.jss
 module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
