@@ -1,4 +1,4 @@
-// api/analyze/index.js
+// api/extract-financial/index.js
 module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
@@ -10,238 +10,393 @@ module.exports = async function (context, req) {
 
   try {
     const body = req.body || {};
-    const blobUrl = body.blobUrl || body.url || body.fileUrl || null;
-    const fileName = body.fileName || "unknown.pdf";
 
-    if (!blobUrl || typeof blobUrl !== "string") {
-      return send(400, { ok: false, error: "Missing blobUrl in request body" });
-    }
+    // ✅ مرونة استقبال البيانات (مثل analyze)
+    const blobUrl =
+      body.blobUrl ||
+      body.url ||
+      body.fileUrl ||
+      body?.payload?.blobUrl ||
+      body?.payload?.url ||
+      body?.payload?.fileUrl ||
+      null;
 
-    const DI_ENDPOINT =
-      process.env.DI_ENDPOINT ||
-      process.env.DOCUMENT_INTELLIGENCE_ENDPOINT ||
-      process.env.FORM_RECOGNIZER_ENDPOINT;
+    const normalized =
+      body.normalized ||
+      body?.payload?.normalized ||
+      null;
 
-    const DI_KEY =
-      process.env.DI_KEY ||
-      process.env.DOCUMENT_INTELLIGENCE_KEY ||
-      process.env.FORM_RECOGNIZER_KEY;
+    const fileName = body.fileName || body?.payload?.fileName || "unknown.pdf";
 
-    if (!DI_ENDPOINT || !DI_KEY) {
-      return send(500, {
+    const period = body.period || body?.payload?.period || null; // (سنوي/ربع سنوي..)
+    const compareMode = body.compareMode || body?.payload?.compareMode || "بدون مقارنة";
+
+    if (!blobUrl) {
+      return send(400, {
         ok: false,
-        error:
-          "Missing DI_ENDPOINT/DI_KEY in environment. Set DI_ENDPOINT and DI_KEY in Azure Function App settings.",
+        error: "Missing blobUrl in request body",
+        hint: "Send { blobUrl, normalized } OR { payload: { blobUrl, normalized } }",
+        gotKeys: Object.keys(body),
       });
     }
 
-    const diModel = "prebuilt-layout";
-    const diApiVersion = "2023-07-31";
-    const base = String(DI_ENDPOINT).replace(/\/+$/, "");
-
-    const makeAnalyzeUrl = (prefix) =>
-      `${base}/${prefix}/documentModels/${encodeURIComponent(
-        diModel
-      )}:analyze?api-version=${encodeURIComponent(diApiVersion)}`;
-
-    const startAnalyze = async (prefix) => {
-      const analyzeUrl = makeAnalyzeUrl(prefix);
-
-      const res = await fetch(analyzeUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Ocp-Apim-Subscription-Key": DI_KEY,
-        },
-        body: JSON.stringify({ urlSource: blobUrl }),
+    if (!normalized || typeof normalized !== "object") {
+      return send(400, {
+        ok: false,
+        error: "Missing normalized in request body",
+        hint: "Send analyze normalized output back to extract-financial",
+        gotKeys: Object.keys(body),
       });
+    }
 
-      const opLoc =
-        res.headers.get("operation-location") ||
-        res.headers.get("Operation-Location") ||
-        null;
+    const tablesPreview = Array.isArray(normalized?.tablesPreview)
+      ? normalized.tablesPreview
+      : [];
 
-      const txt = await res.text().catch(() => "");
+    if (!tablesPreview.length) {
+      return send(400, {
+        ok: false,
+        error: "normalized.tablesPreview is empty",
+        hint: "Make sure /api/analyze returns normalized.tablesPreview",
+      });
+    }
 
-      return { prefix, res, opLoc, txt };
+    // -------------------------
+    // Helpers
+    // -------------------------
+    const norm = (s) => {
+      const x = String(s ?? "")
+        .toLowerCase()
+        .replace(/[إأآا]/g, "ا")
+        .replace(/[ى]/g, "ي")
+        .replace(/[ة]/g, "ه")
+        .replace(/[ؤئ]/g, "ء")
+        .replace(/[\u064B-\u065F]/g, "") // تشكيل
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return x;
     };
 
-    // ✅ جرّب المسار الجديد أولاً ثم القديم تلقائياً
-    let started = await startAnalyze("documentintelligence");
-    if (!started.res.ok || !started.opLoc) {
-      const maybe404 =
-        started.res.status === 404 || /Resource not found/i.test(started.txt || "");
-      if (maybe404 || !started.opLoc) {
-        started = await startAnalyze("formrecognizer");
-      }
-    }
+    const toLatinDigits = (s) =>
+      String(s ?? "")
+        .replace(/[٠]/g, "0")
+        .replace(/[١]/g, "1")
+        .replace(/[٢]/g, "2")
+        .replace(/[٣]/g, "3")
+        .replace(/[٤]/g, "4")
+        .replace(/[٥]/g, "5")
+        .replace(/[٦]/g, "6")
+        .replace(/[٧]/g, "7")
+        .replace(/[٨]/g, "8")
+        .replace(/[٩]/g, "9")
+        .replace(/[٫]/g, ".")
+        .replace(/[٬]/g, ",");
 
-    if (!started.res.ok || !started.opLoc) {
-      return send(500, {
-        ok: false,
-        error: "Failed to start Document Intelligence analyze",
-        status: started.res.status,
-        details: (started.txt || "").slice(0, 1500),
-        hasOperationLocation: Boolean(started.opLoc),
-        triedPrefix: started.prefix,
-        hint:
-          "If still 404, your DI_ENDPOINT is wrong. It must look like https://<name>.cognitiveservices.azure.com (no extra path).",
-      });
-    }
+    const toNumber = (raw) => {
+      let s = toLatinDigits(raw).trim();
+      if (!s) return null;
 
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const maxWaitMs = 120000;
-    const pollEveryMs = 1200;
-    const startedAt = Date.now();
-
-    let diJson = null;
-    let diStatus = "running";
-
-    while (Date.now() - startedAt < maxWaitMs) {
-      const pollRes = await fetch(started.opLoc, {
-        method: "GET",
-        headers: { "Ocp-Apim-Subscription-Key": DI_KEY },
-      });
-
-      const pollTxt = await pollRes.text().catch(() => "");
-      try {
-        diJson = pollTxt ? JSON.parse(pollTxt) : null;
-      } catch {
-        diJson = { status: "invalid_json", raw: pollTxt?.slice(0, 1500) };
+      // سلبي بين قوسين
+      let neg = false;
+      if (/^\(.*\)$/.test(s)) {
+        neg = true;
+        s = s.slice(1, -1);
       }
 
-      diStatus = String(diJson?.status || "").toLowerCase();
-      if (diStatus === "succeeded" || diStatus === "failed") break;
+      // إزالة أي شيء غير رقم/نقطة/فاصلة/إشارة
+      s = s.replace(/[^0-9.,\-]/g, "");
 
-      await sleep(pollEveryMs);
-    }
+      // إزالة الفواصل كآلاف
+      // إذا كان عندنا نقطة كعشري: نحذف الفواصل
+      // إذا ما عندنا نقطة: نحذف الفواصل أيضاً (أغلب تقاريرنا آلاف)
+      s = s.replace(/,/g, "");
 
-    if (!diJson) return send(500, { ok: false, error: "No DI response (empty)" });
+      if (!s || s === "-" || s === ".") return null;
 
-    if (String(diJson?.status || "").toLowerCase() !== "succeeded") {
-      return send(500, {
-        ok: false,
-        error: "Document Intelligence analysis did not succeed",
-        diStatus: diJson?.status || null,
-        details: diJson,
-      });
-    }
+      const n = Number(s);
+      if (!Number.isFinite(n)) return null;
+      return neg ? -n : n;
+    };
 
-    const analyzeResult = diJson?.analyzeResult || {};
-    const diWarnings = analyzeResult?.warnings ?? null;
-
-    const pages = Array.isArray(analyzeResult.pages) ? analyzeResult.pages : [];
-    const normPages = pages.map((p) => ({
-      pageNumber: p.pageNumber ?? null,
-      width: p.width ?? null,
-      height: p.height ?? null,
-      unit: p.unit ?? null,
-      lineCount: Array.isArray(p.lines) ? p.lines.length : p.lineCount ?? null,
-      wordCount: Array.isArray(p.words) ? p.words.length : p.wordCount ?? null,
-    }));
-
-    const tables = Array.isArray(analyzeResult.tables) ? analyzeResult.tables : [];
-
-    // ✅ نجمع النصوص داخل نفس الخلية بدل "الأطول فقط"
-    const buildMatrix = (table) => {
-      const rowCount = Number(table?.rowCount || 0);
-      const colCount = Number(table?.columnCount || 0);
-      const matrix = Array.from({ length: rowCount }, () =>
-        Array.from({ length: colCount }, () => "")
+    const flattenRows = (rows) =>
+      (Array.isArray(rows) ? rows : []).map((r) =>
+        Array.isArray(r) ? r.map((c) => String(c ?? "")) : [String(r ?? "")]
       );
 
-      const cells = Array.isArray(table?.cells) ? table.cells : [];
-      for (const cell of cells) {
-        const r = Number(cell?.rowIndex ?? -1);
-        const c = Number(cell?.columnIndex ?? -1);
-        if (!(r >= 0 && r < rowCount && c >= 0 && c < colCount)) continue;
-
-        const content = String(cell?.content ?? "").trim();
-        if (!content) continue;
-
-        const prev = matrix[r][c];
-        if (!prev) matrix[r][c] = content;
-        else if (!prev.includes(content)) matrix[r][c] = (prev + " " + content).trim();
-      }
-      return matrix;
+    const joinTableText = (t) => {
+      const rows = [
+        ...flattenRows(t?.sample),
+        ...flattenRows(t?.sampleTail),
+      ];
+      return rows.map((r) => r.join(" | ")).join(" \n ");
     };
 
-    const previewHeadRows = 12;
-    const previewTailRows = 22;
-
-    const rowHasMeaning = (row) => {
-      // أي خلية فيها نص/رقم
-      return Array.isArray(row) && row.some((x) => String(x || "").trim().length > 0);
+    const getAllRows = (t) => {
+      // نستخدم الـ preview فقط (head + tail)
+      const head = flattenRows(t?.sample);
+      const tail = flattenRows(t?.sampleTail);
+      return [...head, ...tail];
     };
 
-    const takeHead = (rows, n) => rows.slice(0, Math.min(n, rows.length));
-
-    // ✅ Tail ذكي: يأخذ آخر N صف "غير فارغ" بدل آخر N صف مطلقًا
-    const takeTailNonEmpty = (rows, n) => {
-      const out = [];
-      for (let i = rows.length - 1; i >= 0 && out.length < n; i--) {
-        const r = rows[i];
-        if (rowHasMeaning(r)) out.push(r);
-      }
-      return out.reverse();
+    const extractYearsFromRow = (row) => {
+      const text = toLatinDigits(row.join(" "));
+      const matches = text.match(/\b(19|20)\d{2}\b/g) || [];
+      const years = matches
+        .map((y) => Number(y))
+        .filter((y) => y >= 1990 && y <= 2100);
+      return years;
     };
 
-    const tablesPreview = tables.map((t, idx) => {
-      const rowCount = Number(t?.rowCount || 0);
-      const columnCount = Number(t?.columnCount || 0);
-      const pageNumber =
-        (Array.isArray(t?.boundingRegions) && t.boundingRegions[0]?.pageNumber) || null;
+    const pickYearColumns = (rows) => {
+      // نحاول العثور على صف Header فيه سنوات
+      // ثم نحدد الأعمدة التي تحتوي سنة
+      let best = { years: [], colYears: {} };
 
-      const matrix = buildMatrix(t);
-
-      const sample = takeHead(matrix, previewHeadRows);
-
-      // tail غير فارغ + إزالة التداخل مع head
-      const rawTail = takeTailNonEmpty(matrix, previewTailRows);
-      const headSet = new Set(sample.map((r) => JSON.stringify(r)));
-      const sampleTail = rawTail.filter((r) => !headSet.has(JSON.stringify(r)));
-
-      return {
-        index: typeof t?.index !== "undefined" ? t.index : idx,
-        rowCount,
-        columnCount,
-        pageNumber,
-        sample,
-        sampleTail,
-      };
-    });
-
-    let textLength = 0;
-    if (typeof analyzeResult.content === "string") {
-      textLength = analyzeResult.content.length;
-    } else {
-      let total = 0;
-      for (const p of pages) {
-        const lines = Array.isArray(p?.lines) ? p.lines : [];
-        for (const ln of lines) total += String(ln?.content || "").length;
+      for (const row of rows) {
+        const years = extractYearsFromRow(row);
+        if (years.length >= 1) {
+          // أي خلية تحتوي سنة -> نربطها بالعمود
+          const colYears = {};
+          for (let i = 0; i < row.length; i++) {
+            const cell = toLatinDigits(row[i]);
+            const m = cell.match(/\b(19|20)\d{2}\b/);
+            if (m) colYears[i] = Number(m[0]);
+          }
+          const uniqueYears = Array.from(new Set(Object.values(colYears)));
+          if (uniqueYears.length > best.years.length) {
+            best = { years: uniqueYears, colYears };
+          }
+        }
       }
-      textLength = total;
+
+      const yearsSorted = [...best.years].sort((a, b) => a - b);
+      const latest = yearsSorted.length ? yearsSorted[yearsSorted.length - 1] : null;
+      const previous = yearsSorted.length >= 2 ? yearsSorted[yearsSorted.length - 2] : null;
+
+      // عكس mapping: year -> column index
+      const yearToCol = {};
+      for (const [ci, y] of Object.entries(best.colYears || {})) {
+        yearToCol[y] = Number(ci);
+      }
+
+      return { latest, previous, yearToCol };
+    };
+
+    // -------------------------
+    // Balance sheet table picking
+    // -------------------------
+    const scoreBalanceTable = (t) => {
+      const joined = norm(joinTableText(t));
+
+      const strong = [
+        "قائمه المركز المالي",
+        "قائمه الوضع المالي",
+        "statement of financial position",
+        "balance sheet",
+        "الموجودات",
+        "المطلوبات",
+        "حقوق الملكيه",
+      ];
+
+      const support = [
+        "غير متداوله",
+        "متداوله",
+        "اجمالي الموجودات",
+        "اجمالي المطلوبات",
+        "اجمالي حقوق الملكيه",
+      ];
+
+      let score = 0;
+      for (const k of strong) if (joined.includes(norm(k))) score += 20;
+      for (const k of support) if (joined.includes(norm(k))) score += 6;
+
+      // تعزيز: وجود الموجودات + المطلوبات + حقوق الملكية معاً
+      const hasA = joined.includes(norm("الموجودات"));
+      const hasL = joined.includes(norm("المطلوبات"));
+      const hasE = joined.includes(norm("حقوق الملكيه")) || joined.includes(norm("حقوق الملكية"));
+      if (hasA && hasL && hasE) score += 15;
+
+      // تقليل: جداول ذات طابع إيضاحات/نصوص
+      if (joined.includes(norm("ايضاح")) || joined.includes(norm("إيضاح"))) score -= 6;
+
+      return score;
+    };
+
+    const candidates = tablesPreview
+      .map((t) => {
+        const rows = getAllRows(t);
+        const { latest, previous, yearToCol } = pickYearColumns(rows);
+        return {
+          index: t.index,
+          pageNumber: t.pageNumber ?? null,
+          rowCount: t.rowCount ?? null,
+          columnCount: t.columnCount ?? null,
+          hasTail: Array.isArray(t.sampleTail) && t.sampleTail.length > 0,
+          score: scoreBalanceTable(t),
+          years: { latest, previous, yearToCol },
+          snippet: joinTableText(t).slice(0, 220),
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const best = candidates[0];
+
+    // لو ما لقينا مرشح جيد
+    if (!best || best.score < 20) {
+      return send(200, {
+        ok: true,
+        fileName,
+        blobUrl,
+        period,
+        compareMode,
+        note: "No strong balance sheet table detected from tablesPreview.",
+        balanceSheetLite: {
+          totalAssets: null,
+          currentAssets: null,
+          nonCurrentAssets: null,
+          totalLiabilities: null,
+          currentLiabilities: null,
+          nonCurrentLiabilities: null,
+          totalEquity: null,
+        },
+        balancePickInfo: { candidates: candidates.slice(0, 6) },
+      });
     }
 
-    const normalized = {
-      meta: {
-        pages: normPages.length,
-        tables: tables.length,
-        textLength,
-      },
-      pages: normPages,
-      tablesPreview,
+    const pickedTable = tablesPreview.find((t) => String(t.index) === String(best.index));
+
+    // -------------------------
+    // Extract totals from picked table
+    // -------------------------
+    const rows = getAllRows(pickedTable);
+
+    const pickColFor = (year) => {
+      if (!year) return null;
+      const col = best.years?.yearToCol?.[year];
+      return typeof col === "number" ? col : null;
     };
+
+    const latestYear = best.years.latest;
+    const prevYear = compareMode && norm(compareMode) !== norm("بدون مقارنه") ? best.years.previous : null;
+
+    const latestCol = pickColFor(latestYear);
+    const prevCol = pickColFor(prevYear);
+
+    // إذا ما عرفنا عمود السنة، نحاول تخمينه:
+    // كثير من القوائم: العمودين الأخيرين أرقام السنوات
+    const fallbackNumericCol = (row) => {
+      // نرجع آخر خلية فيها رقم
+      for (let i = row.length - 1; i >= 0; i--) {
+        if (toNumber(row[i]) !== null) return i;
+      }
+      return null;
+    };
+
+    const findRowValue = (wantKeys) => {
+      const keysN = wantKeys.map(norm);
+
+      let bestHit = null;
+
+      for (const row of rows) {
+        const rowText = norm(row.join(" "));
+        if (!rowText) continue;
+
+        const hit = keysN.some((k) => rowText.includes(k));
+        if (!hit) continue;
+
+        // محاولة أخذ قيمة latest/previous
+        let vLatest = null;
+        let vPrev = null;
+
+        const lc = latestCol ?? fallbackNumericCol(row);
+        if (lc !== null && lc >= 0 && lc < row.length) vLatest = toNumber(row[lc]);
+
+        if (prevCol !== null && prevCol >= 0 && prevCol < row.length) vPrev = toNumber(row[prevCol]);
+
+        // إذا latestCol ما جاء رقم، جرّب عمود ثاني قبل الأخير
+        if (vLatest === null) {
+          const alt = row.length >= 2 ? row.length - 2 : null;
+          if (alt !== null) vLatest = toNumber(row[alt]);
+        }
+
+        // سجل أفضل تطابق
+        if (vLatest !== null || vPrev !== null) {
+          bestHit = {
+            rowText: row.join(" | ").slice(0, 280),
+            latest: vLatest,
+            previous: vPrev,
+          };
+          // أول نتيجة جيدة تكفي غالباً
+          break;
+        }
+      }
+
+      return bestHit;
+    };
+
+    // مفاتيح البحث (كما في صورتك)
+    const hitTotalAssets = findRowValue(["إجمالي الموجودات", "اجمالي الموجودات", "total assets", "اجمالي الاصول", "إجمالي الأصول"]);
+    const hitTotalLiab = findRowValue(["إجمالي المطلوبات", "اجمالي المطلوبات", "total liabilities", "اجمالي الالتزامات", "إجمالي الالتزامات"]);
+    const hitTotalEquity = findRowValue(["إجمالي حقوق الملكية", "اجمالي حقوق الملكيه", "total equity", "حقوق الملكية", "حقوق الملكيه"]);
+
+    // (اختياري) التقسيمات — قد لا تكون موجودة كصف إجمالي منفصل دائماً
+    const hitCurrentAssets = findRowValue(["إجمالي الموجودات المتداولة", "اجمالي الموجودات المتداوله", "current assets"]);
+    const hitNonCurrentAssets = findRowValue(["إجمالي الموجودات غير المتداولة", "اجمالي الموجودات غير المتداوله", "non-current assets"]);
+    const hitCurrentLiab = findRowValue(["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداوله", "current liabilities"]);
+    const hitNonCurrentLiab = findRowValue(["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداوله", "non-current liabilities"]);
+
+    const balanceSheetLite = {
+      totalAssets: hitTotalAssets?.latest ?? null,
+      currentAssets: hitCurrentAssets?.latest ?? null,
+      nonCurrentAssets: hitNonCurrentAssets?.latest ?? null,
+      totalLiabilities: hitTotalLiab?.latest ?? null,
+      currentLiabilities: hitCurrentLiab?.latest ?? null,
+      nonCurrentLiabilities: hitNonCurrentLiab?.latest ?? null,
+      totalEquity: hitTotalEquity?.latest ?? null,
+    };
+
+    // للتأكد: إذا إجمالي الموجودات/المطلوبات/حقوق الملكية كلها null
+    // نرجع تشخيص واضح
+    const coreAllNull =
+      balanceSheetLite.totalAssets === null &&
+      balanceSheetLite.totalLiabilities === null &&
+      balanceSheetLite.totalEquity === null;
 
     return send(200, {
       ok: true,
       fileName,
-      diModel,
-      diApiVersion,
-      diStatus: "succeeded",
-      diWarnings,
-      diRouteUsed: started.prefix,
-      normalized,
+      blobUrl,
+      period,
+      compareMode,
+
+      // ✅ النتيجة
+      balanceSheetLite,
+
+      // ✅ تشخيص مفيد
+      balancePickInfo: {
+        picked: best,
+        yearsDetected: {
+          latestYear,
+          prevYear,
+          latestCol,
+          prevCol,
+          yearToCol: best.years.yearToCol || {},
+        },
+        hits: {
+          totalAssets: hitTotalAssets,
+          totalLiabilities: hitTotalLiab,
+          totalEquity: hitTotalEquity,
+          currentAssets: hitCurrentAssets,
+          nonCurrentAssets: hitNonCurrentAssets,
+          currentLiabilities: hitCurrentLiab,
+          nonCurrentLiabilities: hitNonCurrentLiab,
+        },
+        warning: coreAllNull
+          ? "Picked a balance table but totals not found from preview rows; may need larger tail or UI sending full table."
+          : null,
+        topCandidates: candidates.slice(0, 6),
+      },
     });
   } catch (e) {
     return send(500, { ok: false, error: e?.message || String(e) });
