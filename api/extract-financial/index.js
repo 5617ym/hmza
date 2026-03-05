@@ -39,20 +39,14 @@ module.exports = async function (context, req) {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
 
-    // ✅ المهم: نفضّل tables (الكامل) على tablesPreview (الـ sample)
-    const tablesFull = Array.isArray(normalized.tables) ? normalized.tables : null;
     const tablesPreview = Array.isArray(normalized.tablesPreview) ? normalized.tablesPreview : [];
-    const tables = tablesFull && tablesFull.length ? tablesFull : tablesPreview;
-
     const pagesMeta = normalized?.meta || null;
 
-    const tablesFullPrev = usingTwoFiles && normalizedPrev && Array.isArray(normalizedPrev.tables)
-      ? normalizedPrev.tables
-      : null;
-    const tablesPreviewPrev = usingTwoFiles && normalizedPrev && Array.isArray(normalizedPrev.tablesPreview)
-      ? normalizedPrev.tablesPreview
+    const tablesPreviewPrev = usingTwoFiles
+      ? Array.isArray(normalizedPrev.tablesPreview)
+        ? normalizedPrev.tablesPreview
+        : []
       : [];
-    const tablesPrev = (tablesFullPrev && tablesFullPrev.length) ? tablesFullPrev : tablesPreviewPrev;
 
     /* =========================
        Helpers
@@ -163,54 +157,28 @@ module.exports = async function (context, req) {
       return y >= 2000 && y <= 2100 ? y : null;
     };
 
-    // ✅ يبني rows كاملة من cells لو موجودة
+    // ✅ مهم: دمج head + tail
     const getTableRows = (table) => {
-      if (!table || typeof table !== "object") return [];
-
-      // 1) لو موجود rows جاهزة
-      if (Array.isArray(table.rows) && table.rows.length) return table.rows;
-
-      // 2) لو موجود sample فقط
-      const sample = Array.isArray(table.sample) ? table.sample : [];
-
-      // 3) لو موجود cells (هذا اللي نحتاجه عشان نطلع الإجماليات)
-      const cells = Array.isArray(table.cells) ? table.cells : null;
-      const rowCount = Number(table.rowCount || 0);
-      const colCount = Number(table.columnCount || 0);
-
-      if (!cells || !rowCount || !colCount) {
-        return sample;
+      const head = Array.isArray(table?.sample) ? table.sample : [];
+      const tail =
+        Array.isArray(table?.sampleTail) ? table.sampleTail :
+        Array.isArray(table?.tail) ? table.tail :
+        [];
+      if (!tail.length) return head;
+      // منع تكرار الصفوف لو نفس السطر موجود
+      const headStr = new Set(head.map((r) => JSON.stringify(r)));
+      const merged = [...head];
+      for (const r of tail) {
+        const key = JSON.stringify(r);
+        if (!headStr.has(key)) merged.push(r);
       }
-
-      const grid = Array.from({ length: rowCount }, () =>
-        Array.from({ length: colCount }, () => "")
-      );
-
-      for (const cell of cells) {
-        const r = Number(cell?.rowIndex ?? cell?.row ?? -1);
-        const c = Number(cell?.columnIndex ?? cell?.col ?? -1);
-        if (r < 0 || c < 0 || r >= rowCount || c >= colCount) continue;
-
-        const content = cell?.content ?? cell?.text ?? cell?.value ?? "";
-        if (!content) continue;
-
-        // بعض DI يكرر نفس الخلية على spans، نخلي أفضل محتوى
-        if (!grid[r][c] || String(content).length > String(grid[r][c]).length) {
-          grid[r][c] = String(content);
-        }
-      }
-
-      return grid;
+      return merged;
     };
-
-    /* ==============================================
-       Column detection
-       ============================================== */
 
     const headerRowLimit = 6;
     const detectColumns = (table) => {
       const rows = getTableRows(table);
-      const colCount = Number(table?.columnCount || (rows?.[0]?.length || 0));
+      const colCount = Number(table?.columnCount || 0);
 
       const cols = Array.from({ length: colCount }, (_, i) => ({
         col: i,
@@ -292,9 +260,9 @@ module.exports = async function (context, req) {
       return { latest, previous, debug: { maxYear, prevYear, yearsAll } };
     };
 
-    /* ==============================================
+    /* =========================
        Row matching (FINAL)
-       ============================================== */
+       ========================= */
 
     const findRowByLabel = (rows, item) => {
       if (!Array.isArray(rows)) return null;
@@ -325,9 +293,9 @@ module.exports = async function (context, req) {
       return null;
     };
 
-    /* ==============================================
+    /* =========================
        INCOME STATEMENT
-       ============================================== */
+       ========================= */
 
     const scoreIncomeTable = (table) => {
       const rows = getTableRows(table);
@@ -400,12 +368,11 @@ module.exports = async function (context, req) {
       return out;
     };
 
-    /* ==============================================
+    /* =========================
        BALANCE SHEET
-       ============================================== */
+       ========================= */
 
-    const normText2 = (s) =>
-      String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+    const normText2 = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
     const tableTextQuick = (t) => {
       const rows = getTableRows(t);
@@ -413,7 +380,7 @@ module.exports = async function (context, req) {
       for (let r = 0; r < rows.length && r < 60; r++) {
         const row = rows[r];
         if (!Array.isArray(row)) continue;
-        for (let c = 0; c < row.length && c < 14; c++) {
+        for (let c = 0; c < row.length && c < 12; c++) {
           const v = row[c];
           if (v) out.push(v);
         }
@@ -442,13 +409,12 @@ module.exports = async function (context, req) {
       let score = 0;
       for (const k of keysStrong) if (text.includes(normText2(k))) score += 50;
       for (const k of keysSupport) if (text.includes(normText2(k))) score += 10;
-
       if (text.includes("متداولة") || text.includes("غير متداولة")) score += 8;
       return score;
     };
 
-    const pickBestBalanceSheetTable = (tablesArr) => {
-      const ranked = (Array.isArray(tablesArr) ? tablesArr : [])
+    const pickBestBalanceSheetTable = (tables) => {
+      const ranked = (Array.isArray(tables) ? tables : [])
         .map((t) => {
           const text = tableTextQuick(t);
           const score = scoreBalanceSheetText(text);
@@ -508,26 +474,21 @@ module.exports = async function (context, req) {
           "اجمالي الموجودات",
           "إجمالي الأصول",
           "اجمالي الأصول",
-          "إجمالي الموجودات وحقوق الملكية والمطلوبات",
           "مجموع الأصول",
           "مجموع الموجودات",
+          "إجمالي الموجودات",
           "Total assets",
         ],
-        // نتركها واسعة لأن الآن عندنا rows كاملة
-        exclude: [
-          "موجودات حق الإستخدام",
-          "الممتلكات والمعدات",
-          "الشهرة",
-        ],
+        // حماية: لا تلتقط "إجمالي الموجودات غير المتداولة"
+        exclude: ["غير المتداولة", "غير المتداوله", "non-current"],
       },
       {
         key: "currentAssets",
         names: [
           "إجمالي الموجودات المتداولة",
-          "الموجودات المتداولة",
           "إجمالي الأصول المتداولة",
+          "الموجودات المتداولة",
           "الأصول المتداولة",
-          "اصول متداولة",
           "Current assets",
         ],
       },
@@ -535,10 +496,9 @@ module.exports = async function (context, req) {
         key: "nonCurrentAssets",
         names: [
           "إجمالي الموجودات غير المتداولة",
-          "الموجودات غير المتداولة",
           "إجمالي الأصول غير المتداولة",
+          "الموجودات غير المتداولة",
           "الأصول غير المتداولة",
-          "اصول غير متداولة",
           "Non-current assets",
         ],
       },
@@ -553,6 +513,8 @@ module.exports = async function (context, req) {
           "اجمالي الخصوم",
           "Total liabilities",
         ],
+        // حماية من "إجمالي المطلوبات وحقوق الملكية"
+        exclude: ["وحقوق", "and equity", "and shareholders"],
       },
       {
         key: "currentLiabilities",
@@ -582,7 +544,7 @@ module.exports = async function (context, req) {
           "إجمالي حقوق المساهمين",
           "اجمالي حقوق المساهمين",
           "حقوق الملكية العائدة لمساهمي الشركة الأم",
-          "إجمالي حقوق الملكية والمطلوبات",
+          "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
           "Total equity",
           "Total shareholders' equity",
         ],
@@ -591,6 +553,22 @@ module.exports = async function (context, req) {
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
       const rows = getTableRows(table);
+
+      // ✅ لو ما فيه tail، لا تتعب نفسك: الإجماليات غالبًا تحت
+      const hasTail = Array.isArray(table?.sampleTail) && table.sampleTail.length > 0;
+      if (!hasTail) {
+        return {
+          __error: "BalanceSheet totals are usually at the bottom. Your analyze response did NOT include sampleTail. Update analyze to send tablesPreview[i].sampleTail (last rows).",
+          totalAssets: null,
+          totalLiabilities: null,
+          totalEquity: null,
+          currentAssets: null,
+          nonCurrentAssets: null,
+          currentLiabilities: null,
+          nonCurrentLiabilities: null,
+        };
+      }
+
       const out = {};
 
       for (const item of wantBalance) {
@@ -604,15 +582,34 @@ module.exports = async function (context, req) {
         out[item.key] = { label: hit.label, current: cur, previous: prev };
       }
 
-      // اشتقاق لو ناقص
+      // Derivation rules
       const a = out.totalAssets?.current ?? null;
+      const ca = out.currentAssets?.current ?? null;
+      const nca = out.nonCurrentAssets?.current ?? null;
+
       const l = out.totalLiabilities?.current ?? null;
+      const cl = out.currentLiabilities?.current ?? null;
+      const ncl = out.nonCurrentLiabilities?.current ?? null;
+
       const e = out.totalEquity?.current ?? null;
 
-      if (a != null && l != null && e == null) {
-        out.totalEquity = { label: "derived: assets - liabilities", current: a - l, previous: null };
-      } else if (a != null && e != null && l == null) {
-        out.totalLiabilities = { label: "derived: assets - equity", current: a - e, previous: null };
+      // ✅ لو ما وجد "إجمالي الموجودات" لكن وجد المتداول + غير المتداول → اشتق الإجمالي
+      if (a == null && ca != null && nca != null) {
+        out.totalAssets = { label: "derived: currentAssets + nonCurrentAssets", current: ca + nca, previous: null };
+      }
+
+      // ✅ لو ما وجد "إجمالي المطلوبات" لكن وجد المتداول + غير المتداول → اشتق
+      if (l == null && cl != null && ncl != null) {
+        out.totalLiabilities = { label: "derived: currentLiabilities + nonCurrentLiabilities", current: cl + ncl, previous: null };
+      }
+
+      // ✅ اشتقاق حقوق الملكية إذا ناقصة
+      const a2 = out.totalAssets?.current ?? null;
+      const l2 = out.totalLiabilities?.current ?? null;
+      const e2 = out.totalEquity?.current ?? null;
+
+      if (a2 != null && l2 != null && e2 == null) {
+        out.totalEquity = { label: "derived: assets - liabilities", current: a2 - l2, previous: null };
       }
 
       return out;
@@ -621,6 +618,23 @@ module.exports = async function (context, req) {
     const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
       const rowsA = getTableRows(tableA);
       const rowsB = getTableRows(tableB);
+
+      const hasTailA = Array.isArray(tableA?.sampleTail) && tableA.sampleTail.length > 0;
+      const hasTailB = Array.isArray(tableB?.sampleTail) && tableB.sampleTail.length > 0;
+
+      if (!hasTailA || !hasTailB) {
+        return {
+          __error: "Compare mode requires sampleTail in BOTH files’ balance tables. Update analyze to include tablesPreview[i].sampleTail (last rows).",
+          totalAssets: null,
+          totalLiabilities: null,
+          totalEquity: null,
+          currentAssets: null,
+          nonCurrentAssets: null,
+          currentLiabilities: null,
+          nonCurrentLiabilities: null,
+        };
+      }
+
       const out = {};
 
       for (const item of wantBalance) {
@@ -637,29 +651,38 @@ module.exports = async function (context, req) {
         };
       }
 
+      // Derivations (current side)
+      const ca = out.currentAssets?.current ?? null;
+      const nca = out.nonCurrentAssets?.current ?? null;
+      if (out.totalAssets?.current == null && ca != null && nca != null) {
+        out.totalAssets = { label: "derived: currentAssets + nonCurrentAssets", current: ca + nca, previous: out.totalAssets?.previous ?? null };
+      }
+
+      const cl = out.currentLiabilities?.current ?? null;
+      const ncl = out.nonCurrentLiabilities?.current ?? null;
+      if (out.totalLiabilities?.current == null && cl != null && ncl != null) {
+        out.totalLiabilities = { label: "derived: currentLiabilities + nonCurrentLiabilities", current: cl + ncl, previous: out.totalLiabilities?.previous ?? null };
+      }
+
       const a = out.totalAssets?.current ?? null;
       const l = out.totalLiabilities?.current ?? null;
       const e = out.totalEquity?.current ?? null;
-
       if (a != null && l != null && e == null) {
         out.totalEquity = { label: "derived: assets - liabilities", current: a - l, previous: out.totalEquity?.previous ?? null };
-      } else if (a != null && e != null && l == null) {
-        out.totalLiabilities = { label: "derived: assets - equity", current: a - e, previous: out.totalLiabilities?.previous ?? null };
       }
 
       return out;
     };
 
-    // DIAG endpoint
+    // DIAG
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
-      const bsDiag = pickBestBalanceSheetTable(tables);
+      const bsDiag = pickBestBalanceSheetTable(tablesPreview);
       return send(200, {
         ok: true,
         diag: true,
         kind: "balanceSheetCandidates",
         pagesMeta,
-        tablesCount: tables.length,
-        using: (tablesFull && tablesFull.length) ? "tables" : "tablesPreview",
+        tablesPreviewCount: tablesPreview.length,
         bestTableIndex: bsDiag.bestTableIndex,
         bestScore: bsDiag.bestScore,
         found: bsDiag.candidates.length,
@@ -672,7 +695,7 @@ module.exports = async function (context, req) {
        ========================= */
 
     let bestA = null;
-    for (const t of tables) {
+    for (const t of tablesPreview) {
       const s = scoreIncomeTable(t);
       if (!bestA || s > bestA.score) bestA = { table: t, score: s };
     }
@@ -682,8 +705,8 @@ module.exports = async function (context, req) {
         ok: true,
         financial: {
           pagesMeta,
-          note: "لا توجد tables/tablesPreview داخل normalized.",
-          tablesCount: tables.length,
+          note: "لا توجد tablesPreview داخل normalized.",
+          tablesPreviewCount: tablesPreview.length,
         },
       });
     }
@@ -697,7 +720,7 @@ module.exports = async function (context, req) {
     let incomeExtract = {};
     if (usingTwoFiles) {
       let bestB = null;
-      for (const t of tablesPrev) {
+      for (const t of tablesPreviewPrev) {
         const s = scoreIncomeTable(t);
         if (!bestB || s > bestB.score) bestB = { table: t, score: s };
       }
@@ -719,15 +742,15 @@ module.exports = async function (context, req) {
        Pick balance table A
        ========================= */
 
-    const bsDiagA = pickBestBalanceSheetTable(tables);
+    const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
 
     let bestBalanceA = null;
     if (bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
-      const t = tables.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
+      const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
       if (t) bestBalanceA = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
     }
     if (!bestBalanceA) {
-      for (const t of tables) {
+      for (const t of tablesPreview) {
         const s = scoreBalanceTable(t);
         if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s, pickedBy: "fallbackScore" };
       }
@@ -744,15 +767,15 @@ module.exports = async function (context, req) {
       const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
 
       if (usingTwoFiles) {
-        const bsDiagB = pickBestBalanceSheetTable(tablesPrev);
+        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
 
         let bestBalanceB = null;
         if (bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
-          const t = tablesPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
+          const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
           if (t) bestBalanceB = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
         }
         if (!bestBalanceB) {
-          for (const t of tablesPrev) {
+          for (const t of tablesPreviewPrev) {
             const s = scoreBalanceTable(t);
             if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s, pickedBy: "fallbackScore" };
           }
@@ -827,8 +850,6 @@ module.exports = async function (context, req) {
       }
     }
 
-    const sampleRows = getTableRows(bestA.table).slice(0, 12);
-
     return send(200, {
       ok: true,
       financial: {
@@ -836,7 +857,6 @@ module.exports = async function (context, req) {
         selectionPolicy: {
           noCompare,
           usingTwoFiles,
-          using: (tablesFull && tablesFull.length) ? "tables" : "tablesPreview",
           rule: noCompare
             ? "No compare selected -> pick latest year/period only."
             : usingTwoFiles
@@ -849,14 +869,6 @@ module.exports = async function (context, req) {
           columnCount: bestA.table.columnCount,
           rowCount: bestA.table.rowCount,
         },
-        columnsDetected: colsA.map((c) => ({
-          col: c.col,
-          years: c.years,
-          hasThreeMonths: c.hasThreeMonths,
-          hasNineMonths: c.hasNineMonths,
-          hasAnnual: c.hasAnnual,
-          hasNote: c.hasNote,
-        })),
         pickedColumns: {
           latest: pickedA.latest ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null } : null,
           previous: pickedA.previous ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null } : null,
@@ -865,7 +877,6 @@ module.exports = async function (context, req) {
         incomeStatementLite: incomeExtract,
         balanceSheetLite: balanceExtract,
         balancePickInfo: balancePicked,
-        sample: sampleRows,
       },
     });
   } catch (e) {
