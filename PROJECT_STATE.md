@@ -1,44 +1,82 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 3B (Extract Financial - Stable Income Statement) ✅ مكتملة تقنياً
+CURRENT_PHASE: 3B (Extract Financial - Income Statement Stable)
 
 CURRENT_TASK:
-تثبيت مسار استخراج قائمة الدخل من tablesPreview داخل /api/extract-financial مع:
-- اختيار أحدث سنة تلقائياً عند "بدون مقارنة"
-- تفضيل 3 أشهر إذا كان التقرير ربعياً
-- دعم المقارنة داخل نفس الملف (أحدث سنة + السنة السابقة)
-- تطبيع الأرقام العربية وتحويلها إلى Numbers حقيقية
+تثبيت مسار استخراج قائمة الدخل ثم استكمال استخراج قائمة المركز المالي.
+
+المسار الحالي للنظام:
+
+upload-url  
+→ ingest  
+→ analyze (Azure Document Intelligence - prebuilt-layout)  
+→ extract-financial
+
+تم اختبار المسار كاملاً مع ملف PDF حقيقي.
 
 LAST_TEST:
-رفع ملف PDF (جاهز) + الضغط على "عرض النتائج"
-المسار الكامل اشتغل بنجاح:
-upload-url → ingest → analyze → extract-financial
-جميع الطلبات Status=200
+رفع ملف:
+"جاهز سنوي حالي #####.pdf"
+
+النتائج في Network:
+
+upload-url → 200  
+blob upload → 201  
+ingest → 200  
+analyze → 500
+
+رسالة الخطأ:
+
+Failed to start Document Intelligence analyze  
+status: 404  
+Resource not found  
+hasOperationLocation: false
 
 LAST_RESULT:
-- pages / tables / textLength تظهر بشكل صحيح
-- اختيار الأعمدة يعمل:
-  - latest=2024
-  - previous=2023 (عند المقارنة)
-- تطبيع الأرقام العربية تم بنجاح (مثال: "٢٫٢١٨,٦٦٢٫٧٣٥")
-- current أصبح رقم صحيح: 2218662735
-- extract-financial يرجع بيانات منظمة داخل incomeStatementLite
-- selectionPolicy يعكس اختيار المستخدم (noCompare / compare / 2 files)
+
+- upload يعمل بشكل صحيح
+- ingest يعمل بشكل صحيح
+- الاتصال بـ Azure Document Intelligence يفشل عند بداية analyze
+- الخطأ يظهر قبل بدء polling
 
 ACTIVE_PROBLEM:
-لا يوجد خطأ تقني حاليًا في مسار extract-financial.
-ملاحظات غير مؤثرة:
-- favicon.ico يظهر 404 (غير مؤثر)
 
-DECISION:
-إغلاق المرحلة 3B (Definition of Done تحقق ✅)
+Endpoint الخاص بـ Azure Document Intelligence غير متوافق مع المسار المستخدم في الكود.
 
-NEXT_STEP:
-الانتقال إلى المرحلة 4 (اختيار مسار واحد فقط وعدم التشعب):
-B) استخراج قائمة المركز المالي (Balance Sheet) بنفس المنهجية
-- تشغيل DIAG لاختيار أفضل جدول ميزانية
-- تثبيت استخراج أصول/التزامات/حقوق ملكية
-- دعم نفس سياسة المقارنة (بدون مقارنة / مقارنة داخل نفس الملف / ملفين)
+الطلب الحالي يستخدم:
+
+/documentintelligence/documentModels/prebuilt-layout:analyze
+
+لكن خدمة Azure ترجع:
+
+404 Resource not found
+
+مما يعني أحد الاحتمالات التالية:
+
+1) DI_ENDPOINT غير صحيح
+2) الخدمة تستخدم المسار القديم formrecognizer
+3) إصدار API غير متوافق
+4) endpoint يحتوي path إضافي
+
+NEXT_STEP (غداً):
+
+1) التأكد من DI_ENDPOINT داخل Azure
+   يجب أن يكون بالشكل:
+
+   https://<resource-name>.cognitiveservices.azure.com
+
+2) اختبار endpoint يدوياً
+
+3) تثبيت مسار analyze بشكل نهائي
+
+4) بعد نجاح analyze نكمل:
+
+analyze
+→ normalized.tablesPreview
+→ extract-financial
+→ استخراج:
+   - Income Statement
+   - Balance Sheet
 
 STATUS:
-READY_FOR_NEXT_PHASE
+BLOCKED (Analyze endpoint issue)
