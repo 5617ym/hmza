@@ -165,7 +165,6 @@ module.exports = async function (context, req) {
         Array.isArray(table?.tail) ? table.tail :
         [];
       if (!tail.length) return head;
-      // منع تكرار الصفوف لو نفس السطر موجود
       const headStr = new Set(head.map((r) => JSON.stringify(r)));
       const merged = [...head];
       for (const r of tail) {
@@ -476,11 +475,16 @@ module.exports = async function (context, req) {
           "اجمالي الأصول",
           "مجموع الأصول",
           "مجموع الموجودات",
-          "إجمالي الموجودات",
           "Total assets",
         ],
-        // حماية: لا تلتقط "إجمالي الموجودات غير المتداولة"
-        exclude: ["غير المتداولة", "غير المتداوله", "non-current"],
+        // ✅ حماية: لا تلتقط المتداولة/غير المتداولة
+        exclude: [
+          "المتداولة",
+          "غير المتداولة",
+          "غير المتداوله",
+          "current",
+          "non-current",
+        ],
       },
       {
         key: "currentAssets",
@@ -513,8 +517,17 @@ module.exports = async function (context, req) {
           "اجمالي الخصوم",
           "Total liabilities",
         ],
-        // حماية من "إجمالي المطلوبات وحقوق الملكية"
-        exclude: ["وحقوق", "and equity", "and shareholders"],
+        
+        // ✅ حماية: لا تلتقط المتداولة/غير المتداولة ولا “وحقوق الملكية”
+        exclude: [
+          "المتداولة",
+          "غير المتداولة",
+          "غير المتداوله",
+          "current",
+          "non-current",
+          "وحقوق",
+          "and equity",
+          "and shareholders",
       },
       {
         key: "currentLiabilities",
@@ -554,22 +567,11 @@ module.exports = async function (context, req) {
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
       const rows = getTableRows(table);
 
-      // ✅ لو ما فيه tail، لا تتعب نفسك: الإجماليات غالبًا تحت
+      // ✅ بدل ما نوقف بسبب عدم وجود sampleTail: نكمل ونعطي تحذير فقط
       const hasTail = Array.isArray(table?.sampleTail) && table.sampleTail.length > 0;
-      if (!hasTail) {
-        return {
-          __error: "BalanceSheet totals are usually at the bottom. Your analyze response did NOT include sampleTail. Update analyze to send tablesPreview[i].sampleTail (last rows).",
-          totalAssets: null,
-          totalLiabilities: null,
-          totalEquity: null,
-          currentAssets: null,
-          nonCurrentAssets: null,
-          currentLiabilities: null,
-          nonCurrentLiabilities: null,
-        };
-      }
-
-      const out = {};
+      const out = {
+        __warning: hasTail ? null : "No sampleTail in tablesPreview; extracted from sample rows only (may miss bottom totals).",
+      };
 
       for (const item of wantBalance) {
         const hit = findRowByLabel(rows, item);
@@ -593,17 +595,14 @@ module.exports = async function (context, req) {
 
       const e = out.totalEquity?.current ?? null;
 
-      // ✅ لو ما وجد "إجمالي الموجودات" لكن وجد المتداول + غير المتداول → اشتق الإجمالي
       if (a == null && ca != null && nca != null) {
         out.totalAssets = { label: "derived: currentAssets + nonCurrentAssets", current: ca + nca, previous: null };
       }
 
-      // ✅ لو ما وجد "إجمالي المطلوبات" لكن وجد المتداول + غير المتداول → اشتق
       if (l == null && cl != null && ncl != null) {
         out.totalLiabilities = { label: "derived: currentLiabilities + nonCurrentLiabilities", current: cl + ncl, previous: null };
       }
 
-      // ✅ اشتقاق حقوق الملكية إذا ناقصة
       const a2 = out.totalAssets?.current ?? null;
       const l2 = out.totalLiabilities?.current ?? null;
       const e2 = out.totalEquity?.current ?? null;
@@ -622,20 +621,11 @@ module.exports = async function (context, req) {
       const hasTailA = Array.isArray(tableA?.sampleTail) && tableA.sampleTail.length > 0;
       const hasTailB = Array.isArray(tableB?.sampleTail) && tableB.sampleTail.length > 0;
 
-      if (!hasTailA || !hasTailB) {
-        return {
-          __error: "Compare mode requires sampleTail in BOTH files’ balance tables. Update analyze to include tablesPreview[i].sampleTail (last rows).",
-          totalAssets: null,
-          totalLiabilities: null,
-          totalEquity: null,
-          currentAssets: null,
-          nonCurrentAssets: null,
-          currentLiabilities: null,
-          nonCurrentLiabilities: null,
-        };
-      }
-
-      const out = {};
+      const out = {
+        __warning: (!hasTailA || !hasTailB)
+          ? "Compare mode: missing sampleTail in one/both files; extracted from sample rows only (may miss bottom totals)."
+          : null,
+      };
 
       for (const item of wantBalance) {
         const hitA = findRowByLabel(rowsA, item);
@@ -651,7 +641,6 @@ module.exports = async function (context, req) {
         };
       }
 
-      // Derivations (current side)
       const ca = out.currentAssets?.current ?? null;
       const nca = out.nonCurrentAssets?.current ?? null;
       if (out.totalAssets?.current == null && ca != null && nca != null) {
@@ -669,6 +658,39 @@ module.exports = async function (context, req) {
       const e = out.totalEquity?.current ?? null;
       if (a != null && l != null && e == null) {
         out.totalEquity = { label: "derived: assets - liabilities", current: a - l, previous: out.totalEquity?.previous ?? null };
+      }
+
+      return out;
+    };
+
+    // ✅ جديد: تعبئة القيم الناقصة من جداول أخرى مرشحة (Top 5)
+    const fillMissingFromCandidates = (tables, candidates, out, wantKeys, noCompareFlag) => {
+      if (!Array.isArray(candidates) || !candidates.length) return out;
+      if (!Array.isArray(tables) || !tables.length) return out;
+
+      const isMissing = (k) => out?.[k] == null || (typeof out?.[k] === "object" && out?.[k]?.current == null);
+
+      for (const cand of candidates) {
+        const t = tables.find((x) => Number(x?.index) === Number(cand.index));
+        if (!t) continue;
+
+        const cols = detectColumns(t);
+        const picked = pickLatestColumns(cols);
+        const latestCol = picked.latest?.col ?? null;
+        const prevCol = !noCompareFlag ? picked.previous?.col ?? null : null;
+        if (latestCol == null) continue;
+
+        const tmp = extractBalanceSingleTable(t, latestCol, prevCol);
+
+        for (const k of wantKeys) {
+          if (!isMissing(k) && out[k] != null) continue;
+          if (tmp[k] != null && (tmp[k]?.current ?? tmp[k]) != null) {
+            out[k] = tmp[k];
+          }
+        }
+
+        const stillMissing = wantKeys.some(isMissing);
+        if (!stillMissing) break;
       }
 
       return out;
@@ -788,6 +810,11 @@ module.exports = async function (context, req) {
 
           balanceExtract = extractBalanceTwoFiles(bestBalanceA.table, latestBalColA, bestBalanceB.table, latestBalColB);
 
+          // ✅ محاولة تعبئة ناقص من مرشحات أخرى في كل ملف
+          const keys = ["totalAssets","currentAssets","nonCurrentAssets","totalLiabilities","currentLiabilities","nonCurrentLiabilities","totalEquity"];
+          balanceExtract = fillMissingFromCandidates(tablesPreview, bsDiagA.candidates, balanceExtract, keys, true);
+          balanceExtract = fillMissingFromCandidates(tablesPreviewPrev, bsDiagB.candidates, balanceExtract, keys, true);
+
           balancePicked = {
             fileA: {
               tableIndex: bestBalanceA.table.index,
@@ -813,6 +840,9 @@ module.exports = async function (context, req) {
           };
         } else {
           balanceExtract = latestBalColA != null ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null) : {};
+          const keys = ["totalAssets","currentAssets","nonCurrentAssets","totalLiabilities","currentLiabilities","nonCurrentLiabilities","totalEquity"];
+          balanceExtract = fillMissingFromCandidates(tablesPreview, bsDiagA.candidates, balanceExtract, keys, true);
+
           balancePicked = {
             fileA: {
               tableIndex: bestBalanceA.table.index,
@@ -830,6 +860,11 @@ module.exports = async function (context, req) {
         }
       } else {
         balanceExtract = latestBalColA != null ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, prevBalColA) : {};
+
+        // ✅ محاولة تعبئة ناقص من مرشحات أخرى (Top 5)
+        const keys = ["totalAssets","currentAssets","nonCurrentAssets","totalLiabilities","currentLiabilities","nonCurrentLiabilities","totalEquity"];
+        balanceExtract = fillMissingFromCandidates(tablesPreview, bsDiagA.candidates, balanceExtract, keys, noCompare);
+
         balancePicked = {
           fileA: {
             tableIndex: bestBalanceA.table.index,
