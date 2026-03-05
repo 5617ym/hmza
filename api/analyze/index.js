@@ -70,8 +70,8 @@ module.exports = async function (context, req) {
     // ✅ جرّب المسار الجديد أولاً ثم القديم تلقائياً
     let started = await startAnalyze("documentintelligence");
     if (!started.res.ok || !started.opLoc) {
-      // إذا 404 أو ما في operation-location -> جرّب formrecognizer
-      const maybe404 = started.res.status === 404 || /Resource not found/i.test(started.txt || "");
+      const maybe404 =
+        started.res.status === 404 || /Resource not found/i.test(started.txt || "");
       if (maybe404 || !started.opLoc) {
         started = await startAnalyze("formrecognizer");
       }
@@ -143,6 +143,11 @@ module.exports = async function (context, req) {
 
     const tables = Array.isArray(analyzeResult.tables) ? analyzeResult.tables : [];
 
+    /**
+     * ✅ FIX #1:
+     * بدل اختيار "الأطول" فقط، نجمع النصوص داخل نفس الخلية
+     * لأن DI أحياناً يقسم النص أو يكرر أجزاء
+     */
     const buildMatrix = (table) => {
       const rowCount = Number(table?.rowCount || 0);
       const colCount = Number(table?.columnCount || 0);
@@ -154,10 +159,19 @@ module.exports = async function (context, req) {
       for (const cell of cells) {
         const r = Number(cell?.rowIndex ?? -1);
         const c = Number(cell?.columnIndex ?? -1);
-        if (r >= 0 && r < rowCount && c >= 0 && c < colCount) {
-          const content = cell?.content ?? "";
-          if (!matrix[r][c] || String(content).length > String(matrix[r][c]).length) {
-            matrix[r][c] = String(content);
+        if (!(r >= 0 && r < rowCount && c >= 0 && c < colCount)) continue;
+
+        const content = String(cell?.content ?? "").trim();
+        if (!content) continue;
+
+        // دمج بدل الاستبدال
+        const prev = matrix[r][c];
+        if (!prev) {
+          matrix[r][c] = content;
+        } else {
+          // منع تكرار نفس النص
+          if (!prev.includes(content)) {
+            matrix[r][c] = (prev + " " + content).trim();
           }
         }
       }
@@ -168,7 +182,12 @@ module.exports = async function (context, req) {
     const takeTail = (rows, n) => rows.slice(Math.max(0, rows.length - n));
 
     const previewHeadRows = 12;
-    const previewTailRows = 12;
+
+    /**
+     * ✅ FIX #2:
+     * نخلي tail أكبر عشان نضمن وجود الإجماليات (غالباً بآخر صفحة/آخر جزء)
+     */
+    const previewTailRows = 22;
 
     const tablesPreview = tables.map((t, idx) => {
       const rowCount = Number(t?.rowCount || 0);
@@ -177,8 +196,14 @@ module.exports = async function (context, req) {
         (Array.isArray(t?.boundingRegions) && t.boundingRegions[0]?.pageNumber) || null;
 
       const matrix = buildMatrix(t);
+
       const sample = takeHead(matrix, previewHeadRows);
-      const sampleTail = rowCount > previewHeadRows ? takeTail(matrix, previewTailRows) : [];
+
+      // tail دائماً من آخر الجدول، ثم ننظف التداخل مع head
+      const rawTail = takeTail(matrix, previewTailRows);
+
+      const headSet = new Set(sample.map((r) => JSON.stringify(r)));
+      const sampleTail = rawTail.filter((r) => !headSet.has(JSON.stringify(r)));
 
       return {
         index: typeof t?.index !== "undefined" ? t.index : idx,
@@ -186,7 +211,7 @@ module.exports = async function (context, req) {
         columnCount,
         pageNumber,
         sample,
-        sampleTail, // ✅ هذا مهم للـ totals اللي آخر الجدول
+        sampleTail, // ✅ الآن أقوى لالتقاط الإجماليات
       };
     });
 
@@ -219,7 +244,7 @@ module.exports = async function (context, req) {
       diApiVersion,
       diStatus: "succeeded",
       diWarnings,
-      diRouteUsed: started.prefix, // ✅ يوضح أي مسار اشتغل عندك
+      diRouteUsed: started.prefix,
       normalized,
     });
   } catch (e) {
