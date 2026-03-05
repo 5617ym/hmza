@@ -1,4 +1,4 @@
-// api/extract-financial/index.jss
+// api/extract-financial/index.js
 module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
@@ -165,6 +165,7 @@ module.exports = async function (context, req) {
         Array.isArray(table?.tail) ? table.tail :
         [];
       if (!tail.length) return head;
+
       const headStr = new Set(head.map((r) => JSON.stringify(r)));
       const merged = [...head];
       for (const r of tail) {
@@ -260,7 +261,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Row matching (FINAL)
+       Row matching
        ========================= */
 
     const findRowByLabel = (rows, item) => {
@@ -279,9 +280,7 @@ module.exports = async function (context, req) {
           const cellNorm = norm(cell);
           if (!cellNorm) continue;
 
-          // تجاهل الخلايا الرقمية
           if (isProbablyNumberCell(cell)) continue;
-
           if (isExcluded(cellNorm)) continue;
 
           const ok = names.some((n) => cellNorm.includes(norm(n)));
@@ -368,7 +367,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       BALANCE SHEET
+       BALANCE SHEET (FIXED: multi-table)
        ========================= */
 
     const normText2 = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -376,10 +375,10 @@ module.exports = async function (context, req) {
     const tableTextQuick = (t) => {
       const rows = getTableRows(t);
       const out = [];
-      for (let r = 0; r < rows.length && r < 60; r++) {
+      for (let r = 0; r < rows.length && r < 70; r++) {
         const row = rows[r];
         if (!Array.isArray(row)) continue;
-        for (let c = 0; c < row.length && c < 12; c++) {
+        for (let c = 0; c < row.length && c < 14; c++) {
           const v = row[c];
           if (v) out.push(v);
         }
@@ -400,69 +399,41 @@ module.exports = async function (context, req) {
         "الأصول","assets","الموجودات",
         "المطلوبات","liabilities","الالتزامات",
         "حقوق الملكية","equity",
-        "إجمالي الأصول","total assets",
+        "إجمالي الموجودات","إجمالي الأصول","total assets",
         "إجمالي المطلوبات","total liabilities",
         "إجمالي حقوق الملكية","total equity",
+        "إجمالي المطلوبات وحقوق الملكية",
       ];
 
       let score = 0;
-      for (const k of keysStrong) if (text.includes(normText2(k))) score += 50;
-      for (const k of keysSupport) if (text.includes(normText2(k))) score += 10;
+      for (const k of keysStrong) if (text.includes(normText2(k))) score += 60;
+      for (const k of keysSupport) if (text.includes(normText2(k))) score += 12;
+
       if (text.includes("متداولة") || text.includes("غير متداولة")) score += 8;
+
       return score;
     };
 
-    const pickBestBalanceSheetTable = (tables) => {
+    const rankBalanceTables = (tables) => {
       const ranked = (Array.isArray(tables) ? tables : [])
         .map((t) => {
           const text = tableTextQuick(t);
           const score = scoreBalanceSheetText(text);
           return {
+            table: t,
             index: t?.index ?? null,
             score,
             page: t?.pageNumber ?? t?.page ?? null,
             columnCount: t?.columnCount ?? null,
             rowCount: t?.rowCount ?? null,
             snippet: text.slice(0, 260),
+            hasTail: Array.isArray(t?.sampleTail) && t.sampleTail.length > 0,
           };
         })
         .filter((x) => x.score > 0)
         .sort((a, b) => b.score - a.score);
 
-      const best = ranked[0] || null;
-
-      return {
-        bestTableIndex: best?.index ?? null,
-        bestScore: best?.score ?? null,
-        candidates: ranked.slice(0, 5),
-      };
-    };
-
-    const scoreBalanceTable = (table) => {
-      const rows = getTableRows(table);
-      const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
-
-      const strong = [
-        "قائمة المركز المالي",
-        "الميزانية",
-        "الميزانية العمومية",
-        "قائمة الوضع المالي",
-        "balance sheet",
-        "statement of financial position",
-      ];
-      const support = [
-        "الأصول","الموجودات","assets",
-        "المطلوبات","liabilities","الالتزامات",
-        "حقوق الملكية","equity",
-        "إجمالي الأصول","total assets",
-      ];
-
-      let score = 0;
-      for (const k of strong) if (joined.includes(norm(k))) score += 20;
-      for (const k of support) if (joined.includes(norm(k))) score += 6;
-      if (joined.includes(norm("متداولة")) && joined.includes(norm("غير متداولة"))) score += 6;
-
-      return score;
+      return ranked;
     };
 
     const wantBalance = [
@@ -477,14 +448,7 @@ module.exports = async function (context, req) {
           "مجموع الموجودات",
           "Total assets",
         ],
-        // ✅ حماية: لا تلتقط المتداولة/غير المتداولة
-        exclude: [
-          "المتداولة",
-          "غير المتداولة",
-          "غير المتداوله",
-          "current",
-          "non-current",
-        ],
+        exclude: ["غير المتداولة", "غير المتداوله", "non-current"],
       },
       {
         key: "currentAssets",
@@ -517,17 +481,7 @@ module.exports = async function (context, req) {
           "اجمالي الخصوم",
           "Total liabilities",
         ],
-        
-        // ✅ حماية: لا تلتقط المتداولة/غير المتداولة ولا “وحقوق الملكية”
-        exclude: [
-          "المتداولة",
-          "غير المتداولة",
-          "غير المتداوله",
-          "current",
-          "non-current",
-          "وحقوق",
-          "and equity",
-          "and shareholders",
+        exclude: ["وحقوق", "and equity", "and shareholders"],
       },
       {
         key: "currentLiabilities",
@@ -564,151 +518,114 @@ module.exports = async function (context, req) {
       },
     ];
 
-    const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
-      const rows = getTableRows(table);
-
-      // ✅ بدل ما نوقف بسبب عدم وجود sampleTail: نكمل ونعطي تحذير فقط
-      const hasTail = Array.isArray(table?.sampleTail) && table.sampleTail.length > 0;
+    // ✅ جديد: استخراج من عدة جداول (أصول + مطلوبات/حقوق ملكية)
+    const extractBalanceFromRankedTables = (ranked, noCompareFlag) => {
       const out = {
-        __warning: hasTail ? null : "No sampleTail in tablesPreview; extracted from sample rows only (may miss bottom totals).",
+        totalAssets: null,
+        currentAssets: null,
+        nonCurrentAssets: null,
+        totalLiabilities: null,
+        currentLiabilities: null,
+        nonCurrentLiabilities: null,
+        totalEquity: null,
       };
 
+      const evidence = []; // لشرح من أي جدول أخذنا كل رقم
+
+      // خذ أفضل 10 جداول مرشحة (عادةً تكفي)
+      const top = ranked.slice(0, 10);
+
+      // نبحث عن كل بند عبر كل جدول، مع أعمدة مناسبة لكل جدول
       for (const item of wantBalance) {
-        const hit = findRowByLabel(rows, item);
-        if (!hit) {
-          out[item.key] = null;
-          continue;
+        let found = null;
+
+        for (const cand of top) {
+          const t = cand.table;
+          const rows = getTableRows(t);
+
+          // لازم يكون عنده tail غالباً عشان الإجماليات بالأسفل
+          // لكن ما نمنعه، بعض التقارير تحط الإجمالي في النص
+          const cols = detectColumns(t);
+          const picked = pickLatestColumns(cols);
+
+          const latestCol = picked.latest?.col ?? null;
+          const prevCol = noCompareFlag ? null : picked.previous?.col ?? null;
+
+          if (latestCol == null) continue;
+
+          const hit = findRowByLabel(rows, item);
+          if (!hit) continue;
+
+          const cur = parseNumberSmart(hit.row?.[latestCol]);
+          const prev = prevCol != null ? parseNumberSmart(hit.row?.[prevCol]) : null;
+
+          // لازم current يكون رقم فعلاً
+          if (cur == null) continue;
+
+          found = {
+            value: { label: hit.label, current: cur, previous: prev },
+            meta: {
+              tableIndex: t.index,
+              pageNumber: t.pageNumber ?? null,
+              pickedColumns: {
+                latest: picked.latest ? { col: picked.latest.col, year: picked.latest.years?.slice(-1)?.[0] ?? null } : null,
+                previous: picked.previous ? { col: picked.previous.col, year: picked.previous.years?.slice(-1)?.[0] ?? null } : null,
+              },
+              score: cand.score,
+              hasTail: cand.hasTail,
+            },
+          };
+          break;
         }
-        const cur = latestColIdx != null ? parseNumberSmart(hit.row?.[latestColIdx]) : null;
-        const prev = prevColIdx != null ? parseNumberSmart(hit.row?.[prevColIdx]) : null;
-        out[item.key] = { label: hit.label, current: cur, previous: prev };
+
+        if (found) {
+          out[item.key] = found.value;
+          evidence.push({ key: item.key, ...found.meta });
+        }
       }
 
-      // Derivation rules
-      const a = out.totalAssets?.current ?? null;
-      const ca = out.currentAssets?.current ?? null;
-      const nca = out.nonCurrentAssets?.current ?? null;
-
-      const l = out.totalLiabilities?.current ?? null;
-      const cl = out.currentLiabilities?.current ?? null;
-      const ncl = out.nonCurrentLiabilities?.current ?? null;
-
-      const e = out.totalEquity?.current ?? null;
-
-      if (a == null && ca != null && nca != null) {
-        out.totalAssets = { label: "derived: currentAssets + nonCurrentAssets", current: ca + nca, previous: null };
-      }
-
-      if (l == null && cl != null && ncl != null) {
-        out.totalLiabilities = { label: "derived: currentLiabilities + nonCurrentLiabilities", current: cl + ncl, previous: null };
-      }
-
-      const a2 = out.totalAssets?.current ?? null;
-      const l2 = out.totalLiabilities?.current ?? null;
-      const e2 = out.totalEquity?.current ?? null;
-
-      if (a2 != null && l2 != null && e2 == null) {
-        out.totalEquity = { label: "derived: assets - liabilities", current: a2 - l2, previous: null };
-      }
-
-      return out;
-    };
-
-    const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
-      const rowsA = getTableRows(tableA);
-      const rowsB = getTableRows(tableB);
-
-      const hasTailA = Array.isArray(tableA?.sampleTail) && tableA.sampleTail.length > 0;
-      const hasTailB = Array.isArray(tableB?.sampleTail) && tableB.sampleTail.length > 0;
-
-      const out = {
-        __warning: (!hasTailA || !hasTailB)
-          ? "Compare mode: missing sampleTail in one/both files; extracted from sample rows only (may miss bottom totals)."
-          : null,
-      };
-
-      for (const item of wantBalance) {
-        const hitA = findRowByLabel(rowsA, item);
-        const hitB = findRowByLabel(rowsB, item);
-
-        const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
-        const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
-
-        out[item.key] = {
-          label: hitA?.label || hitB?.label || null,
-          current: cur,
-          previous: prev,
-        };
-      }
-
+      // ✅ اشتقاقات لو بعض الإجماليات ناقصة
       const ca = out.currentAssets?.current ?? null;
       const nca = out.nonCurrentAssets?.current ?? null;
       if (out.totalAssets?.current == null && ca != null && nca != null) {
-        out.totalAssets = { label: "derived: currentAssets + nonCurrentAssets", current: ca + nca, previous: out.totalAssets?.previous ?? null };
+        out.totalAssets = { label: "derived: currentAssets + nonCurrentAssets", current: ca + nca, previous: null };
       }
 
       const cl = out.currentLiabilities?.current ?? null;
       const ncl = out.nonCurrentLiabilities?.current ?? null;
       if (out.totalLiabilities?.current == null && cl != null && ncl != null) {
-        out.totalLiabilities = { label: "derived: currentLiabilities + nonCurrentLiabilities", current: cl + ncl, previous: out.totalLiabilities?.previous ?? null };
+        out.totalLiabilities = { label: "derived: currentLiabilities + nonCurrentLiabilities", current: cl + ncl, previous: null };
       }
 
       const a = out.totalAssets?.current ?? null;
       const l = out.totalLiabilities?.current ?? null;
       const e = out.totalEquity?.current ?? null;
       if (a != null && l != null && e == null) {
-        out.totalEquity = { label: "derived: assets - liabilities", current: a - l, previous: out.totalEquity?.previous ?? null };
+        out.totalEquity = { label: "derived: assets - liabilities", current: a - l, previous: null };
       }
 
-      return out;
+      return { out, evidence };
     };
 
-    // ✅ جديد: تعبئة القيم الناقصة من جداول أخرى مرشحة (Top 5)
-    const fillMissingFromCandidates = (tables, candidates, out, wantKeys, noCompareFlag) => {
-      if (!Array.isArray(candidates) || !candidates.length) return out;
-      if (!Array.isArray(tables) || !tables.length) return out;
-
-      const isMissing = (k) => out?.[k] == null || (typeof out?.[k] === "object" && out?.[k]?.current == null);
-
-      for (const cand of candidates) {
-        const t = tables.find((x) => Number(x?.index) === Number(cand.index));
-        if (!t) continue;
-
-        const cols = detectColumns(t);
-        const picked = pickLatestColumns(cols);
-        const latestCol = picked.latest?.col ?? null;
-        const prevCol = !noCompareFlag ? picked.previous?.col ?? null : null;
-        if (latestCol == null) continue;
-
-        const tmp = extractBalanceSingleTable(t, latestCol, prevCol);
-
-        for (const k of wantKeys) {
-          if (!isMissing(k) && out[k] != null) continue;
-          if (tmp[k] != null && (tmp[k]?.current ?? tmp[k]) != null) {
-            out[k] = tmp[k];
-          }
-        }
-
-        const stillMissing = wantKeys.some(isMissing);
-        if (!stillMissing) break;
-      }
-
-      return out;
-    };
-
-    // DIAG
+    // DIAG: اعرض أفضل مرشحين للميزانية
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
-      const bsDiag = pickBestBalanceSheetTable(tablesPreview);
+      const ranked = rankBalanceTables(tablesPreview);
       return send(200, {
         ok: true,
         diag: true,
         kind: "balanceSheetCandidates",
         pagesMeta,
         tablesPreviewCount: tablesPreview.length,
-        bestTableIndex: bsDiag.bestTableIndex,
-        bestScore: bsDiag.bestScore,
-        found: bsDiag.candidates.length,
-        ranked: bsDiag.candidates,
+        found: ranked.length,
+        ranked: ranked.slice(0, 12).map((x) => ({
+          index: x.index,
+          score: x.score,
+          page: x.page,
+          rowCount: x.rowCount,
+          columnCount: x.columnCount,
+          hasTail: x.hasTail,
+          snippet: x.snippet,
+        })),
       });
     }
 
@@ -761,128 +678,69 @@ module.exports = async function (context, req) {
     }
 
     /* =========================
-       Pick balance table A
+       Balance Sheet extraction (multi-table)
        ========================= */
 
-    const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
+    const rankedBalA = rankBalanceTables(tablesPreview);
+    const balA = extractBalanceFromRankedTables(rankedBalA, noCompare);
 
-    let bestBalanceA = null;
-    if (bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
-      const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
-      if (t) bestBalanceA = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
-    }
-    if (!bestBalanceA) {
-      for (const t of tablesPreview) {
-        const s = scoreBalanceTable(t);
-        if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s, pickedBy: "fallbackScore" };
-      }
-    }
+    let balanceExtract = balA.out;
+    let balancePickInfo = {
+      fileA: {
+        candidates: rankedBalA.slice(0, 10).map((x) => ({
+          index: x.index,
+          score: x.score,
+          page: x.page,
+          rowCount: x.rowCount,
+          columnCount: x.columnCount,
+          hasTail: x.hasTail,
+          snippet: x.snippet,
+        })),
+        evidence: balA.evidence,
+      },
+    };
 
-    let balanceExtract = {};
-    let balancePicked = null;
+    // Compare mode (2 files): current من A ، previous من B
+    if (usingTwoFiles) {
+      const rankedBalB = rankBalanceTables(tablesPreviewPrev);
+      const balB = extractBalanceFromRankedTables(rankedBalB, true /* noCompare for B side (we take its latest as previous) */);
 
-    if (bestBalanceA?.table) {
-      const colsBalA = detectColumns(bestBalanceA.table);
-      const pickedBalA = pickLatestColumns(colsBalA);
+      // امزج previous من B داخل نفس keys
+      const merged = {};
+      for (const k of Object.keys(balanceExtract)) {
+        const curObj = balanceExtract[k];
+        const prevObj = balB.out[k];
 
-      const latestBalColA = pickedBalA.latest?.col ?? null;
-      const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
-
-      if (usingTwoFiles) {
-        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
-
-        let bestBalanceB = null;
-        if (bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
-          const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
-          if (t) bestBalanceB = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
-        }
-        if (!bestBalanceB) {
-          for (const t of tablesPreviewPrev) {
-            const s = scoreBalanceTable(t);
-            if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s, pickedBy: "fallbackScore" };
-          }
-        }
-
-        if (bestBalanceB?.table) {
-          const colsBalB = detectColumns(bestBalanceB.table);
-          const pickedBalB = pickLatestColumns(colsBalB);
-          const latestBalColB = pickedBalB.latest?.col ?? null;
-
-          balanceExtract = extractBalanceTwoFiles(bestBalanceA.table, latestBalColA, bestBalanceB.table, latestBalColB);
-
-          // ✅ محاولة تعبئة ناقص من مرشحات أخرى في كل ملف
-          const keys = ["totalAssets","currentAssets","nonCurrentAssets","totalLiabilities","currentLiabilities","nonCurrentLiabilities","totalEquity"];
-          balanceExtract = fillMissingFromCandidates(tablesPreview, bsDiagA.candidates, balanceExtract, keys, true);
-          balanceExtract = fillMissingFromCandidates(tablesPreviewPrev, bsDiagB.candidates, balanceExtract, keys, true);
-
-          balancePicked = {
-            fileA: {
-              tableIndex: bestBalanceA.table.index,
-              score: bestBalanceA.score,
-              pickedBy: bestBalanceA.pickedBy,
-              pickedColumns: {
-                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
-                previous: pickedBalA.previous ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null } : null,
-                debug: pickedBalA.debug,
-              },
-              diag: bsDiagA,
-            },
-            fileB: {
-              tableIndex: bestBalanceB.table.index,
-              score: bestBalanceB.score,
-              pickedBy: bestBalanceB.pickedBy,
-              pickedColumns: {
-                latest: pickedBalB.latest ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null } : null,
-                debug: pickedBalB.debug,
-              },
-              diag: bsDiagB,
-            },
+        if (curObj && typeof curObj === "object") {
+          merged[k] = {
+            ...curObj,
+            previous: prevObj?.current ?? curObj.previous ?? null,
           };
         } else {
-          balanceExtract = latestBalColA != null ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null) : {};
-          const keys = ["totalAssets","currentAssets","nonCurrentAssets","totalLiabilities","currentLiabilities","nonCurrentLiabilities","totalEquity"];
-          balanceExtract = fillMissingFromCandidates(tablesPreview, bsDiagA.candidates, balanceExtract, keys, true);
-
-          balancePicked = {
-            fileA: {
-              tableIndex: bestBalanceA.table.index,
-              score: bestBalanceA.score,
-              pickedBy: bestBalanceA.pickedBy,
-              pickedColumns: {
-                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
-                previous: null,
-                debug: pickedBalA.debug,
-              },
-              diag: bsDiagA,
-            },
-            note: "No balance table found in file B; used file A latest only.",
-          };
+          merged[k] = curObj;
         }
-      } else {
-        balanceExtract = latestBalColA != null ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, prevBalColA) : {};
-
-        // ✅ محاولة تعبئة ناقص من مرشحات أخرى (Top 5)
-        const keys = ["totalAssets","currentAssets","nonCurrentAssets","totalLiabilities","currentLiabilities","nonCurrentLiabilities","totalEquity"];
-        balanceExtract = fillMissingFromCandidates(tablesPreview, bsDiagA.candidates, balanceExtract, keys, noCompare);
-
-        balancePicked = {
-          fileA: {
-            tableIndex: bestBalanceA.table.index,
-            score: bestBalanceA.score,
-            pickedBy: bestBalanceA.pickedBy,
-            pickedColumns: {
-              latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
-              previous: noCompare
-                ? null
-                : pickedBalA.previous
-                ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
-                : null,
-              debug: pickedBalA.debug,
-            },
-            diag: bsDiagA,
-          },
-        };
       }
+
+      // اشتقاق equity إذا ناقصة بعد الدمج
+      const aCur = merged.totalAssets?.current ?? null;
+      const lCur = merged.totalLiabilities?.current ?? null;
+      if ((merged.totalEquity?.current ?? null) == null && aCur != null && lCur != null) {
+        merged.totalEquity = { label: "derived: assets - liabilities", current: aCur - lCur, previous: merged.totalEquity?.previous ?? null };
+      }
+
+      balanceExtract = merged;
+      balancePickInfo.fileB = {
+        candidates: rankedBalB.slice(0, 10).map((x) => ({
+          index: x.index,
+          score: x.score,
+          page: x.page,
+          rowCount: x.rowCount,
+          columnCount: x.columnCount,
+          hasTail: x.hasTail,
+          snippet: x.snippet,
+        })),
+        evidence: balB.evidence,
+      };
     }
 
     return send(200, {
@@ -911,7 +769,7 @@ module.exports = async function (context, req) {
         },
         incomeStatementLite: incomeExtract,
         balanceSheetLite: balanceExtract,
-        balancePickInfo: balancePicked,
+        balancePickInfo,
       },
     });
   } catch (e) {
