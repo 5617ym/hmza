@@ -43,7 +43,7 @@ module.exports = async function (context, req) {
     const pagesMeta = normalized?.meta || null;
 
     const tablesPreviewPrev = usingTwoFiles
-      ? Array.isArray(normalizedPrev.tablesPreview)
+      ? Array.isArray(normalizedPrev?.tablesPreview)
         ? normalizedPrev.tablesPreview
         : []
       : [];
@@ -68,24 +68,12 @@ module.exports = async function (context, req) {
         .replace(/[٬،]/g, ",");
     };
 
-    // ✅ أهم إضافة: تنظيف محارف RTL/Bidi + tatweel + مسافات غريبة
-    const stripInvisible = (s) => {
-      return String(s || "")
-        .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "") // bidi marks
-        .replace(/\u0640/g, "") // tatweel
-        .replace(/\s+/g, " ")
-        .trim();
-    };
-
-    const norm = (s) =>
-      stripInvisible(toLatinDigits(normalizeSeparators(String(s || ""))))
-        .toLowerCase()
-        .trim();
+    const norm = (s) => toLatinDigits(normalizeSeparators(String(s || ""))).toLowerCase().trim();
 
     const parseNumberSmart = (raw) => {
       if (raw === null || raw === undefined) return null;
 
-      let s = stripInvisible(toLatinDigits(normalizeSeparators(String(raw)))).trim();
+      let s = toLatinDigits(normalizeSeparators(String(raw))).trim();
       if (!s) return null;
 
       let neg = false;
@@ -170,8 +158,8 @@ module.exports = async function (context, req) {
     };
 
     const headerRowLimit = 5;
-    const detectColumns = (table) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
+    const detectColumns = (table, normalizedRoot) => {
+      const rows = getTableRows(table, normalizedRoot);
       const colCount = Number(table?.columnCount || 0);
 
       const cols = Array.from({ length: colCount }, (_, i) => ({
@@ -255,11 +243,52 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Row matching (FINAL ✅✅)
-       - يبحث داخل "نص السطر كامل" أولاً (يعالج تقسيم العنوان)
-       - ثم يبحث داخل خلية واحدة
-       - يتجاهل الخلايا الرقمية
-       - يدعم exclude
+       ✅ FINAL FIX: Get full rows
+       ========================= */
+    const getTableRows = (table, normalizedRoot) => {
+      // 1) rows جاهزة
+      if (Array.isArray(table?.rows) && Array.isArray(table.rows[0])) return table.rows;
+
+      // 2) sample (Preview)
+      if (Array.isArray(table?.sample) && Array.isArray(table.sample[0])) return table.sample;
+
+      // 3) full tables (cells) in normalized.tables
+      const fullTables = Array.isArray(normalizedRoot?.tables) ? normalizedRoot.tables : [];
+      const full = fullTables.find((t) => Number(t?.index) === Number(table?.index)) || null;
+
+      const cells = Array.isArray(full?.cells)
+        ? full.cells
+        : Array.isArray(table?.cells)
+        ? table.cells
+        : [];
+
+      const rowCount = Number(full?.rowCount ?? table?.rowCount ?? 0);
+      const colCount = Number(full?.columnCount ?? table?.columnCount ?? 0);
+
+      if (!cells.length || rowCount <= 0 || colCount <= 0) return [];
+
+      const rows = Array.from({ length: rowCount }, () =>
+        Array.from({ length: colCount }, () => "")
+      );
+
+      for (const cell of cells) {
+        const r = Number(cell?.rowIndex);
+        const c = Number(cell?.columnIndex);
+        if (!Number.isFinite(r) || !Number.isFinite(c)) continue;
+        if (r < 0 || c < 0 || r >= rowCount || c >= colCount) continue;
+
+        const v = cell?.content ?? cell?.text ?? cell?.value ?? "";
+        rows[r][c] = String(v ?? "");
+      }
+
+      return rows;
+    };
+
+    /* =========================
+       Row matching (FINAL ✅)
+       - scan ALL cells for label
+       - ignore numeric cells
+       - support exclude
        ========================= */
 
     const findRowByLabel = (rows, item) => {
@@ -268,41 +297,8 @@ module.exports = async function (context, req) {
       const names = Array.isArray(item?.names) ? item.names : [];
       const exclude = Array.isArray(item?.exclude) ? item.exclude : [];
 
-      const namesN = names.map((x) => norm(x)).filter(Boolean);
-      const exclN = exclude.map((x) => norm(x)).filter(Boolean);
+      const isExcluded = (cellNorm) => exclude.some((e) => cellNorm.includes(norm(e)));
 
-      const isExcluded = (textNorm) => exclN.some((e) => textNorm.includes(e));
-
-      // 1) ✅ محاولة: مطابقة داخل نص السطر كامل (دمج الخلايا النصية)
-      for (const r of rows) {
-        if (!Array.isArray(r)) continue;
-
-        const textCells = [];
-        for (let i = 0; i < r.length; i++) {
-          const cell = r[i];
-          if (!cell) continue;
-          if (isProbablyNumberCell(cell)) continue;
-          const cn = norm(cell);
-          if (!cn) continue;
-          textCells.push({ idx: i, text: cn });
-        }
-
-        if (!textCells.length) continue;
-
-        const rowText = textCells.map((x) => x.text).join(" ");
-        if (isExcluded(rowText)) continue;
-
-        const ok = namesN.some((n) => rowText.includes(n));
-        if (ok) {
-          return {
-            row: r,
-            label: rowText,
-            labelCellIndex: textCells[0]?.idx ?? null,
-          };
-        }
-      }
-
-      // 2) fallback: مطابقة داخل خلية واحدة
       for (const r of rows) {
         if (!Array.isArray(r)) continue;
 
@@ -310,12 +306,16 @@ module.exports = async function (context, req) {
           const cell = r[i];
           const cellNorm = norm(cell);
           if (!cellNorm) continue;
+
+          // مهم: تجاهل الخلايا الرقمية
           if (isProbablyNumberCell(cell)) continue;
 
           if (isExcluded(cellNorm)) continue;
 
-          const ok = namesN.some((n) => cellNorm.includes(n));
-          if (ok) return { row: r, label: cellNorm, labelCellIndex: i };
+          const ok = names.some((n) => cellNorm.includes(norm(n)));
+          if (ok) {
+            return { row: r, label: cellNorm, labelCellIndex: i };
+          }
         }
       }
 
@@ -327,7 +327,7 @@ module.exports = async function (context, req) {
        ========================= */
 
     const scoreIncomeTable = (table) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const rows = getTableRows(table, normalized);
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
       const hits = [
@@ -358,7 +358,7 @@ module.exports = async function (context, req) {
     ];
 
     const extractIncomeSingleTable = (table, latestColIdx, prevColIdx) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const rows = getTableRows(table, normalized);
       const out = {};
 
       for (const item of wantIncome) {
@@ -376,8 +376,8 @@ module.exports = async function (context, req) {
     };
 
     const extractIncomeTwoFiles = (tableA, colA, tableB, colB) => {
-      const rowsA = Array.isArray(tableA?.sample) ? tableA.sample : [];
-      const rowsB = Array.isArray(tableB?.sample) ? tableB.sample : [];
+      const rowsA = getTableRows(tableA, normalized);
+      const rowsB = getTableRows(tableB, normalizedPrev);
       const out = {};
 
       for (const item of wantIncome) {
@@ -398,14 +398,14 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       BALANCE SHEET
+       BALANCE SHEET (your logic)
        ========================= */
 
     const normText2 = (s) =>
-      stripInvisible(String(s || "")).toLowerCase().replace(/\s+/g, " ").trim();
+      String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
-    const tableTextQuick = (t) => {
-      const rows = Array.isArray(t?.sample) ? t.sample : [];
+    const tableTextQuick = (t, normalizedRoot) => {
+      const rows = getTableRows(t, normalizedRoot);
       const out = [];
       for (let r = 0; r < rows.length && r < 30; r++) {
         const row = rows[r];
@@ -444,10 +444,10 @@ module.exports = async function (context, req) {
       return score;
     };
 
-    const pickBestBalanceSheetTable = (tables) => {
+    const pickBestBalanceSheetTable = (tables, normalizedRoot) => {
       const ranked = (Array.isArray(tables) ? tables : [])
         .map((t) => {
-          const text = tableTextQuick(t);
+          const text = tableTextQuick(t, normalizedRoot);
           const score = scoreBalanceSheetText(text);
           return {
             index: t?.index ?? null,
@@ -470,8 +470,8 @@ module.exports = async function (context, req) {
       };
     };
 
-    const scoreBalanceTable = (table) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
+    const scoreBalanceTable = (table, normalizedRoot) => {
+      const rows = getTableRows(table, normalizedRoot);
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
       const strong = [
@@ -497,7 +497,6 @@ module.exports = async function (context, req) {
       return score;
     };
 
-    // ✅ أضفت كلمات "إجمالي الموجودات" و "إجمالي المطلوبات وحقوق الملكية" بشكل آمن
     const wantBalance = [
       {
         key: "totalAssets",
@@ -510,14 +509,7 @@ module.exports = async function (context, req) {
           "مجموع الموجودات",
           "Total assets",
         ],
-        // يمنع السطور الجزئية الشائعة (غير/متداولة) من أنها تنخطف كإجمالي
         exclude: [
-          "غير المتداولة",
-          "غير المتداوله",
-          "متداولة",
-          "متداوله",
-          "non-current",
-          "current",
           "موجودات حق الإستخدام",
           "الممتلكات والمعدات",
           "الشهرة",
@@ -527,8 +519,8 @@ module.exports = async function (context, req) {
         key: "currentAssets",
         names: [
           "إجمالي الموجودات المتداولة",
-          "إجمالي الأصول المتداولة",
           "الموجودات المتداولة",
+          "إجمالي الأصول المتداولة",
           "الأصول المتداولة",
           "اصول متداولة",
           "Current assets",
@@ -538,8 +530,8 @@ module.exports = async function (context, req) {
         key: "nonCurrentAssets",
         names: [
           "إجمالي الموجودات غير المتداولة",
-          "إجمالي الأصول غير المتداولة",
           "الموجودات غير المتداولة",
+          "إجمالي الأصول غير المتداولة",
           "الأصول غير المتداولة",
           "اصول غير متداولة",
           "Non-current assets",
@@ -554,10 +546,9 @@ module.exports = async function (context, req) {
           "اجمالي الالتزامات",
           "إجمالي الخصوم",
           "اجمالي الخصوم",
+          "إجمالي المطلوبات وحقوق الملكية",
           "Total liabilities",
         ],
-        // لو جاء "إجمالي المطلوبات وحقوق الملكية" لا نعتبره totalLiabilities
-        exclude: ["وحقوق الملكية", "and equity"],
       },
       {
         key: "currentLiabilities",
@@ -594,7 +585,7 @@ module.exports = async function (context, req) {
     ];
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const rows = getTableRows(table, normalized);
       const out = {};
 
       for (const item of wantBalance) {
@@ -608,7 +599,6 @@ module.exports = async function (context, req) {
         out[item.key] = { label: hit.label, current: cur, previous: prev };
       }
 
-      // Derivation rules
       const a = out.totalAssets?.current ?? null;
       const l = out.totalLiabilities?.current ?? null;
       const e = out.totalEquity?.current ?? null;
@@ -623,8 +613,8 @@ module.exports = async function (context, req) {
     };
 
     const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
-      const rowsA = Array.isArray(tableA?.sample) ? tableA.sample : [];
-      const rowsB = Array.isArray(tableB?.sample) ? tableB.sample : [];
+      const rowsA = getTableRows(tableA, normalized);
+      const rowsB = getTableRows(tableB, normalizedPrev);
       const out = {};
 
       for (const item of wantBalance) {
@@ -656,7 +646,7 @@ module.exports = async function (context, req) {
 
     // DIAG endpoint
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
-      const bsDiag = pickBestBalanceSheetTable(tablesPreview);
+      const bsDiag = pickBestBalanceSheetTable(tablesPreview, normalized);
       return send(200, {
         ok: true,
         diag: true,
@@ -691,7 +681,7 @@ module.exports = async function (context, req) {
       });
     }
 
-    const colsA = detectColumns(bestA.table);
+    const colsA = detectColumns(bestA.table, normalized);
     const pickedA = pickLatestColumns(colsA);
 
     const latestColA = pickedA.latest?.col ?? null;
@@ -701,12 +691,12 @@ module.exports = async function (context, req) {
     if (usingTwoFiles) {
       let bestB = null;
       for (const t of tablesPreviewPrev) {
-        const s = scoreIncomeTable(t);
+        const s = scoreIncomeTable(t); // using normalized but it's okay as preview
         if (!bestB || s > bestB.score) bestB = { table: t, score: s };
       }
 
       if (bestB) {
-        const colsB = detectColumns(bestB.table);
+        const colsB = detectColumns(bestB.table, normalizedPrev);
         const pickedB = pickLatestColumns(colsB);
         const latestColB = pickedB.latest?.col ?? null;
 
@@ -722,16 +712,16 @@ module.exports = async function (context, req) {
        Pick balance table A
        ========================= */
 
-    const bsDiagA = pickBestBalanceSheetTable(tablesPreview);
+    const bsDiagA = pickBestBalanceSheetTable(tablesPreview, normalized);
 
     let bestBalanceA = null;
     if (bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
       const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
-      if (t) bestBalanceA = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
+      if (t) bestBalanceA = { table: t, score: scoreBalanceTable(t, normalized), pickedBy: "diag" };
     }
     if (!bestBalanceA) {
       for (const t of tablesPreview) {
-        const s = scoreBalanceTable(t);
+        const s = scoreBalanceTable(t, normalized);
         if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s, pickedBy: "fallbackScore" };
       }
     }
@@ -740,29 +730,29 @@ module.exports = async function (context, req) {
     let balancePicked = null;
 
     if (bestBalanceA?.table) {
-      const colsBalA = detectColumns(bestBalanceA.table);
+      const colsBalA = detectColumns(bestBalanceA.table, normalized);
       const pickedBalA = pickLatestColumns(colsBalA);
 
       const latestBalColA = pickedBalA.latest?.col ?? null;
       const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
 
       if (usingTwoFiles) {
-        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev);
+        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev, normalizedPrev);
 
         let bestBalanceB = null;
         if (bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
           const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
-          if (t) bestBalanceB = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
+          if (t) bestBalanceB = { table: t, score: scoreBalanceTable(t, normalizedPrev), pickedBy: "diag" };
         }
         if (!bestBalanceB) {
           for (const t of tablesPreviewPrev) {
-            const s = scoreBalanceTable(t);
+            const s = scoreBalanceTable(t, normalizedPrev);
             if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s, pickedBy: "fallbackScore" };
           }
         }
 
         if (bestBalanceB?.table) {
-          const colsBalB = detectColumns(bestBalanceB.table);
+          const colsBalB = detectColumns(bestBalanceB.table, normalizedPrev);
           const pickedBalB = pickLatestColumns(colsBalB);
           const latestBalColB = pickedBalB.latest?.col ?? null;
 
