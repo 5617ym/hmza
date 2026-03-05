@@ -39,14 +39,20 @@ module.exports = async function (context, req) {
       return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
 
+    // ✅ المهم: نفضّل tables (الكامل) على tablesPreview (الـ sample)
+    const tablesFull = Array.isArray(normalized.tables) ? normalized.tables : null;
     const tablesPreview = Array.isArray(normalized.tablesPreview) ? normalized.tablesPreview : [];
+    const tables = tablesFull && tablesFull.length ? tablesFull : tablesPreview;
+
     const pagesMeta = normalized?.meta || null;
 
-    const tablesPreviewPrev = usingTwoFiles
-      ? Array.isArray(normalizedPrev?.tablesPreview)
-        ? normalizedPrev.tablesPreview
-        : []
+    const tablesFullPrev = usingTwoFiles && normalizedPrev && Array.isArray(normalizedPrev.tables)
+      ? normalizedPrev.tables
+      : null;
+    const tablesPreviewPrev = usingTwoFiles && normalizedPrev && Array.isArray(normalizedPrev.tablesPreview)
+      ? normalizedPrev.tablesPreview
       : [];
+    const tablesPrev = (tablesFullPrev && tablesFullPrev.length) ? tablesFullPrev : tablesPreviewPrev;
 
     /* =========================
        Helpers
@@ -157,10 +163,54 @@ module.exports = async function (context, req) {
       return y >= 2000 && y <= 2100 ? y : null;
     };
 
-    const headerRowLimit = 5;
-    const detectColumns = (table, normalizedRoot) => {
-      const rows = getTableRows(table, normalizedRoot);
-      const colCount = Number(table?.columnCount || 0);
+    // ✅ يبني rows كاملة من cells لو موجودة
+    const getTableRows = (table) => {
+      if (!table || typeof table !== "object") return [];
+
+      // 1) لو موجود rows جاهزة
+      if (Array.isArray(table.rows) && table.rows.length) return table.rows;
+
+      // 2) لو موجود sample فقط
+      const sample = Array.isArray(table.sample) ? table.sample : [];
+
+      // 3) لو موجود cells (هذا اللي نحتاجه عشان نطلع الإجماليات)
+      const cells = Array.isArray(table.cells) ? table.cells : null;
+      const rowCount = Number(table.rowCount || 0);
+      const colCount = Number(table.columnCount || 0);
+
+      if (!cells || !rowCount || !colCount) {
+        return sample;
+      }
+
+      const grid = Array.from({ length: rowCount }, () =>
+        Array.from({ length: colCount }, () => "")
+      );
+
+      for (const cell of cells) {
+        const r = Number(cell?.rowIndex ?? cell?.row ?? -1);
+        const c = Number(cell?.columnIndex ?? cell?.col ?? -1);
+        if (r < 0 || c < 0 || r >= rowCount || c >= colCount) continue;
+
+        const content = cell?.content ?? cell?.text ?? cell?.value ?? "";
+        if (!content) continue;
+
+        // بعض DI يكرر نفس الخلية على spans، نخلي أفضل محتوى
+        if (!grid[r][c] || String(content).length > String(grid[r][c]).length) {
+          grid[r][c] = String(content);
+        }
+      }
+
+      return grid;
+    };
+
+    /* ==============================================
+       Column detection
+       ============================================== */
+
+    const headerRowLimit = 6;
+    const detectColumns = (table) => {
+      const rows = getTableRows(table);
+      const colCount = Number(table?.columnCount || (rows?.[0]?.length || 0));
 
       const cols = Array.from({ length: colCount }, (_, i) => ({
         col: i,
@@ -242,54 +292,9 @@ module.exports = async function (context, req) {
       return { latest, previous, debug: { maxYear, prevYear, yearsAll } };
     };
 
-    /* =========================
-       ✅ FINAL FIX: Get full rows
-       ========================= */
-    const getTableRows = (table, normalizedRoot) => {
-      // 1) rows جاهزة
-      if (Array.isArray(table?.rows) && Array.isArray(table.rows[0])) return table.rows;
-
-      // 2) sample (Preview)
-      if (Array.isArray(table?.sample) && Array.isArray(table.sample[0])) return table.sample;
-
-      // 3) full tables (cells) in normalized.tables
-      const fullTables = Array.isArray(normalizedRoot?.tables) ? normalizedRoot.tables : [];
-      const full = fullTables.find((t) => Number(t?.index) === Number(table?.index)) || null;
-
-      const cells = Array.isArray(full?.cells)
-        ? full.cells
-        : Array.isArray(table?.cells)
-        ? table.cells
-        : [];
-
-      const rowCount = Number(full?.rowCount ?? table?.rowCount ?? 0);
-      const colCount = Number(full?.columnCount ?? table?.columnCount ?? 0);
-
-      if (!cells.length || rowCount <= 0 || colCount <= 0) return [];
-
-      const rows = Array.from({ length: rowCount }, () =>
-        Array.from({ length: colCount }, () => "")
-      );
-
-      for (const cell of cells) {
-        const r = Number(cell?.rowIndex);
-        const c = Number(cell?.columnIndex);
-        if (!Number.isFinite(r) || !Number.isFinite(c)) continue;
-        if (r < 0 || c < 0 || r >= rowCount || c >= colCount) continue;
-
-        const v = cell?.content ?? cell?.text ?? cell?.value ?? "";
-        rows[r][c] = String(v ?? "");
-      }
-
-      return rows;
-    };
-
-    /* =========================
-       Row matching (FINAL ✅)
-       - scan ALL cells for label
-       - ignore numeric cells
-       - support exclude
-       ========================= */
+    /* ==============================================
+       Row matching (FINAL)
+       ============================================== */
 
     const findRowByLabel = (rows, item) => {
       if (!Array.isArray(rows)) return null;
@@ -307,27 +312,25 @@ module.exports = async function (context, req) {
           const cellNorm = norm(cell);
           if (!cellNorm) continue;
 
-          // مهم: تجاهل الخلايا الرقمية
+          // تجاهل الخلايا الرقمية
           if (isProbablyNumberCell(cell)) continue;
 
           if (isExcluded(cellNorm)) continue;
 
           const ok = names.some((n) => cellNorm.includes(norm(n)));
-          if (ok) {
-            return { row: r, label: cellNorm, labelCellIndex: i };
-          }
+          if (ok) return { row: r, label: cellNorm, labelCellIndex: i };
         }
       }
 
       return null;
     };
 
-    /* =========================
-       INCOME STATEMENT (as-is)
-       ========================= */
+    /* ==============================================
+       INCOME STATEMENT
+       ============================================== */
 
     const scoreIncomeTable = (table) => {
-      const rows = getTableRows(table, normalized);
+      const rows = getTableRows(table);
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
       const hits = [
@@ -358,7 +361,7 @@ module.exports = async function (context, req) {
     ];
 
     const extractIncomeSingleTable = (table, latestColIdx, prevColIdx) => {
-      const rows = getTableRows(table, normalized);
+      const rows = getTableRows(table);
       const out = {};
 
       for (const item of wantIncome) {
@@ -376,8 +379,8 @@ module.exports = async function (context, req) {
     };
 
     const extractIncomeTwoFiles = (tableA, colA, tableB, colB) => {
-      const rowsA = getTableRows(tableA, normalized);
-      const rowsB = getTableRows(tableB, normalizedPrev);
+      const rowsA = getTableRows(tableA);
+      const rowsB = getTableRows(tableB);
       const out = {};
 
       for (const item of wantIncome) {
@@ -397,20 +400,20 @@ module.exports = async function (context, req) {
       return out;
     };
 
-    /* =========================
-       BALANCE SHEET (your logic)
-       ========================= */
+    /* ==============================================
+       BALANCE SHEET
+       ============================================== */
 
     const normText2 = (s) =>
       String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
-    const tableTextQuick = (t, normalizedRoot) => {
-      const rows = getTableRows(t, normalizedRoot);
+    const tableTextQuick = (t) => {
+      const rows = getTableRows(t);
       const out = [];
-      for (let r = 0; r < rows.length && r < 30; r++) {
+      for (let r = 0; r < rows.length && r < 60; r++) {
         const row = rows[r];
         if (!Array.isArray(row)) continue;
-        for (let c = 0; c < row.length && c < 12; c++) {
+        for (let c = 0; c < row.length && c < 14; c++) {
           const v = row[c];
           if (v) out.push(v);
         }
@@ -444,10 +447,10 @@ module.exports = async function (context, req) {
       return score;
     };
 
-    const pickBestBalanceSheetTable = (tables, normalizedRoot) => {
-      const ranked = (Array.isArray(tables) ? tables : [])
+    const pickBestBalanceSheetTable = (tablesArr) => {
+      const ranked = (Array.isArray(tablesArr) ? tablesArr : [])
         .map((t) => {
-          const text = tableTextQuick(t, normalizedRoot);
+          const text = tableTextQuick(t);
           const score = scoreBalanceSheetText(text);
           return {
             index: t?.index ?? null,
@@ -470,8 +473,8 @@ module.exports = async function (context, req) {
       };
     };
 
-    const scoreBalanceTable = (table, normalizedRoot) => {
-      const rows = getTableRows(table, normalizedRoot);
+    const scoreBalanceTable = (table) => {
+      const rows = getTableRows(table);
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
       const strong = [
@@ -505,10 +508,12 @@ module.exports = async function (context, req) {
           "اجمالي الموجودات",
           "إجمالي الأصول",
           "اجمالي الأصول",
+          "إجمالي الموجودات وحقوق الملكية والمطلوبات",
           "مجموع الأصول",
           "مجموع الموجودات",
           "Total assets",
         ],
+        // نتركها واسعة لأن الآن عندنا rows كاملة
         exclude: [
           "موجودات حق الإستخدام",
           "الممتلكات والمعدات",
@@ -546,7 +551,6 @@ module.exports = async function (context, req) {
           "اجمالي الالتزامات",
           "إجمالي الخصوم",
           "اجمالي الخصوم",
-          "إجمالي المطلوبات وحقوق الملكية",
           "Total liabilities",
         ],
       },
@@ -578,6 +582,7 @@ module.exports = async function (context, req) {
           "إجمالي حقوق المساهمين",
           "اجمالي حقوق المساهمين",
           "حقوق الملكية العائدة لمساهمي الشركة الأم",
+          "إجمالي حقوق الملكية والمطلوبات",
           "Total equity",
           "Total shareholders' equity",
         ],
@@ -585,7 +590,7 @@ module.exports = async function (context, req) {
     ];
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
-      const rows = getTableRows(table, normalized);
+      const rows = getTableRows(table);
       const out = {};
 
       for (const item of wantBalance) {
@@ -599,6 +604,7 @@ module.exports = async function (context, req) {
         out[item.key] = { label: hit.label, current: cur, previous: prev };
       }
 
+      // اشتقاق لو ناقص
       const a = out.totalAssets?.current ?? null;
       const l = out.totalLiabilities?.current ?? null;
       const e = out.totalEquity?.current ?? null;
@@ -613,8 +619,8 @@ module.exports = async function (context, req) {
     };
 
     const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
-      const rowsA = getTableRows(tableA, normalized);
-      const rowsB = getTableRows(tableB, normalizedPrev);
+      const rowsA = getTableRows(tableA);
+      const rowsB = getTableRows(tableB);
       const out = {};
 
       for (const item of wantBalance) {
@@ -646,13 +652,14 @@ module.exports = async function (context, req) {
 
     // DIAG endpoint
     if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
-      const bsDiag = pickBestBalanceSheetTable(tablesPreview, normalized);
+      const bsDiag = pickBestBalanceSheetTable(tables);
       return send(200, {
         ok: true,
         diag: true,
         kind: "balanceSheetCandidates",
         pagesMeta,
-        tablesPreviewCount: tablesPreview.length,
+        tablesCount: tables.length,
+        using: (tablesFull && tablesFull.length) ? "tables" : "tablesPreview",
         bestTableIndex: bsDiag.bestTableIndex,
         bestScore: bsDiag.bestScore,
         found: bsDiag.candidates.length,
@@ -665,7 +672,7 @@ module.exports = async function (context, req) {
        ========================= */
 
     let bestA = null;
-    for (const t of tablesPreview) {
+    for (const t of tables) {
       const s = scoreIncomeTable(t);
       if (!bestA || s > bestA.score) bestA = { table: t, score: s };
     }
@@ -675,13 +682,13 @@ module.exports = async function (context, req) {
         ok: true,
         financial: {
           pagesMeta,
-          note: "لا توجد tablesPreview داخل normalized.",
-          tablesPreviewCount: tablesPreview.length,
+          note: "لا توجد tables/tablesPreview داخل normalized.",
+          tablesCount: tables.length,
         },
       });
     }
 
-    const colsA = detectColumns(bestA.table, normalized);
+    const colsA = detectColumns(bestA.table);
     const pickedA = pickLatestColumns(colsA);
 
     const latestColA = pickedA.latest?.col ?? null;
@@ -690,13 +697,13 @@ module.exports = async function (context, req) {
     let incomeExtract = {};
     if (usingTwoFiles) {
       let bestB = null;
-      for (const t of tablesPreviewPrev) {
-        const s = scoreIncomeTable(t); // using normalized but it's okay as preview
+      for (const t of tablesPrev) {
+        const s = scoreIncomeTable(t);
         if (!bestB || s > bestB.score) bestB = { table: t, score: s };
       }
 
       if (bestB) {
-        const colsB = detectColumns(bestB.table, normalizedPrev);
+        const colsB = detectColumns(bestB.table);
         const pickedB = pickLatestColumns(colsB);
         const latestColB = pickedB.latest?.col ?? null;
 
@@ -712,16 +719,16 @@ module.exports = async function (context, req) {
        Pick balance table A
        ========================= */
 
-    const bsDiagA = pickBestBalanceSheetTable(tablesPreview, normalized);
+    const bsDiagA = pickBestBalanceSheetTable(tables);
 
     let bestBalanceA = null;
     if (bsDiagA.bestTableIndex !== null && bsDiagA.bestTableIndex !== undefined) {
-      const t = tablesPreview.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
-      if (t) bestBalanceA = { table: t, score: scoreBalanceTable(t, normalized), pickedBy: "diag" };
+      const t = tables.find((x) => Number(x?.index) === Number(bsDiagA.bestTableIndex));
+      if (t) bestBalanceA = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
     }
     if (!bestBalanceA) {
-      for (const t of tablesPreview) {
-        const s = scoreBalanceTable(t, normalized);
+      for (const t of tables) {
+        const s = scoreBalanceTable(t);
         if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s, pickedBy: "fallbackScore" };
       }
     }
@@ -730,29 +737,29 @@ module.exports = async function (context, req) {
     let balancePicked = null;
 
     if (bestBalanceA?.table) {
-      const colsBalA = detectColumns(bestBalanceA.table, normalized);
+      const colsBalA = detectColumns(bestBalanceA.table);
       const pickedBalA = pickLatestColumns(colsBalA);
 
       const latestBalColA = pickedBalA.latest?.col ?? null;
       const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
 
       if (usingTwoFiles) {
-        const bsDiagB = pickBestBalanceSheetTable(tablesPreviewPrev, normalizedPrev);
+        const bsDiagB = pickBestBalanceSheetTable(tablesPrev);
 
         let bestBalanceB = null;
         if (bsDiagB.bestTableIndex !== null && bsDiagB.bestTableIndex !== undefined) {
-          const t = tablesPreviewPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
-          if (t) bestBalanceB = { table: t, score: scoreBalanceTable(t, normalizedPrev), pickedBy: "diag" };
+          const t = tablesPrev.find((x) => Number(x?.index) === Number(bsDiagB.bestTableIndex));
+          if (t) bestBalanceB = { table: t, score: scoreBalanceTable(t), pickedBy: "diag" };
         }
         if (!bestBalanceB) {
-          for (const t of tablesPreviewPrev) {
-            const s = scoreBalanceTable(t, normalizedPrev);
+          for (const t of tablesPrev) {
+            const s = scoreBalanceTable(t);
             if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s, pickedBy: "fallbackScore" };
           }
         }
 
         if (bestBalanceB?.table) {
-          const colsBalB = detectColumns(bestBalanceB.table, normalizedPrev);
+          const colsBalB = detectColumns(bestBalanceB.table);
           const pickedBalB = pickLatestColumns(colsBalB);
           const latestBalColB = pickedBalB.latest?.col ?? null;
 
@@ -820,6 +827,8 @@ module.exports = async function (context, req) {
       }
     }
 
+    const sampleRows = getTableRows(bestA.table).slice(0, 12);
+
     return send(200, {
       ok: true,
       financial: {
@@ -827,6 +836,7 @@ module.exports = async function (context, req) {
         selectionPolicy: {
           noCompare,
           usingTwoFiles,
+          using: (tablesFull && tablesFull.length) ? "tables" : "tablesPreview",
           rule: noCompare
             ? "No compare selected -> pick latest year/period only."
             : usingTwoFiles
@@ -855,7 +865,7 @@ module.exports = async function (context, req) {
         incomeStatementLite: incomeExtract,
         balanceSheetLite: balanceExtract,
         balancePickInfo: balancePicked,
-        sample: bestA.table.sample?.slice(0, 12) || [],
+        sample: sampleRows,
       },
     });
   } catch (e) {
