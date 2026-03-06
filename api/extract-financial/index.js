@@ -418,7 +418,6 @@ module.exports = async function (context, req) {
           "اجمالي حقوق الملكية",
           "إجمالي حقوق المساهمين",
           "اجمالي حقوق المساهمين",
-          "حقوق الملكية العائدة لمساهمي الشركة الأم",
           "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
           "Total equity",
           "Total shareholders' equity",
@@ -471,6 +470,50 @@ module.exports = async function (context, req) {
       },
     ];
 
+    const applyBalanceDerivations = (out) => {
+      const totalAssetsCur = out.totalAssets?.current ?? null;
+      const totalLiabilitiesCur = out.totalLiabilities?.current ?? null;
+      const totalEquityCur = out.totalEquity?.current ?? null;
+      const nonCurrentAssetsCur = out.nonCurrentAssets?.current ?? null;
+      const currentLiabilitiesCur = out.currentLiabilities?.current ?? null;
+
+      if (totalAssetsCur == null && totalLiabilitiesCur != null && totalEquityCur != null) {
+        out.totalAssets = {
+          label: "derived: totalLiabilities + totalEquity",
+          current: totalLiabilitiesCur + totalEquityCur,
+          previous: out.totalAssets?.previous ?? null,
+        };
+      }
+
+      const totalAssetsCur2 = out.totalAssets?.current ?? null;
+
+      if (out.currentAssets?.current == null && totalAssetsCur2 != null && nonCurrentAssetsCur != null) {
+        out.currentAssets = {
+          label: "derived: totalAssets - nonCurrentAssets",
+          current: totalAssetsCur2 - nonCurrentAssetsCur,
+          previous: out.currentAssets?.previous ?? null,
+        };
+      }
+
+      if (out.nonCurrentLiabilities?.current == null && totalLiabilitiesCur != null && currentLiabilitiesCur != null) {
+        out.nonCurrentLiabilities = {
+          label: "derived: totalLiabilities - currentLiabilities",
+          current: totalLiabilitiesCur - currentLiabilitiesCur,
+          previous: out.nonCurrentLiabilities?.previous ?? null,
+        };
+      }
+
+      if (out.totalEquity?.current == null && totalAssetsCur2 != null && totalLiabilitiesCur != null) {
+        out.totalEquity = {
+          label: "derived: totalAssets - totalLiabilities",
+          current: totalAssetsCur2 - totalLiabilitiesCur,
+          previous: out.totalEquity?.previous ?? null,
+        };
+      }
+
+      return out;
+    };
+
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
       const rows = [
         ...(Array.isArray(table?.sample) ? table.sample : []),
@@ -490,7 +533,7 @@ module.exports = async function (context, req) {
         out[item.key] = { label: hit.label, current: cur, previous: prev };
       }
 
-      return out;
+      return applyBalanceDerivations(out);
     };
 
     const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
@@ -518,7 +561,7 @@ module.exports = async function (context, req) {
         };
       }
 
-      return out;
+      return applyBalanceDerivations(out);
     };
 
     /* =========================
