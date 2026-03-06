@@ -10,432 +10,715 @@ module.exports = async function (context, req) {
 
   try {
     const body = req.body || {};
-    const normalized = body.normalized || null;
-    const period = String(body.period || "annual").toLowerCase(); // annual | quarterly
-    const compare = String(body.compare || "none").toLowerCase(); // none | prev
-    const fileName = body.fileName || "unknown.pdf";
+    const normalized = body.normalized;
+    const normalizedPrev = body.normalizedPrev || null;
 
-    if (!normalized || !normalized.tablesPreview || !Array.isArray(normalized.tablesPreview)) {
-      return send(400, {
-        ok: false,
-        error: "Missing normalized.tablesPreview in request body",
-        hint: "Send { normalized, period, compare, fileName } from /api/analyze response",
-      });
+    const compareRaw = body.compare ?? null;
+
+    const compareStr =
+      compareRaw === null || compareRaw === undefined
+        ? ""
+        : String(compareRaw).toLowerCase().trim();
+
+    const noCompare =
+      compareStr === "" ||
+      compareStr.includes("بدون") ||
+      compareStr === "none" ||
+      compareStr === "no" ||
+      compareStr === "no_compare" ||
+      compareStr === "no-compare";
+
+    const usingTwoFiles = Boolean(normalizedPrev) && !noCompare;
+
+    const diag =
+      String(req.query?.diag || body.diag || "").toLowerCase() === "1" ||
+      String(req.query?.diag || body.diag || "").toLowerCase() === "true";
+
+    const target = String(req.query?.target || body.target || "").toLowerCase();
+
+    if (!normalized || typeof normalized !== "object") {
+      return send(400, { ok: false, error: "Missing 'normalized' in request body" });
     }
 
-    // -----------------------------
-    // Text helpers
-    // -----------------------------
-    const arDigitMap = {
-      "٠": "0",
-      "١": "1",
-      "٢": "2",
-      "٣": "3",
-      "٤": "4",
-      "٥": "5",
-      "٦": "6",
-      "٧": "7",
-      "٨": "8",
-      "٩": "9",
-      "۰": "0",
-      "۱": "1",
-      "۲": "2",
-      "۳": "3",
-      "۴": "4",
-      "۵": "5",
-      "۶": "6",
-      "۷": "7",
-      "۸": "8",
-      "۹": "9",
+    const tablesPreview = Array.isArray(normalized.tablesPreview) ? normalized.tablesPreview : [];
+    const pagesMeta = normalized?.meta || null;
+
+    const tablesPreviewPrev = usingTwoFiles
+      ? Array.isArray(normalizedPrev.tablesPreview)
+        ? normalizedPrev.tablesPreview
+        : []
+      : [];
+
+    /* =========================
+       Helpers
+       ========================= */
+
+    const toLatinDigits = (s) => {
+      const map = {
+        "٠": "0",
+        "١": "1",
+        "٢": "2",
+        "٣": "3",
+        "٤": "4",
+        "٥": "5",
+        "٦": "6",
+        "٧": "7",
+        "٨": "8",
+        "٩": "9",
+        "۰": "0",
+        "۱": "1",
+        "۲": "2",
+        "۳": "3",
+        "۴": "4",
+        "۵": "5",
+        "۶": "6",
+        "۷": "7",
+        "۸": "8",
+        "۹": "9",
+      };
+      return String(s || "").replace(/[٠-٩۰-۹]/g, (ch) => map[ch] ?? ch);
     };
 
-    const toLatinDigits = (s) =>
-      String(s || "").replace(/[٠-٩۰-۹]/g, (d) => arDigitMap[d] ?? d);
+    const normalizeSeparators = (s) => {
+      return String(s || "")
+        .replace(/٫/g, ".")
+        .replace(/[٬،]/g, ",");
+    };
 
-    const norm = (s) =>
-      toLatinDigits(String(s || ""))
-        .toLowerCase()
-        .replace(/\u200f|\u200e/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+    const norm = (s) => toLatinDigits(normalizeSeparators(String(s || ""))).toLowerCase().trim();
 
-    // -----------------------------
-    // ✅ Strong number parser (fixes 62.585869 bug)
-    // -----------------------------
-    const parseNumberSmart = (input) => {
-      let s = String(input ?? "").trim();
+    const parseNumberSmart = (raw) => {
+      if (raw === null || raw === undefined) return null;
+
+      let s = toLatinDigits(normalizeSeparators(String(raw))).trim();
       if (!s) return null;
 
-      // remove parentheses negative: (123) => -123
       let neg = false;
-      const paren = s.match(/^\((.*)\)$/);
-      if (paren) {
+      if (s.includes("(") && s.includes(")")) {
         neg = true;
-        s = paren[1];
+        s = s.replace(/[()]/g, "");
       }
 
-      s = toLatinDigits(s);
+      s = s.replace(/[^\d.,\-+]/g, "");
+      s = s.replace(/(?!^)[\-+]/g, "");
 
-      // unify arabic separators:
-      // "٫" (arabic decimal) -> "."
-      // "،" (arabic comma) -> ","
-      s = s.replace(/٫/g, ".").replace(/،/g, ",");
-
-      // keep only digits, comma, dot, minus
-      s = s.replace(/[^\d\.\,\-]/g, "");
-
-      // if there are multiple "-" keep only leading
-      s = s.replace(/(?!^)-/g, "");
-      if (s.startsWith("-")) {
-        neg = true;
-        s = s.slice(1);
-      }
-
-      // Strategy:
-      // 1) If there are both "." and ",":
-      //    - Detect which is decimal by last separator position
-      //    - BUT if commas appear as 3-digit groups (thousands), treat commas as thousands
-      // 2) If only "," exists:
-      //    - If it looks like thousands grouping (e.g. 62,585,869) => remove commas
-      //    - Else treat comma as decimal (rare)
-      // 3) If only "." exists:
-      //    - If it looks like thousands grouping (e.g. 1.234.567) => remove dots
-      //    - Else treat as decimal
-
-      const looksLikeGroupedThousands = (str, sep) => {
-        // e.g. 62,585,869 or 1.234.567
-        const parts = str.split(sep);
-        if (parts.length <= 1) return false;
-        // all groups after first should be exactly 3 digits
-        for (let i = 1; i < parts.length; i++) {
-          if (parts[i].length !== 3) return false;
-        }
-        return true;
-      };
-
-      const hasComma = s.includes(",");
       const hasDot = s.includes(".");
+      const hasComma = s.includes(",");
 
-      let out = s;
+      const isGroupedThousands = (x) => /^\d{1,3}([.,]\d{3})+$/.test(x);
 
-      if (hasComma && hasDot) {
-        // If commas are thousands grouping, remove commas and keep dot as decimal (or thousands if grouped too)
-        if (looksLikeGroupedThousands(out, ",")) {
-          out = out.replace(/,/g, "");
-          // now maybe dots are thousands too
-          if (looksLikeGroupedThousands(out, ".")) out = out.replace(/\./g, "");
-        } else if (looksLikeGroupedThousands(out, ".")) {
-          out = out.replace(/\./g, "");
-          // now comma might be decimal
-          out = out.replace(/,/g, ".");
-        } else {
-          // decide by last separator
-          const lastComma = out.lastIndexOf(",");
-          const lastDot = out.lastIndexOf(".");
-          if (lastComma > lastDot) {
-            // comma as decimal
-            out = out.replace(/\./g, ""); // dots as thousands
-            out = out.replace(/,/g, ".");
-          } else {
-            // dot as decimal
-            out = out.replace(/,/g, ""); // commas as thousands
-          }
-        }
-      } else if (hasComma) {
-        if (looksLikeGroupedThousands(out, ",")) {
-          out = out.replace(/,/g, "");
-        } else {
-          // treat comma as decimal
-          out = out.replace(/,/g, ".");
-        }
-      } else if (hasDot) {
-        if (looksLikeGroupedThousands(out, ".")) {
-          out = out.replace(/\./g, "");
-        } // else keep dot as decimal
+      if (isGroupedThousands(s)) {
+        const n = Number(s.replace(/[.,]/g, ""));
+        return Number.isFinite(n) ? (neg ? -n : n) : null;
       }
 
-      if (!out || out === "." || out === "," || out === "-") return null;
-      const n = Number(out);
-      if (!Number.isFinite(n)) return null;
-      return neg ? -n : n;
+      if (hasDot && hasComma) {
+        const lastSep = Math.max(s.lastIndexOf("."), s.lastIndexOf(","));
+        const tail = s.slice(lastSep + 1);
+
+        if (/^\d{3}$/.test(tail)) {
+          const n = Number(s.replace(/[.,]/g, ""));
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        }
+
+        if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+          const parts = s.split(",");
+          const dec = parts.pop();
+          const intPart = parts.join("").replace(/\./g, "");
+          const n = Number(intPart + "." + dec);
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        } else {
+          const parts = s.split(".");
+          const dec = parts.pop();
+          const intPart = parts.join("").replace(/,/g, "");
+          const n = Number(intPart + "." + dec);
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        }
+      }
+
+      if (!hasDot && hasComma) {
+        if (/^\d{1,3}(,\d{3})+$/.test(s)) {
+          const n = Number(s.replace(/,/g, ""));
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        }
+        const n = Number(s.replace(",", "."));
+        return Number.isFinite(n) ? (neg ? -n : n) : null;
+      }
+
+      if (hasDot && !hasComma) {
+        if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+          const n = Number(s.replace(/\./g, ""));
+          return Number.isFinite(n) ? (neg ? -n : n) : null;
+        }
+        const n = Number(s);
+        return Number.isFinite(n) ? (neg ? -n : n) : null;
+      }
+
+      const n = Number(s);
+      return Number.isFinite(n) ? (neg ? -n : n) : null;
     };
 
-    // -----------------------------
-    // Table scoring: pick best balance sheet table
-    // -----------------------------
-    const joinRows = (rows) =>
-      rows
-        .flat()
-        .map((x) => String(x || ""))
-        .join(" | ");
+    const findYear = (text) => {
+      const s = toLatinDigits(normalizeSeparators(text));
+      const m = s.match(/\b(20\d{2})\b/);
+      if (!m) return null;
+      const y = Number(m[1]);
+      return y >= 2000 && y <= 2100 ? y : null;
+    };
 
-    const scoreBalanceTable = (tp) => {
-      const sample = Array.isArray(tp.sample) ? tp.sample : [];
-      const tail = Array.isArray(tp.sampleTail) ? tp.sampleTail : [];
-      const joined = norm(joinRows(sample.concat(tail)));
+    const headerRowLimit = 5;
+    const detectColumns = (table) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const colCount = Number(table?.columnCount || 0);
+
+      const cols = Array.from({ length: colCount }, (_, i) => ({
+        col: i,
+        years: [],
+        hasThreeMonths: false,
+        hasNineMonths: false,
+        hasAnnual: false,
+        hasNote: false,
+        headerText: "",
+      }));
+
+      const topRows = rows.slice(0, headerRowLimit);
+
+      for (const r of topRows) {
+        for (let c = 0; c < colCount; c++) {
+          const cell = r?.[c];
+          const t = norm(cell);
+          if (!t) continue;
+
+          cols[c].headerText += " " + t;
+
+          const y = findYear(t);
+          if (y) cols[c].years.push(y);
+
+          if (t.includes("الثلاثة") && t.includes("أشهر")) cols[c].hasThreeMonths = true;
+          if (t.includes("التسعة") && t.includes("أشهر")) cols[c].hasNineMonths = true;
+
+          if (t.includes("ديسمبر") || t.includes("السنة") || t.includes("منتهية")) cols[c].hasAnnual = true;
+
+          if (t.includes("إيضاح") || t.includes("ايضاح") || t === "إيضاح") cols[c].hasNote = true;
+        }
+      }
+
+      for (const c of cols) {
+        c.years = Array.from(new Set(c.years)).sort((a, b) => a - b);
+      }
+
+      return cols;
+    };
+
+    const pickLatestColumns = (cols) => {
+      const candidates = cols.filter((c) => !c.hasNote);
+
+      const withYears = candidates
+        .map((c) => ({
+          ...c,
+          latestYear: c.years.length ? c.years[c.years.length - 1] : null,
+          periodScore: c.hasThreeMonths ? 3 : c.hasNineMonths ? 2 : c.hasAnnual ? 1 : 0,
+        }))
+        .filter((c) => c.latestYear);
+
+      if (!withYears.length) return { latest: null, previous: null, debug: { reason: "no years detected" } };
+
+      const maxYear = Math.max(...withYears.map((c) => c.latestYear));
+
+      const latestCandidates = withYears
+        .filter((c) => c.latestYear === maxYear)
+        .sort((a, b) => {
+          if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore;
+          return b.col - a.col;
+        });
+
+      const latest = latestCandidates[0];
+
+      const yearsAll = Array.from(new Set(withYears.map((c) => c.latestYear))).sort((a, b) => a - b);
+      const prevYear = yearsAll.length >= 2 ? yearsAll[yearsAll.length - 2] : null;
+
+      let previous = null;
+      if (prevYear) {
+        const prevCandidates = withYears
+          .filter((c) => c.latestYear === prevYear)
+          .sort((a, b) => {
+            if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore;
+            return b.col - a.col;
+          });
+        previous = prevCandidates[0] || null;
+      }
+
+      return { latest, previous, debug: { maxYear, prevYear, yearsAll } };
+    };
+
+    const scoreIncomeTable = (table) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+
+      const hits = [
+        "الإيرادات",
+        "الايرادات",
+        "تكلفة الإيرادات",
+        "تكلفة الايرادات",
+        "مجمل الربح",
+        "الربح التشغيلي",
+        "صافي الربح",
+        "قائمة الدخل",
+        "قائمة الربح والخسارة",
+        "لفترة",
+        "الثلاثة أشهر",
+        "التسعة أشهر",
+      ];
 
       let score = 0;
+      for (const k of hits) if (joined.includes(norm(k))) score += 2;
 
-      const strong = [
-        "قائمة المركز المالي",
-        "المركز المالي",
-        "قائمة الوضع المالي",
-        "statement of financial position",
-        "balance sheet",
-      ];
-      const support = [
-        "الموجودات",
-        "الأصول",
-        "المطلوبات",
-        "الالتزامات",
-        "حقوق الملكية",
-        "اجمالي الموجودات",
-        "اجمالي الأصول",
-        "اجمالي المطلوبات",
-        "اجمالي الالتزامات",
-        "اجمالي حقوق الملكية",
-      ];
+      if (joined.includes("إيضاح") || joined.includes("ايضاح")) score += 1;
 
-      for (const k of strong) if (joined.includes(norm(k))) score += 30;
-      for (const k of support) if (joined.includes(norm(k))) score += 8;
-
-      // Prefer 4 columns (name + two years + note) but allow 3
-      const cc = Number(tp.columnCount || 0);
-      if (cc === 4) score += 12;
-      if (cc === 3) score += 6;
-
-      // Prefer hasTail true (totals often at end)
-      const hasTail = tail.length > 0;
-      if (hasTail) score += 10;
+      const cc = Number(table?.columnCount || 0);
+      if (cc >= 5) score += 1;
 
       return score;
     };
 
-    const candidates = normalized.tablesPreview
-      .map((t) => ({
-        index: t.index,
-        pageNumber: t.pageNumber ?? null,
-        rowCount: t.rowCount ?? null,
-        columnCount: t.columnCount ?? null,
-        hasTail: Array.isArray(t.sampleTail) && t.sampleTail.length > 0,
-        score: scoreBalanceTable(t),
-        sample: t.sample || [],
-        sampleTail: t.sampleTail || [],
-        snippet: joinRows((t.sample || []).slice(0, 4)),
-      }))
-      .sort((a, b) => b.score - a.score);
+    const wantIncome = [
+      { key: "revenue", names: ["الإيرادات", "الايرادات", "المبيعات", "إيرادات", "Revenue"] },
+      { key: "costOfRevenue", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of revenue"] },
+      { key: "grossProfit", names: ["مجمل الربح", "Gross profit"] },
+      { key: "operatingProfit", names: ["الربح التشغيلي", "Operating profit", "الربح من العمليات"] },
+      { key: "netProfitBeforeZakat", names: ["صافي ربح الفترة قبل الزكاة", "صافي ربح السنة قبل الزكاة"] },
+      { key: "zakat", names: ["الزكاة"] },
+      { key: "netProfit", names: ["صافي ربح الفترة", "صافي ربح السنة", "صافي الربح", "Net profit"] },
+    ];
 
-    const picked = candidates[0] || null;
-    if (!picked || picked.score < 20) {
+    const getRowLabel = (r) => {
+      if (!Array.isArray(r)) return "";
+      const last = norm(r?.[r.length - 1]);
+      const prev = norm(r?.[r.length - 2]);
+      return last || prev || "";
+    };
+
+    const findRowByLabel = (rows, names) => {
+      for (const r of rows) {
+        if (!Array.isArray(r)) continue;
+        const label = getRowLabel(r);
+        if (!label) continue;
+        const ok = names.some((n) => label.includes(norm(n)));
+        if (ok) return { row: r, label };
+      }
+      return null;
+    };
+
+    const extractIncomeSingleTable = (table, latestColIdx, prevColIdx) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const out = {};
+
+      for (const item of wantIncome) {
+        const hit = findRowByLabel(rows, item.names);
+        if (!hit) {
+          out[item.key] = null;
+          continue;
+        }
+        const cur = latestColIdx != null ? parseNumberSmart(hit.row?.[latestColIdx]) : null;
+        const prev = prevColIdx != null ? parseNumberSmart(hit.row?.[prevColIdx]) : null;
+        out[item.key] = { label: hit.label, current: cur, previous: prev };
+      }
+
+      return out;
+    };
+
+    const extractIncomeTwoFiles = (tableA, colA, tableB, colB) => {
+      const rowsA = Array.isArray(tableA?.sample) ? tableA.sample : [];
+      const rowsB = Array.isArray(tableB?.sample) ? tableB.sample : [];
+      const out = {};
+
+      for (const item of wantIncome) {
+        const hitA = findRowByLabel(rowsA, item.names);
+        const hitB = findRowByLabel(rowsB, item.names);
+
+        const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
+        const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
+
+        out[item.key] = {
+          label: hitA?.label || hitB?.label || null,
+          current: cur,
+          previous: prev,
+        };
+      }
+
+      return out;
+    };
+
+    /* =========================
+       BALANCE SHEET (NEW)
+       ========================= */
+
+    const scoreBalanceTable = (table) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+
+      const strong = ["قائمة المركز المالي", "الميزانية", "الميزانية العمومية", "قائمة الوضع المالي", "balance sheet", "statement of financial position"];
+      const support = ["الأصول", "الموجودات", "المطلوبات", "الالتزامات", "حقوق الملكية", "إجمالي الأصول", "إجمالي المطلوبات"];
+
+      let score = 0;
+      for (const k of strong) if (joined.includes(norm(k))) score += 20;
+      for (const k of support) if (joined.includes(norm(k))) score += 6;
+
+      return score;
+    };
+
+    const wantBalance = [
+      { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الأصول", "Total assets"] },
+      { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "Total liabilities"] },
+      { key: "totalEquity", names: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "Total equity", "حقوق الملكية"] },
+      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "Current assets"] },
+      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
+      { key: "currentLiabilities", names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"] },
+      { key: "nonCurrentLiabilities", names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"] },
+    ];
+
+    const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const out = {};
+
+      for (const item of wantBalance) {
+        const hit = findRowByLabel(rows, item.names);
+        if (!hit) {
+          out[item.key] = null;
+          continue;
+        }
+        const cur = latestColIdx != null ? parseNumberSmart(hit.row?.[latestColIdx]) : null;
+        const prev = prevColIdx != null ? parseNumberSmart(hit.row?.[prevColIdx]) : null;
+        out[item.key] = { label: hit.label, current: cur, previous: prev };
+      }
+
+      return out;
+    };
+
+    const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
+      const rowsA = Array.isArray(tableA?.sample) ? tableA.sample : [];
+      const rowsB = Array.isArray(tableB?.sample) ? tableB.sample : [];
+      const out = {};
+
+      for (const item of wantBalance) {
+        const hitA = findRowByLabel(rowsA, item.names);
+        const hitB = findRowByLabel(rowsB, item.names);
+
+        const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
+        const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
+
+        out[item.key] = {
+          label: hitA?.label || hitB?.label || null,
+          current: cur,
+          previous: prev,
+        };
+      }
+
+      return out;
+    };
+
+    /* =========================
+       DIAG: balance candidates
+       ========================= */
+
+    const normText2 = (s) =>
+      String(s || "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const tableTextQuick = (t) => {
+      const rows = Array.isArray(t?.sample) ? t.sample : [];
+      let out = [];
+      for (let r = 0; r < rows.length && r < 30; r++) {
+        const row = rows[r];
+        if (!Array.isArray(row)) continue;
+        for (let c = 0; c < row.length && c < 12; c++) {
+          const v = row[c];
+          if (v) out.push(v);
+        }
+      }
+      return normText2(out.join(" | "));
+    };
+
+    const scoreBalanceSheetText = (text) => {
+      const keysStrong = [
+        "قائمة المركز المالي",
+        "الميزانية",
+        "الميزانية العمومية",
+        "قائمة الوضع المالي",
+        "statement of financial position",
+        "balance sheet",
+        "financial position",
+      ];
+      const keysSupport = [
+        "الأصول",
+        "assets",
+        "الموجودات",
+        "المطلوبات",
+        "liabilities",
+        "الالتزامات",
+        "حقوق الملكية",
+        "equity",
+        "إجمالي الأصول",
+        "total assets",
+        "إجمالي المطلوبات",
+        "total liabilities",
+      ];
+
+      let score = 0;
+      for (const k of keysStrong) if (text.includes(normText2(k))) score += 50;
+      for (const k of keysSupport) if (text.includes(normText2(k))) score += 10;
+
+      if (text.includes("متداولة") || text.includes("غير متداولة")) score += 8;
+
+      return score;
+    };
+
+    if (diag && (target === "" || target === "balance" || target === "balancesheet")) {
+      const ranked = tablesPreview
+        .map((t) => {
+          const text = tableTextQuick(t);
+          const score = scoreBalanceSheetText(text);
+          return {
+            index: t?.index ?? null,
+            score,
+            page: t?.pageNumber ?? t?.page ?? null,
+            columnCount: t?.columnCount ?? null,
+            rowCount: t?.rowCount ?? null,
+            snippet: text.slice(0, 260),
+          };
+        })
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+
       return send(200, {
         ok: true,
-        fileName,
-        period,
-        compare,
-        balancePickInfo: { candidates: candidates.slice(0, 8) },
-        balanceSheetLite: {
-          totalAssets: null,
-          currentAssets: null,
-          nonCurrentAssets: null,
-          totalLiabilities: null,
-          currentLiabilities: null,
-          nonCurrentLiabilities: null,
-          totalEquity: null,
-        },
-        warning: "Could not confidently pick a balance sheet table (score too low).",
+        diag: true,
+        kind: "balanceSheetCandidates",
+        pagesMeta,
+        tablesPreviewCount: tablesPreview.length,
+        found: ranked.length,
+        ranked,
+        hint: "اختر index الجدول الأعلى Score، ثم سنثبت استخراج الميزانية منه في الخطوة التالية.",
       });
     }
 
-    const rows = (picked.sample || []).concat(picked.sampleTail || []);
-    const safeCell = (r, c) => (rows[r] && typeof rows[r][c] !== "undefined" ? String(rows[r][c] || "") : "");
-    const rowCount = rows.length;
-    const colCount = Number(picked.columnCount || 0);
+    /* =========================
+       1) pick best income table (file A)
+       ========================= */
 
-    // -----------------------------
-    // Find year columns (latest + previous)
-    // -----------------------------
-    const findYearsInText = (txt) => {
-      const t = toLatinDigits(String(txt || ""));
-      const years = [];
-      const re = /\b(19\d{2}|20\d{2})\b/g;
-      let m;
-      while ((m = re.exec(t))) years.push(Number(m[1]));
-      return years;
-    };
+    let bestA = null;
+    for (const t of tablesPreview) {
+      const s = scoreIncomeTable(t);
+      if (!bestA || s > bestA.score) bestA = { table: t, score: s };
+    }
 
-    const headerScanRows = Math.min(8, rowCount);
-    const colYearHits = Array.from({ length: colCount }, () => []);
+    if (!bestA) {
+      return send(200, {
+        ok: true,
+        financial: {
+          pagesMeta,
+          note: "لا توجد tablesPreview داخل normalized.",
+          tablesPreviewCount: tablesPreview.length,
+        },
+      });
+    }
 
-    for (let r = 0; r < headerScanRows; r++) {
-      for (let c = 0; c < colCount; c++) {
-        const ys = findYearsInText(safeCell(r, c));
-        if (ys.length) colYearHits[c].push(...ys);
+    const colsA = detectColumns(bestA.table);
+    const pickedA = pickLatestColumns(colsA);
+
+    const latestColA = pickedA.latest?.col ?? null;
+    const prevColA = !noCompare ? pickedA.previous?.col ?? null : null;
+
+    let incomeExtract = {};
+
+    if (usingTwoFiles) {
+      let bestB = null;
+      for (const t of tablesPreviewPrev) {
+        const s = scoreIncomeTable(t);
+        if (!bestB || s > bestB.score) bestB = { table: t, score: s };
+      }
+
+      if (bestB) {
+        const colsB = detectColumns(bestB.table);
+        const pickedB = pickLatestColumns(colsB);
+        const latestColB = pickedB.latest?.col ?? null;
+
+        incomeExtract = extractIncomeTwoFiles(bestA.table, latestColA, bestB.table, latestColB);
+      } else {
+        incomeExtract = extractIncomeSingleTable(bestA.table, latestColA, null);
+      }
+    } else {
+      incomeExtract = latestColA != null ? extractIncomeSingleTable(bestA.table, latestColA, prevColA) : {};
+    }
+
+    /* =========================
+       2) pick best balance table (file A)
+       - priority: if your diag ranked shows index=1 best, we hard-prefer it when present
+       ========================= */
+
+    let bestBalanceA = null;
+
+    // Hard prefer index=1 when it exists (from your diag result)
+    const tableIdx1 = tablesPreview.find((t) => Number(t?.index) === 1);
+    if (tableIdx1) {
+      bestBalanceA = { table: tableIdx1, score: scoreBalanceTable(tableIdx1), forcedIndex: 1 };
+    } else {
+      for (const t of tablesPreview) {
+        const s = scoreBalanceTable(t);
+        if (!bestBalanceA || s > bestBalanceA.score) bestBalanceA = { table: t, score: s };
       }
     }
 
-    // Count per column
-    const colYear = colYearHits
-      .map((arr, c) => {
-        const counts = {};
-        for (const y of arr) counts[y] = (counts[y] || 0) + 1;
-        // pick most frequent year
-        let bestY = null;
-        let bestK = 0;
-        for (const [y, k] of Object.entries(counts)) {
-          if (k > bestK) {
-            bestK = k;
-            bestY = Number(y);
+    let balanceExtract = {};
+    let balancePicked = null;
+
+    if (bestBalanceA?.table) {
+      const colsBalA = detectColumns(bestBalanceA.table);
+      const pickedBalA = pickLatestColumns(colsBalA);
+
+      const latestBalColA = pickedBalA.latest?.col ?? null;
+      const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
+
+      if (usingTwoFiles) {
+        // pick balance table from file B
+        let bestBalanceB = null;
+        const tableBIdx1 = tablesPreviewPrev.find((t) => Number(t?.index) === 1);
+        if (tableBIdx1) {
+          bestBalanceB = { table: tableBIdx1, score: scoreBalanceTable(tableBIdx1), forcedIndex: 1 };
+        } else {
+          for (const t of tablesPreviewPrev) {
+            const s = scoreBalanceTable(t);
+            if (!bestBalanceB || s > bestBalanceB.score) bestBalanceB = { table: t, score: s };
           }
         }
-        return { c, year: bestY, hits: bestK };
-      })
-      .filter((x) => x.year);
 
-    let latestCol = null;
-    let prevCol = null;
+        if (bestBalanceB?.table) {
+          const colsBalB = detectColumns(bestBalanceB.table);
+          const pickedBalB = pickLatestColumns(colsBalB);
+          const latestBalColB = pickedBalB.latest?.col ?? null;
 
-    if (colYear.length) {
-      const sorted = colYear.sort((a, b) => b.year - a.year);
-      latestCol = sorted[0]?.c ?? null;
-      const latestYear = sorted[0]?.year ?? null;
-      prevCol = sorted.find((x) => x.year && x.year < latestYear)?.c ?? null;
-    }
+          balanceExtract = extractBalanceTwoFiles(
+            bestBalanceA.table,
+            latestBalColA,
+            bestBalanceB.table,
+            latestBalColB
+          );
 
-    // fallback: assume last numeric columns are years
-    if (latestCol === null) {
-      latestCol = colCount - 1;
-      if (latestCol < 1) latestCol = 1;
-    }
-    if (prevCol === null && colCount >= 3) {
-      prevCol = latestCol - 1;
-    }
-
-    // If there is an "إيضاح" column, it is usually between name and years (often col=1 in 4 cols)
-    // We'll treat value columns as latestCol/prevCol only.
-    const valueCols = {
-      latest: latestCol,
-      previous: compare === "prev" ? prevCol : null,
-    };
-
-    // -----------------------------
-    // Row matching
-    // -----------------------------
-    const rowKey = (r) => norm(safeCell(r, 0));
-
-    const findRowIndexByNames = (names, exclude = []) => {
-      const want = names.map(norm);
-      const bad = exclude.map(norm);
-      let best = { idx: null, score: -1 };
-
-      for (let r = 0; r < rowCount; r++) {
-        const k = rowKey(r);
-        if (!k) continue;
-        let s = 0;
-
-        for (const w of want) if (w && k.includes(w)) s += 20;
-        for (const b of bad) if (b && k.includes(b)) s -= 30;
-
-        // small boost if the row has numbers in expected value col
-        const v = parseNumberSmart(safeCell(r, valueCols.latest));
-        if (v !== null) s += 3;
-
-        if (s > best.score) best = { idx: r, score: s };
+          balancePicked = {
+            fileA: {
+              tableIndex: bestBalanceA.table.index,
+              score: bestBalanceA.score,
+              pickedColumns: {
+                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+                previous: pickedBalA.previous ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null } : null,
+                debug: pickedBalA.debug,
+              },
+            },
+            fileB: {
+              tableIndex: bestBalanceB.table.index,
+              score: bestBalanceB.score,
+              pickedColumns: {
+                latest: pickedBalB.latest ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null } : null,
+                debug: pickedBalB.debug,
+              },
+            },
+          };
+        } else {
+          // fallback single file
+          balanceExtract =
+            latestBalColA != null
+              ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null)
+              : {};
+          balancePicked = {
+            fileA: {
+              tableIndex: bestBalanceA.table.index,
+              score: bestBalanceA.score,
+              pickedColumns: {
+                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+                previous: null,
+                debug: pickedBalA.debug,
+              },
+            },
+            note: "No balance table found in file B; used file A latest only.",
+          };
+        }
+      } else {
+        balanceExtract =
+          latestBalColA != null
+            ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, prevBalColA)
+            : {};
+        balancePicked = {
+          fileA: {
+            tableIndex: bestBalanceA.table.index,
+            score: bestBalanceA.score,
+            pickedColumns: {
+              latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+              previous: noCompare
+                ? null
+                : pickedBalA.previous
+                ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
+                : null,
+              debug: pickedBalA.debug,
+            },
+          },
+        };
       }
-
-      if (best.score < 20) return null;
-      return best.idx;
-    };
-
-    const getValue = (r, col) => {
-      if (r === null || col === null) return null;
-      return parseNumberSmart(safeCell(r, col));
-    };
-
-    // Names tuned for your PDF style
-    const N = {
-      totalAssets: ["إجمالي الموجودات", "اجمالي الموجودات", "إجمالي الأصول", "اجمالي الأصول", "Total assets"],
-      currentAssets: ["إجمالي الموجودات المتداولة", "اجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة", "Current assets", "Total current assets"],
-      nonCurrentAssets: ["إجمالي الموجودات غير المتداولة", "اجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة", "Non-current assets", "Total non-current assets"],
-
-      totalLiabilities: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "Total liabilities"],
-      currentLiabilities: ["إجمالي المطلوبات المتداولة", "اجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة", "Current liabilities", "Total current liabilities"],
-      nonCurrentLiabilities: ["إجمالي المطلوبات غير المتداولة", "اجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة", "Non-current liabilities", "Total non-current liabilities"],
-
-      totalEquity: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "Total equity", "Equity attributable"],
-    };
-
-    // Exclusions to avoid confusing sections
-    const EX = {
-      // avoid lines like "إجمالي الموجودات غير المتداولة" when searching totalAssets (and vice versa)
-      totalAssets: ["غير المتداولة", "المتداولة"],
-      currentAssets: ["غير المتداولة"],
-      nonCurrentAssets: ["المتداولة"],
-
-      totalLiabilities: ["غير المتداولة", "المتداولة", "وحقوق"],
-      currentLiabilities: ["غير المتداولة"],
-      nonCurrentLiabilities: ["المتداولة"],
-
-      totalEquity: ["إجمالي المطلوبات", "إجمالي الالتزامات", "والمطلوبات"],
-    };
-
-    const idxTotalAssets = findRowIndexByNames(N.totalAssets, EX.totalAssets);
-    const idxCurrentAssets = findRowIndexByNames(N.currentAssets, EX.currentAssets);
-    const idxNonCurrentAssets = findRowIndexByNames(N.nonCurrentAssets, EX.nonCurrentAssets);
-
-    const idxTotalLiab = findRowIndexByNames(N.totalLiabilities, EX.totalLiabilities);
-    const idxCurrentLiab = findRowIndexByNames(N.currentLiabilities, EX.currentLiabilities);
-    const idxNonCurrentLiab = findRowIndexByNames(N.nonCurrentLiabilities, EX.nonCurrentLiabilities);
-
-    const idxTotalEq = findRowIndexByNames(N.totalEquity, EX.totalEquity);
-
-    const balanceSheetLite = {
-      totalAssets: getValue(idxTotalAssets, valueCols.latest),
-      currentAssets: getValue(idxCurrentAssets, valueCols.latest),
-      nonCurrentAssets: getValue(idxNonCurrentAssets, valueCols.latest),
-
-      totalLiabilities: getValue(idxTotalLiab, valueCols.latest),
-      currentLiabilities: getValue(idxCurrentLiab, valueCols.latest),
-      nonCurrentLiabilities: getValue(idxNonCurrentLiab, valueCols.latest),
-
-      totalEquity: getValue(idxTotalEq, valueCols.latest),
-    };
-
-    const balanceSheetLitePrev =
-      compare === "prev"
-        ? {
-            totalAssets: getValue(idxTotalAssets, valueCols.previous),
-            currentAssets: getValue(idxCurrentAssets, valueCols.previous),
-            nonCurrentAssets: getValue(idxNonCurrentAssets, valueCols.previous),
-
-            totalLiabilities: getValue(idxTotalLiab, valueCols.previous),
-            currentLiabilities: getValue(idxCurrentLiab, valueCols.previous),
-            nonCurrentLiabilities: getValue(idxNonCurrentLiab, valueCols.previous),
-
-            totalEquity: getValue(idxTotalEq, valueCols.previous),
-          }
-        : null;
+    }
 
     return send(200, {
       ok: true,
-      fileName,
-      period,
-      compare,
-      balancePickInfo: {
-        picked: {
-          index: picked.index,
-          score: picked.score,
-          pageNumber: picked.pageNumber,
-          rowCount: picked.rowCount,
-          columnCount: picked.columnCount,
-          hasTail: picked.hasTail,
+      financial: {
+        pagesMeta,
+
+        selectionPolicy: {
+          noCompare,
+          usingTwoFiles,
+          rule: noCompare
+            ? "No compare selected -> pick latest year/period only."
+            : usingTwoFiles
+            ? "Compare selected + 2 files -> current from file A (latest) vs previous from file B (latest)."
+            : "Compare selected -> pick latest + previous from same file (prefer same period type).",
         },
-        candidates: candidates.slice(0, 8),
-        detectedColumns: valueCols,
+
+        bestIncomeTable: {
+          index: bestA.table.index,
+          score: bestA.score,
+          columnCount: bestA.table.columnCount,
+          rowCount: bestA.table.rowCount,
+        },
+
+        columnsDetected: colsA.map((c) => ({
+          col: c.col,
+          years: c.years,
+          hasThreeMonths: c.hasThreeMonths,
+          hasNineMonths: c.hasNineMonths,
+          hasAnnual: c.hasAnnual,
+          hasNote: c.hasNote,
+        })),
+
+        pickedColumns: {
+          latest: pickedA.latest
+            ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null }
+            : null,
+          previous: pickedA.previous
+            ? { col: pickedA.previous.col, year: pickedA.previous.years?.slice(-1)?.[0] ?? null }
+            : null,
+          debug: pickedA.debug,
+        },
+
+        incomeStatementLite: incomeExtract,
+
+        // NEW OUTPUT
+        balanceSheetLite: balanceExtract,
+        balancePickInfo: balancePicked,
+
+        sample: bestA.table.sample?.slice(0, 12) || [],
       },
-      balanceSheetLite,
-      balanceSheetLitePrev,
     });
   } catch (e) {
-    return send(500, { ok: false, error: e?.message || String(e) });
+    return send(500, { ok: false, error: e.message || String(e) });
   }
 };
