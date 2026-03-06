@@ -303,14 +303,23 @@ module.exports = async function (context, req) {
       return last || prev || "";
     };
 
-    const findRowByLabel = (rows, names) => {
+    const findRowByLabel = (rows, item) => {
+      const names = Array.isArray(item?.names) ? item.names : [];
+      const exclude = Array.isArray(item?.exclude) ? item.exclude : [];
+
       for (const r of rows) {
         if (!Array.isArray(r)) continue;
+
         const label = getRowLabel(r);
         if (!label) continue;
+
+        const isExcluded = exclude.some((x) => label.includes(norm(x)));
+        if (isExcluded) continue;
+
         const ok = names.some((n) => label.includes(norm(n)));
         if (ok) return { row: r, label };
       }
+
       return null;
     };
 
@@ -319,7 +328,7 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantIncome) {
-        const hit = findRowByLabel(rows, item.names);
+        const hit = findRowByLabel(rows, { names: item.names, exclude: [] });
         if (!hit) {
           out[item.key] = null;
           continue;
@@ -338,8 +347,8 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantIncome) {
-        const hitA = findRowByLabel(rowsA, item.names);
-        const hitB = findRowByLabel(rowsB, item.names);
+        const hitA = findRowByLabel(rowsA, { names: item.names, exclude: [] });
+        const hitB = findRowByLabel(rowsB, { names: item.names, exclude: [] });
 
         const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
         const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
@@ -355,7 +364,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       BALANCE SHEET (NEW)
+       BALANCE SHEET
        ========================= */
 
     const scoreBalanceTable = (table) => {
@@ -392,8 +401,16 @@ module.exports = async function (context, req) {
     };
 
     const wantBalance = [
-      { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الأصول", "إجمالي الموجودات", "اجمالي الموجودات", "Total assets"] },
-      { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "Total liabilities"] },
+      {
+        key: "totalAssets",
+        names: ["إجمالي الأصول", "اجمالي الأصول", "إجمالي الموجودات", "اجمالي الموجودات", "Total assets"],
+        exclude: ["المتداولة", "غير المتداولة", "non-current", "current"],
+      },
+      {
+        key: "totalLiabilities",
+        names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "Total liabilities"],
+        exclude: ["المتداولة", "غير المتداولة", "non-current", "current", "والمطلوبات", "وحقوق"],
+      },
       {
         key: "totalEquity",
         names: [
@@ -406,11 +423,52 @@ module.exports = async function (context, req) {
           "Total equity",
           "Total shareholders' equity",
         ],
+        exclude: [],
       },
-      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "الموجودات المتداولة", "Current assets"] },
-      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "الموجودات غير المتداولة", "Non-current assets"] },
-      { key: "currentLiabilities", names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"] },
-      { key: "nonCurrentLiabilities", names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Current liabilities", "Non-current liabilities"] },
+      {
+        key: "currentAssets",
+        names: [
+          "إجمالي الموجودات المتداولة",
+          "اجمالي الموجودات المتداولة",
+          "إجمالي الأصول المتداولة",
+          "اجمالي الأصول المتداولة",
+          "Current assets",
+        ],
+        exclude: ["غير المتداولة", "non-current"],
+      },
+      {
+        key: "nonCurrentAssets",
+        names: [
+          "إجمالي الموجودات غير المتداولة",
+          "اجمالي الموجودات غير المتداولة",
+          "إجمالي الأصول غير المتداولة",
+          "اجمالي الأصول غير المتداولة",
+          "Non-current assets",
+        ],
+        exclude: ["الممتلكات", "المعدات", "الشهرة", "المخزون", "ذمم", "current assets"],
+      },
+      {
+        key: "currentLiabilities",
+        names: [
+          "إجمالي المطلوبات المتداولة",
+          "اجمالي المطلوبات المتداولة",
+          "إجمالي الالتزامات المتداولة",
+          "اجمالي الالتزامات المتداولة",
+          "Current liabilities",
+        ],
+        exclude: ["غير المتداولة", "non-current"],
+      },
+      {
+        key: "nonCurrentLiabilities",
+        names: [
+          "إجمالي المطلوبات غير المتداولة",
+          "اجمالي المطلوبات غير المتداولة",
+          "إجمالي الالتزامات غير المتداولة",
+          "اجمالي الالتزامات غير المتداولة",
+          "Non-current liabilities",
+        ],
+        exclude: ["المتداولة", "current liabilities"],
+      },
     ];
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
@@ -422,7 +480,7 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantBalance) {
-        const hit = findRowByLabel(rows, item.names);
+        const hit = findRowByLabel(rows, item);
         if (!hit) {
           out[item.key] = null;
           continue;
@@ -447,8 +505,8 @@ module.exports = async function (context, req) {
       const out = {};
 
       for (const item of wantBalance) {
-        const hitA = findRowByLabel(rowsA, item.names);
-        const hitB = findRowByLabel(rowsB, item.names);
+        const hitA = findRowByLabel(rowsA, item);
+        const hitB = findRowByLabel(rowsB, item);
 
         const cur = hitA && colA != null ? parseNumberSmart(hitA.row?.[colA]) : null;
         const prev = hitB && colB != null ? parseNumberSmart(hitB.row?.[colB]) : null;
