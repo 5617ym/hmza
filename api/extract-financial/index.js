@@ -85,7 +85,10 @@ module.exports = async function (context, req) {
         .replace(/[٬،]/g, ",");
     };
 
-    const norm = (s) => toLatinDigits(normalizeSeparators(String(s || ""))).toLowerCase().trim();
+    const norm = (s) =>
+      toLatinDigits(normalizeSeparators(String(s || "")))
+        .toLowerCase()
+        .trim();
 
     const parseNumberSmart = (raw) => {
       if (raw === null || raw === undefined) return null;
@@ -221,7 +224,9 @@ module.exports = async function (context, req) {
         }))
         .filter((c) => c.latestYear);
 
-      if (!withYears.length) return { latest: null, previous: null, debug: { reason: "no years detected" } };
+      if (!withYears.length) {
+        return { latest: null, previous: null, debug: { reason: "no years detected" } };
+      }
 
       const maxYear = Math.max(...withYears.map((c) => c.latestYear));
 
@@ -354,11 +359,30 @@ module.exports = async function (context, req) {
        ========================= */
 
     const scoreBalanceTable = (table) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const rows = [
+        ...(Array.isArray(table?.sample) ? table.sample : []),
+        ...(Array.isArray(table?.sampleTail) ? table.sampleTail : []),
+      ];
       const joined = norm(rows.map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
 
-      const strong = ["قائمة المركز المالي", "الميزانية", "الميزانية العمومية", "قائمة الوضع المالي", "balance sheet", "statement of financial position"];
-      const support = ["الأصول", "الموجودات", "المطلوبات", "الالتزامات", "حقوق الملكية", "إجمالي الأصول", "إجمالي المطلوبات"];
+      const strong = [
+        "قائمة المركز المالي",
+        "الميزانية",
+        "الميزانية العمومية",
+        "قائمة الوضع المالي",
+        "balance sheet",
+        "statement of financial position",
+      ];
+      const support = [
+        "الأصول",
+        "الموجودات",
+        "المطلوبات",
+        "الالتزامات",
+        "حقوق الملكية",
+        "إجمالي الأصول",
+        "إجمالي المطلوبات",
+        "إجمالي الموجودات",
+      ];
 
       let score = 0;
       for (const k of strong) if (joined.includes(norm(k))) score += 20;
@@ -368,29 +392,33 @@ module.exports = async function (context, req) {
     };
 
     const wantBalance = [
-      { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الأصول", "Total assets"] },
-      { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "Total liabilities"] },
+      { key: "totalAssets", names: ["إجمالي الأصول", "اجمالي الأصول", "إجمالي الموجودات", "اجمالي الموجودات", "Total assets"] },
+      { key: "totalLiabilities", names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "اجمالي الالتزامات", "Total liabilities"] },
       {
-  key: "totalEquity",
-  names: [
-    "إجمالي حقوق الملكية",
-    "اجمالي حقوق الملكية",
-    "إجمالي حقوق المساهمين",
-    "اجمالي حقوق المساهمين",
-    "حقوق الملكية العائدة لمساهمي الشركة الأم",
-    "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
-    "Total equity",
-    "Total shareholders' equity"
-  ]
-},
-      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "Current assets"] },
-      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "Non-current assets"] },
+        key: "totalEquity",
+        names: [
+          "إجمالي حقوق الملكية",
+          "اجمالي حقوق الملكية",
+          "إجمالي حقوق المساهمين",
+          "اجمالي حقوق المساهمين",
+          "حقوق الملكية العائدة لمساهمي الشركة الأم",
+          "إجمالي حقوق الملكية العائدة لمساهمي الشركة الأم",
+          "Total equity",
+          "Total shareholders' equity",
+        ],
+      },
+      { key: "currentAssets", names: ["الأصول المتداولة", "اصول متداولة", "الموجودات المتداولة", "Current assets"] },
+      { key: "nonCurrentAssets", names: ["الأصول غير المتداولة", "اصول غير متداولة", "الموجودات غير المتداولة", "Non-current assets"] },
       { key: "currentLiabilities", names: ["المطلوبات المتداولة", "الالتزامات المتداولة", "Current liabilities"] },
-      { key: "nonCurrentLiabilities", names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Non-current liabilities"] },
+      { key: "nonCurrentLiabilities", names: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "Current liabilities", "Non-current liabilities"] },
     ];
 
     const extractBalanceSingleTable = (table, latestColIdx, prevColIdx) => {
-      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const rows = [
+        ...(Array.isArray(table?.sample) ? table.sample : []),
+        ...(Array.isArray(table?.sampleTail) ? table.sampleTail : []),
+      ];
+
       const out = {};
 
       for (const item of wantBalance) {
@@ -408,8 +436,14 @@ module.exports = async function (context, req) {
     };
 
     const extractBalanceTwoFiles = (tableA, colA, tableB, colB) => {
-      const rowsA = Array.isArray(tableA?.sample) ? tableA.sample : [];
-      const rowsB = Array.isArray(tableB?.sample) ? tableB.sample : [];
+      const rowsA = [
+        ...(Array.isArray(tableA?.sample) ? tableA.sample : []),
+        ...(Array.isArray(tableA?.sampleTail) ? tableA.sampleTail : []),
+      ];
+      const rowsB = [
+        ...(Array.isArray(tableB?.sample) ? tableB.sample : []),
+        ...(Array.isArray(tableB?.sampleTail) ? tableB.sampleTail : []),
+      ];
       const out = {};
 
       for (const item of wantBalance) {
@@ -440,7 +474,10 @@ module.exports = async function (context, req) {
         .trim();
 
     const tableTextQuick = (t) => {
-      const rows = Array.isArray(t?.sample) ? t.sample : [];
+      const rows = [
+        ...(Array.isArray(t?.sample) ? t.sample : []),
+        ...(Array.isArray(t?.sampleTail) ? t.sampleTail : []),
+      ];
       let out = [];
       for (let r = 0; r < rows.length && r < 30; r++) {
         const row = rows[r];
@@ -473,6 +510,7 @@ module.exports = async function (context, req) {
         "حقوق الملكية",
         "equity",
         "إجمالي الأصول",
+        "إجمالي الموجودات",
         "total assets",
         "إجمالي المطلوبات",
         "total liabilities",
@@ -568,12 +606,10 @@ module.exports = async function (context, req) {
 
     /* =========================
        2) pick best balance table (file A)
-       - priority: if your diag ranked shows index=1 best, we hard-prefer it when present
        ========================= */
 
     let bestBalanceA = null;
 
-    // Hard prefer index=1 when it exists (from your diag result)
     const tableIdx1 = tablesPreview.find((t) => Number(t?.index) === 1);
     if (tableIdx1) {
       bestBalanceA = { table: tableIdx1, score: scoreBalanceTable(tableIdx1), forcedIndex: 1 };
@@ -595,7 +631,6 @@ module.exports = async function (context, req) {
       const prevBalColA = !noCompare ? pickedBalA.previous?.col ?? null : null;
 
       if (usingTwoFiles) {
-        // pick balance table from file B
         let bestBalanceB = null;
         const tableBIdx1 = tablesPreviewPrev.find((t) => Number(t?.index) === 1);
         if (tableBIdx1) {
@@ -624,8 +659,12 @@ module.exports = async function (context, req) {
               tableIndex: bestBalanceA.table.index,
               score: bestBalanceA.score,
               pickedColumns: {
-                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
-                previous: pickedBalA.previous ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null } : null,
+                latest: pickedBalA.latest
+                  ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
+                  : null,
+                previous: pickedBalA.previous
+                  ? { col: pickedBalA.previous.col, year: pickedBalA.previous.years?.slice(-1)?.[0] ?? null }
+                  : null,
                 debug: pickedBalA.debug,
               },
             },
@@ -633,13 +672,14 @@ module.exports = async function (context, req) {
               tableIndex: bestBalanceB.table.index,
               score: bestBalanceB.score,
               pickedColumns: {
-                latest: pickedBalB.latest ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null } : null,
+                latest: pickedBalB.latest
+                  ? { col: pickedBalB.latest.col, year: pickedBalB.latest.years?.slice(-1)?.[0] ?? null }
+                  : null,
                 debug: pickedBalB.debug,
               },
             },
           };
         } else {
-          // fallback single file
           balanceExtract =
             latestBalColA != null
               ? extractBalanceSingleTable(bestBalanceA.table, latestBalColA, null)
@@ -649,7 +689,9 @@ module.exports = async function (context, req) {
               tableIndex: bestBalanceA.table.index,
               score: bestBalanceA.score,
               pickedColumns: {
-                latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+                latest: pickedBalA.latest
+                  ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
+                  : null,
                 previous: null,
                 debug: pickedBalA.debug,
               },
@@ -667,7 +709,9 @@ module.exports = async function (context, req) {
             tableIndex: bestBalanceA.table.index,
             score: bestBalanceA.score,
             pickedColumns: {
-              latest: pickedBalA.latest ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null } : null,
+              latest: pickedBalA.latest
+                ? { col: pickedBalA.latest.col, year: pickedBalA.latest.years?.slice(-1)?.[0] ?? null }
+                : null,
               previous: noCompare
                 ? null
                 : pickedBalA.previous
@@ -684,7 +728,6 @@ module.exports = async function (context, req) {
       ok: true,
       financial: {
         pagesMeta,
-
         selectionPolicy: {
           noCompare,
           usingTwoFiles,
@@ -694,14 +737,12 @@ module.exports = async function (context, req) {
             ? "Compare selected + 2 files -> current from file A (latest) vs previous from file B (latest)."
             : "Compare selected -> pick latest + previous from same file (prefer same period type).",
         },
-
         bestIncomeTable: {
           index: bestA.table.index,
           score: bestA.score,
           columnCount: bestA.table.columnCount,
           rowCount: bestA.table.rowCount,
         },
-
         columnsDetected: colsA.map((c) => ({
           col: c.col,
           years: c.years,
@@ -710,7 +751,6 @@ module.exports = async function (context, req) {
           hasAnnual: c.hasAnnual,
           hasNote: c.hasNote,
         })),
-
         pickedColumns: {
           latest: pickedA.latest
             ? { col: pickedA.latest.col, year: pickedA.latest.years?.slice(-1)?.[0] ?? null }
@@ -720,13 +760,9 @@ module.exports = async function (context, req) {
             : null,
           debug: pickedA.debug,
         },
-
         incomeStatementLite: incomeExtract,
-
-        // NEW OUTPUT
         balanceSheetLite: balanceExtract,
         balancePickInfo: balancePicked,
-
         sample: bestA.table.sample?.slice(0, 12) || [],
       },
     });
