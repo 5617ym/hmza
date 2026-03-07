@@ -340,9 +340,11 @@ module.exports = async function (context, req) {
       return names.some(n => s.includes(norm(n)));
     };
 
-    const scoreBalanceSheetRow = (row, targetNames, latestCol, rowIndex, totalRows) => {
+    const scoreBalanceSheetRow = (row, targetNames, latestCol, rowIndex, totalRows, targetKey) => {
+
       const variants = buildRowLabelVariants(row);
-      const allTexts = [
+
+      const texts = [
         variants.labelFull,
         variants.labelMerged,
         variants.labelSample,
@@ -351,40 +353,128 @@ module.exports = async function (context, req) {
 
       let score = 0;
 
-      for (const t of allTexts) {
+      /* =========================
+         Match label
+      ========================= */
+
+      for (const t of texts) {
         if (hasAnyNameMatch(t, targetNames)) {
-          score += 12;
+          score += 15;
           break;
         }
       }
 
       const full = variants.labelFull;
 
-      if (full.includes("إجمالي") || full.includes("المجموع") || full.includes("total")) {
-        score += 6;
-      }
+      const isTotalRow =
+        full.includes("إجمالي") ||
+        full.includes("المجموع") ||
+        full.includes("total");
 
-      if (full.includes("الفرعي") || full.includes("subtotal")) {
-        score -= 2;
-      }
+      const isSubTotalRow =
+        full.includes("الفرعي") ||
+        full.includes("subtotal");
+
+      const isAssets =
+        full.includes("الأصول") ||
+        full.includes("الموجودات");
+
+      const isLiabilities =
+        full.includes("المطلوبات") ||
+        full.includes("الالتزامات");
+
+      const isEquity =
+        full.includes("حقوق الملكية");
+
+      /* =========================
+         Numeric check
+      ========================= */
 
       if (!rowHasNumericValueAt(row, latestCol)) {
-        score -= 8;
+        score -= 12;
+      } else {
+        score += 3;
       }
 
+      /* =========================
+         Row type adjustments
+      ========================= */
+
+      if (isTotalRow) {
+        score += 5;
+      }
+
+      if (isSubTotalRow) {
+        score -= 3;
+      }
+
+      /* =========================
+         Prevent wrong totals
+      ========================= */
+
+      const subKeys = [
+        "currentAssets",
+        "nonCurrentAssets",
+        "currentLiabilities",
+        "nonCurrentLiabilities"
+      ];
+
+      const totalKeys = [
+        "totalAssets",
+        "totalLiabilities",
+        "totalEquity"
+      ];
+
+      // لا تسمح لصف الإجمالي أن يكون بند فرعي
+      if (subKeys.includes(targetKey) && isTotalRow) {
+        score -= 25;
+      }
+
+      // شجع صف الإجمالي للبنود الكلية
+      if (totalKeys.includes(targetKey) && isTotalRow) {
+        score += 8;
+      }
+
+      /* =========================
+         Context hints
+      ========================= */
+
+      if (targetKey.includes("Assets") && isAssets) {
+        score += 3;
+      }
+
+      if (targetKey.includes("Liabilities") && isLiabilities) {
+        score += 3;
+      }
+
+      if (targetKey === "totalEquity" && isEquity) {
+        score += 5;
+      }
+
+      /* =========================
+         Position weight
+      ========================= */
+
       const nearBottomRatio = totalRows > 0 ? (rowIndex / totalRows) : 0;
-      score += nearBottomRatio * 3;
+      score += nearBottomRatio * 4;
 
       return score;
     };
 
-    const findBestBalanceSheetMatch = (rows, targetNames, latestCol) => {
+    const findBestBalanceSheetMatch = (rows, targetNames, latestCol, targetKey) => {
       let bestRow = null;
       let bestScore = -Infinity;
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        const score = scoreBalanceSheetRow(row, targetNames, latestCol, i, rows.length);
+        const score = scoreBalanceSheetRow(
+          row,
+          targetNames,
+          latestCol,
+          i,
+          rows.length,
+          targetKey
+        );
 
         if (score > bestScore) {
           bestRow = row;
@@ -479,15 +569,15 @@ module.exports = async function (context, req) {
 
       const rows = mergeTableRows(balanceTable);
 
-      const totalAssetsRow = findBestBalanceSheetMatch(rows, balanceNames.totalAssets, latestCol);
-      const currentAssetsRow = findBestBalanceSheetMatch(rows, balanceNames.currentAssets, latestCol);
-      const nonCurrentAssetsRow = findBestBalanceSheetMatch(rows, balanceNames.nonCurrentAssets, latestCol);
+      const totalAssetsRow = findBestBalanceSheetMatch(rows, balanceNames.totalAssets, latestCol, "totalAssets");
+      const currentAssetsRow = findBestBalanceSheetMatch(rows, balanceNames.currentAssets, latestCol, "currentAssets");
+      const nonCurrentAssetsRow = findBestBalanceSheetMatch(rows, balanceNames.nonCurrentAssets, latestCol, "nonCurrentAssets");
 
-      const totalLiabilitiesRow = findBestBalanceSheetMatch(rows, balanceNames.totalLiabilities, latestCol);
-      const currentLiabilitiesRow = findBestBalanceSheetMatch(rows, balanceNames.currentLiabilities, latestCol);
-      const nonCurrentLiabilitiesRow = findBestBalanceSheetMatch(rows, balanceNames.nonCurrentLiabilities, latestCol);
+      const totalLiabilitiesRow = findBestBalanceSheetMatch(rows, balanceNames.totalLiabilities, latestCol, "totalLiabilities");
+      const currentLiabilitiesRow = findBestBalanceSheetMatch(rows, balanceNames.currentLiabilities, latestCol, "currentLiabilities");
+      const nonCurrentLiabilitiesRow = findBestBalanceSheetMatch(rows, balanceNames.nonCurrentLiabilities, latestCol, "nonCurrentLiabilities");
 
-      const totalEquityRow = findBestBalanceSheetMatch(rows, balanceNames.totalEquity, latestCol);
+      const totalEquityRow = findBestBalanceSheetMatch(rows, balanceNames.totalEquity, latestCol, "totalEquity");
 
       balanceExtract.totalAssets = makeValueObject(totalAssetsRow, "إجمالي الأصول", latestCol, previousCol);
       balanceExtract.currentAssets = makeValueObject(currentAssetsRow, "الأصول المتداولة", latestCol, previousCol);
