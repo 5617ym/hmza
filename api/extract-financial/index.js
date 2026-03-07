@@ -248,6 +248,40 @@ module.exports = async function (context, req) {
       return { row: null, index: -1 };
     };
 
+    const findExactRowMatch = (rows, names, latestCol) => {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const label = getRowLabelFromRow(row);
+
+        if (!label) continue;
+        if (!rowHasNumericValueAt(row, latestCol)) continue;
+
+        const s = stripNonTextNoise(label);
+        if (names.some(n => s === norm(n))) {
+          return { row, index: i };
+        }
+      }
+
+      return { row: null, index: -1 };
+    };
+
+    const findContainsRowMatch = (rows, names, latestCol) => {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const label = getRowLabelFromRow(row);
+
+        if (!label) continue;
+        if (!rowHasNumericValueAt(row, latestCol)) continue;
+
+        const s = stripNonTextNoise(label);
+        if (names.some(n => s.includes(norm(n)))) {
+          return { row, index: i };
+        }
+      }
+
+      return { row: null, index: -1 };
+    };
+
     const tableTextBlob = (table) => {
       return norm(JSON.stringify([
         ...(table.sample || []),
@@ -467,7 +501,6 @@ module.exports = async function (context, req) {
         previousCol
       );
 
-      // إذا لم يظهر إجمالي الموجودات نصًا، خذه من صف إجمالي حقوق الملكية والمطلوبات
       if (isMissingValueObj(totalAssetsObj)) {
         const totalAssetsFromAccountingMatch = findContainsBalanceSheetMatch(
           rows,
@@ -490,7 +523,6 @@ module.exports = async function (context, req) {
 
       balanceExtract.totalAssets = totalAssetsObj;
 
-      // currentAssets = totalAssets - nonCurrentAssets
       if (
         balanceExtract.totalAssets?.current !== null &&
         balanceExtract.totalAssets?.current !== undefined &&
@@ -511,8 +543,6 @@ module.exports = async function (context, req) {
       } else {
         balanceExtract.currentAssets = null;
       }
-
-      // ===== Liabilities / Equity: keep stable exact-first =====
 
       const totalLiabilitiesMatch = findExactBalanceSheetMatch(
         rows,
@@ -574,7 +604,6 @@ module.exports = async function (context, req) {
         previousCol
       );
 
-      // fallback only for nonCurrentLiabilities if needed
       const totalLiabilitiesCurrent = balanceExtract.totalLiabilities?.current ?? null;
       const totalLiabilitiesPrevious = balanceExtract.totalLiabilities?.previous ?? null;
 
@@ -593,7 +622,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // fallback for totalAssets from liabilities + equity if still missing
       if (isMissingValueObj(balanceExtract.totalAssets)) {
         const totalEquityCurrent = balanceExtract.totalEquity?.current ?? null;
         const totalEquityPrevious = balanceExtract.totalEquity?.previous ?? null;
@@ -609,7 +637,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // fallback for currentAssets if still missing
       if (isMissingValueObj(balanceExtract.currentAssets)) {
         const totalAssetsCurrent = balanceExtract.totalAssets?.current ?? null;
         const totalAssetsPrevious = balanceExtract.totalAssets?.previous ?? null;
@@ -646,32 +673,82 @@ module.exports = async function (context, req) {
 
       const rows = mergeTableRows(cashTable);
 
-      const lastRow = rows[rows.length - 1] || null;
-      const prevRow = rows[rows.length - 2] || null;
+      const endingCashNamesExact = [
+        "النقد وما في حكمه في نهاية السنة",
+        "النقد والنقد المعادل في نهاية السنة",
+        "النقد وما في حكمه في نهاية الفترة",
+        "النقد والنقد المعادل في نهاية الفترة"
+      ];
 
-      const endingCash = latestCol !== null ? parseNumberSmart(lastRow?.[latestCol]) : null;
-      const beginningCash = latestCol !== null ? parseNumberSmart(prevRow?.[latestCol]) : null;
+      const beginningCashNamesExact = [
+        "النقد وما في حكمه في بداية السنة",
+        "النقد والنقد المعادل في بداية السنة",
+        "النقد وما في حكمه في بداية الفترة",
+        "النقد والنقد المعادل في بداية الفترة"
+      ];
 
-      let netChange = null;
-      if (endingCash !== null && beginningCash !== null) {
-        netChange = endingCash - beginningCash;
+      const endingCashNamesContains = [
+        "في نهاية السنة",
+        "في نهاية الفترة"
+      ];
+
+      const beginningCashNamesContains = [
+        "في بداية السنة",
+        "في بداية الفترة"
+      ];
+
+      let endingCashMatch = findExactRowMatch(rows, endingCashNamesExact, latestCol);
+      if (endingCashMatch.index < 0) {
+        endingCashMatch = findContainsRowMatch(rows, endingCashNamesContains, latestCol);
+      }
+
+      let beginningCashMatch = findExactRowMatch(rows, beginningCashNamesExact, latestCol);
+      if (beginningCashMatch.index < 0) {
+        beginningCashMatch = findContainsRowMatch(rows, beginningCashNamesContains, latestCol);
+      }
+
+      const endingCashObj = makeValueObject(
+        endingCashMatch.row,
+        "النقد وما في حكمه في نهاية السنة",
+        latestCol,
+        previousCol
+      );
+
+      const beginningCashObj = makeValueObject(
+        beginningCashMatch.row,
+        "النقد وما في حكمه في بداية السنة",
+        latestCol,
+        previousCol
+      );
+
+      let netChangeCurrent = null;
+      let netChangePrevious = null;
+
+      if (
+        endingCashObj?.current !== null &&
+        endingCashObj?.current !== undefined &&
+        beginningCashObj?.current !== null &&
+        beginningCashObj?.current !== undefined
+      ) {
+        netChangeCurrent = endingCashObj.current - beginningCashObj.current;
+      }
+
+      if (
+        endingCashObj?.previous !== null &&
+        endingCashObj?.previous !== undefined &&
+        beginningCashObj?.previous !== null &&
+        beginningCashObj?.previous !== undefined
+      ) {
+        netChangePrevious = endingCashObj.previous - beginningCashObj.previous;
       }
 
       cashFlowExtract = {
-        endingCash: {
-          label: "النقد نهاية السنة",
-          current: endingCash,
-          previous: previousCol !== null ? parseNumberSmart(lastRow?.[previousCol]) : null
-        },
-        beginningCash: {
-          label: "النقد بداية السنة",
-          current: beginningCash,
-          previous: previousCol !== null ? parseNumberSmart(prevRow?.[previousCol]) : null
-        },
+        endingCash: endingCashObj,
+        beginningCash: beginningCashObj,
         netChangeInCash: {
           label: "صافي التغير في النقد",
-          current: netChange,
-          previous: null
+          current: netChangeCurrent,
+          previous: netChangePrevious
         }
       };
     }
