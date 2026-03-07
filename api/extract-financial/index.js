@@ -51,7 +51,10 @@ module.exports = async function (context, req) {
         .trim();
 
     const stripNonTextNoise = (s) => {
-      return norm(s).replace(/[|ـ\-–—_:;]+/g, " ").replace(/\s+/g, " ").trim();
+      return norm(s)
+        .replace(/[|ـ\-–—_:;]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
     };
 
     const parseNumberSmart = (raw) => {
@@ -123,7 +126,6 @@ module.exports = async function (context, req) {
         for (let r = 0; r < Math.min(6, rows.length); r++) {
 
           const cell = norm(rows?.[r]?.[i]);
-
           const y = findYear(cell);
 
           if (y) c.years.push(y);
@@ -214,7 +216,6 @@ module.exports = async function (context, req) {
       for (const r of rows) {
 
         const label = getRowLabelFromRow(r);
-
         if (!label) continue;
 
         for (const n of names) {
@@ -340,6 +341,26 @@ module.exports = async function (context, req) {
       return names.some(n => s.includes(norm(n)));
     };
 
+    const isExactLike = (label, names) => {
+      const s = stripNonTextNoise(label);
+      return names.some(n => s === norm(n));
+    };
+
+    const isOneOfPhrases = (label, names) => {
+      const s = stripNonTextNoise(label);
+      return names.some(n => s.includes(norm(n)));
+    };
+
+    const exactLabelGroups = {
+      totalAssets: ["إجمالي الموجودات", "إجمالي الأصول", "مجموع الأصول"],
+      currentAssets: ["إجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة"],
+      nonCurrentAssets: ["إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة"],
+      totalLiabilities: ["إجمالي المطلوبات", "إجمالي الالتزامات", "مجموع المطلوبات", "مجموع الالتزامات"],
+      currentLiabilities: ["إجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة"],
+      nonCurrentLiabilities: ["إجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة"],
+      totalEquity: ["إجمالي حقوق الملكية", "إجمالي حقوق المساهمين", "مجموع حقوق الملكية"]
+    };
+
     const scoreBalanceSheetRow = (row, targetNames, latestCol, rowIndex, totalRows, targetKey) => {
 
       const variants = buildRowLabelVariants(row);
@@ -435,8 +456,6 @@ module.exports = async function (context, req) {
         score += 5;
       }
 
-      // فلترة نوع البند بقوة:
-      // لا تسمح بالتقاط صف أصول كبند مطلوبات، ولا العكس
       if (targetKey.includes("Liabilities") && !isLiabilities) {
         score -= 35;
       }
@@ -449,7 +468,6 @@ module.exports = async function (context, req) {
         score -= 35;
       }
 
-      // تمييز current / nonCurrent بدقة
       if (targetKey === "currentAssets") {
         if (isCurrent) score += 8;
         if (isNonCurrent) score -= 12;
@@ -470,33 +488,92 @@ module.exports = async function (context, req) {
         if (isCurrent) score -= 12;
       }
 
-      // منع صف غير المتداولة من أن يكون totalAssets
       if (targetKey === "totalAssets" && isNonCurrent) {
-        score -= 18;
+        score -= 25;
       }
 
-      // منع صف المتداولة أو غير المتداولة من أن يكون totalLiabilities
+      if (targetKey === "totalAssets" && isCurrent) {
+        score -= 25;
+      }
+
       if (targetKey === "totalLiabilities" && (isCurrent || isNonCurrent)) {
-        score -= 16;
+        score -= 22;
       }
 
-      // شجع الإجمالي الحقيقي للبنود الكلية
       if (targetKey === "totalAssets" && isTotalRow && isAssets && !isCurrent && !isNonCurrent) {
-        score += 14;
+        score += 18;
       }
 
       if (targetKey === "totalLiabilities" && isTotalRow && isLiabilities && !isCurrent && !isNonCurrent) {
-        score += 14;
+        score += 18;
       }
 
-      // شدّد أكثر على nonCurrentLiabilities:
-      // يجب أن يكون من المطلوبات + غير المتداولة
       if (targetKey === "nonCurrentLiabilities") {
         if (isLiabilities && isNonCurrent) {
           score += 12;
         }
         if (!isLiabilities) {
           score -= 25;
+        }
+      }
+
+      // exact total priority
+      if (exactLabelGroups[targetKey] && isExactLike(full, exactLabelGroups[targetKey])) {
+        score += 60;
+      }
+
+      // reject near-confusing totals
+      if (targetKey === "totalAssets") {
+        if (isOneOfPhrases(full, ["إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة"])) {
+          score -= 60;
+        }
+        if (isOneOfPhrases(full, ["إجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة"])) {
+          score -= 60;
+        }
+      }
+
+      if (targetKey === "totalLiabilities") {
+        if (isOneOfPhrases(full, ["إجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة"])) {
+          score -= 60;
+        }
+        if (isOneOfPhrases(full, ["إجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة"])) {
+          score -= 60;
+        }
+      }
+
+      if (targetKey === "currentLiabilities") {
+        if (isExactLike(full, ["إجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة"])) {
+          score += 40;
+        }
+        if (isOneOfPhrases(full, ["إجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة"])) {
+          score -= 45;
+        }
+      }
+
+      if (targetKey === "nonCurrentLiabilities") {
+        if (isExactLike(full, ["إجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة"])) {
+          score += 40;
+        }
+        if (isOneOfPhrases(full, ["إجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة"])) {
+          score -= 45;
+        }
+      }
+
+      if (targetKey === "currentAssets") {
+        if (isExactLike(full, ["إجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة"])) {
+          score += 40;
+        }
+        if (isOneOfPhrases(full, ["إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة"])) {
+          score -= 45;
+        }
+      }
+
+      if (targetKey === "nonCurrentAssets") {
+        if (isExactLike(full, ["إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة"])) {
+          score += 40;
+        }
+        if (isOneOfPhrases(full, ["إجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة"])) {
+          score -= 45;
         }
       }
 
@@ -601,13 +678,13 @@ module.exports = async function (context, req) {
     let balanceExtract = {};
 
     const balanceNames = {
-      totalAssets: ["إجمالي الموجودات", "إجمالي الأصول", "مجموع الأصول", "إجمالي الموجودات والأصول"],
-      currentAssets: ["الموجودات المتداولة", "الأصول المتداولة", "إجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة"],
-      nonCurrentAssets: ["الموجودات غير المتداولة", "الأصول غير المتداولة", "إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة"],
-      totalLiabilities: ["إجمالي المطلوبات", "مجموع المطلوبات", "إجمالي الالتزامات", "مجموع الالتزامات", "إجمالي المطلوبات المتداولة وغير المتداولة"],
-      currentLiabilities: ["المطلوبات المتداولة", "الالتزامات المتداولة", "إجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة"],
-      nonCurrentLiabilities: ["المطلوبات غير المتداولة", "الالتزامات غير المتداولة", "إجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة"],
-      totalEquity: ["إجمالي حقوق الملكية", "مجموع حقوق الملكية", "إجمالي حقوق المساهمين", "حقوق الملكية"]
+      totalAssets: ["إجمالي الموجودات", "إجمالي الأصول", "مجموع الأصول"],
+      currentAssets: ["إجمالي الموجودات المتداولة", "إجمالي الأصول المتداولة", "الموجودات المتداولة", "الأصول المتداولة"],
+      nonCurrentAssets: ["إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة", "الموجودات غير المتداولة", "الأصول غير المتداولة"],
+      totalLiabilities: ["إجمالي المطلوبات", "إجمالي الالتزامات", "مجموع المطلوبات", "مجموع الالتزامات"],
+      currentLiabilities: ["إجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة", "المطلوبات المتداولة", "الالتزامات المتداولة"],
+      nonCurrentLiabilities: ["إجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة", "المطلوبات غير المتداولة", "الالتزامات غير المتداولة"],
+      totalEquity: ["إجمالي حقوق الملكية", "إجمالي حقوق المساهمين", "مجموع حقوق الملكية", "حقوق الملكية"]
     };
 
     const balanceTable = pickBestBalanceTable(tablesPreview);
