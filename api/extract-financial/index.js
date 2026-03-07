@@ -467,8 +467,6 @@ module.exports = async function (context, req) {
       const rows = mergeTableRows(balanceTable);
       const usedRowIndexes = new Set();
 
-      // ===== Assets: exact-first staged =====
-
       const nonCurrentAssetsMatch = findExactBalanceSheetMatch(
         rows,
         ["إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة"],
@@ -707,49 +705,95 @@ module.exports = async function (context, req) {
         beginningCashMatch = findContainsRowMatch(rows, beginningCashNamesContains, latestCol);
       }
 
-      const endingCashObj = makeValueObject(
+      let endingCashObj = makeValueObject(
         endingCashMatch.row,
         "النقد وما في حكمه في نهاية السنة",
         latestCol,
         previousCol
       );
 
-      const beginningCashObj = makeValueObject(
+      let beginningCashObj = makeValueObject(
         beginningCashMatch.row,
         "النقد وما في حكمه في بداية السنة",
         latestCol,
         previousCol
       );
 
-      let netChangeCurrent = null;
-      let netChangePrevious = null;
+      let netChangeObj = {
+        label: "صافي التغير في النقد",
+        current: null,
+        previous: null
+      };
 
-      if (
-        endingCashObj?.current !== null &&
-        endingCashObj?.current !== undefined &&
-        beginningCashObj?.current !== null &&
-        beginningCashObj?.current !== undefined
-      ) {
-        netChangeCurrent = endingCashObj.current - beginningCashObj.current;
+      if (isMissingValueObj(endingCashObj) || isMissingValueObj(beginningCashObj)) {
+        const numericRows = rows.filter(r =>
+          rowHasNumericValueAt(r, latestCol) || rowHasNumericValueAt(r, previousCol)
+        );
+
+        if (numericRows.length >= 3) {
+          const last3 = numericRows.slice(-3);
+
+          const netRow = last3[0] || null;
+          const beginRow = last3[1] || null;
+          const endRow = last3[2] || null;
+
+          const netCurrent = latestCol !== null ? parseNumberSmart(getCell(netRow, latestCol)) : null;
+          const netPrevious = previousCol !== null ? parseNumberSmart(getCell(netRow, previousCol)) : null;
+
+          const beginCurrent = latestCol !== null ? parseNumberSmart(getCell(beginRow, latestCol)) : null;
+          const beginPrevious = previousCol !== null ? parseNumberSmart(getCell(beginRow, previousCol)) : null;
+
+          const endCurrent = latestCol !== null ? parseNumberSmart(getCell(endRow, latestCol)) : null;
+          const endPrevious = previousCol !== null ? parseNumberSmart(getCell(endRow, previousCol)) : null;
+
+          const arithmeticLooksValid =
+            endCurrent !== null &&
+            beginCurrent !== null &&
+            netCurrent !== null &&
+            (endCurrent - beginCurrent === netCurrent);
+
+          if (arithmeticLooksValid) {
+            beginningCashObj = {
+              label: "النقد وما في حكمه في بداية السنة (fallback)",
+              current: beginCurrent,
+              previous: beginPrevious
+            };
+
+            endingCashObj = {
+              label: "النقد وما في حكمه في نهاية السنة (fallback)",
+              current: endCurrent,
+              previous: endPrevious
+            };
+
+            netChangeObj = {
+              label: "صافي التغير في النقد (fallback)",
+              current: netCurrent,
+              previous: netPrevious
+            };
+          }
+        }
       }
 
       if (
-        endingCashObj?.previous !== null &&
-        endingCashObj?.previous !== undefined &&
-        beginningCashObj?.previous !== null &&
-        beginningCashObj?.previous !== undefined
+        netChangeObj.current === null &&
+        endingCashObj?.current !== null &&
+        beginningCashObj?.current !== null
       ) {
-        netChangePrevious = endingCashObj.previous - beginningCashObj.previous;
+        netChangeObj.current = endingCashObj.current - beginningCashObj.current;
+      }
+
+      if (
+        netChangeObj.previous === null &&
+        endingCashObj?.previous !== null &&
+        beginningCashObj?.previous !== null
+      ) {
+        netChangeObj.previous = endingCashObj.previous - beginningCashObj.previous;
       }
 
       cashFlowExtract = {
         endingCash: endingCashObj,
         beginningCash: beginningCashObj,
-        netChangeInCash: {
-          label: "صافي التغير في النقد",
-          current: netChangeCurrent,
-          previous: netChangePrevious
-        }
+        netChangeInCash: netChangeObj
       };
     }
 
