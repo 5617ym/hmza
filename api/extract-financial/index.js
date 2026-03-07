@@ -58,11 +58,9 @@ module.exports = async function (context, req) {
     };
 
     const parseNumberSmart = (raw) => {
-
       if (raw === null || raw === undefined) return null;
 
       let s = toLatinDigits(normalizeSeparators(String(raw))).trim();
-
       if (!s) return null;
 
       let neg = false;
@@ -73,7 +71,6 @@ module.exports = async function (context, req) {
       }
 
       s = s.replace(/[^\d.,\-+]/g, "");
-
       if (!s) return null;
 
       const hasDot = s.includes(".");
@@ -109,14 +106,11 @@ module.exports = async function (context, req) {
     };
 
     const detectColumns = (table) => {
-
       const rows = table.sample || [];
       const colCount = Number(table.columnCount) || 0;
-
       const cols = [];
 
       for (let i = 0; i < colCount; i++) {
-
         const c = {
           col: i,
           years: [],
@@ -124,7 +118,6 @@ module.exports = async function (context, req) {
         };
 
         for (let r = 0; r < Math.min(6, rows.length); r++) {
-
           const cell = norm(rows?.[r]?.[i]);
           const y = findYear(cell);
 
@@ -143,7 +136,6 @@ module.exports = async function (context, req) {
     };
 
     const pickLatestColumns = (cols) => {
-
       const usable = cols.filter(c => !c.hasNote);
       const years = [];
 
@@ -195,7 +187,6 @@ module.exports = async function (context, req) {
     };
 
     const findRowByLabel = (rows, names) => {
-
       for (const r of rows) {
         const label = getRowLabelFromRow(r);
         if (!label) continue;
@@ -206,7 +197,6 @@ module.exports = async function (context, req) {
           }
         }
       }
-
       return null;
     };
 
@@ -313,6 +303,9 @@ module.exports = async function (context, req) {
     const isMissingValueObj = (obj) => {
       return !obj || (obj.current === null && obj.previous === null);
     };
+
+    const hasCurrent = (obj) => !!obj && obj.current !== null && obj.current !== undefined;
+    const hasPrevious = (obj) => !!obj && obj.previous !== null && obj.previous !== undefined;
 
     /* =========================
        Table scoring
@@ -521,20 +514,12 @@ module.exports = async function (context, req) {
 
       balanceExtract.totalAssets = totalAssetsObj;
 
-      if (
-        balanceExtract.totalAssets?.current !== null &&
-        balanceExtract.totalAssets?.current !== undefined &&
-        balanceExtract.nonCurrentAssets?.current !== null &&
-        balanceExtract.nonCurrentAssets?.current !== undefined
-      ) {
+      if (hasCurrent(balanceExtract.totalAssets) && hasCurrent(balanceExtract.nonCurrentAssets)) {
         balanceExtract.currentAssets = {
           label: "الأصول المتداولة (مشتق)",
           current: balanceExtract.totalAssets.current - balanceExtract.nonCurrentAssets.current,
           previous:
-            balanceExtract.totalAssets?.previous !== null &&
-            balanceExtract.totalAssets?.previous !== undefined &&
-            balanceExtract.nonCurrentAssets?.previous !== null &&
-            balanceExtract.nonCurrentAssets?.previous !== undefined
+            hasPrevious(balanceExtract.totalAssets) && hasPrevious(balanceExtract.nonCurrentAssets)
               ? balanceExtract.totalAssets.previous - balanceExtract.nonCurrentAssets.previous
               : null
         };
@@ -774,19 +759,11 @@ module.exports = async function (context, req) {
         }
       }
 
-      if (
-        netChangeObj.current === null &&
-        endingCashObj?.current !== null &&
-        beginningCashObj?.current !== null
-      ) {
+      if (netChangeObj.current === null && hasCurrent(endingCashObj) && hasCurrent(beginningCashObj)) {
         netChangeObj.current = endingCashObj.current - beginningCashObj.current;
       }
 
-      if (
-        netChangeObj.previous === null &&
-        endingCashObj?.previous !== null &&
-        beginningCashObj?.previous !== null
-      ) {
+      if (netChangeObj.previous === null && hasPrevious(endingCashObj) && hasPrevious(beginningCashObj)) {
         netChangeObj.previous = endingCashObj.previous - beginningCashObj.previous;
       }
 
@@ -808,12 +785,10 @@ module.exports = async function (context, req) {
     });
 
   } catch (e) {
-
     return send(500, {
       ok: false,
       error: e.message || String(e)
     });
-
   }
 
 };
