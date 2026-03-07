@@ -517,12 +517,10 @@ module.exports = async function (context, req) {
         }
       }
 
-      // exact total priority
       if (exactLabelGroups[targetKey] && isExactLike(full, exactLabelGroups[targetKey])) {
         score += 60;
       }
 
-      // reject near-confusing totals
       if (targetKey === "totalAssets") {
         if (isOneOfPhrases(full, ["إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة"])) {
           score -= 60;
@@ -615,6 +613,35 @@ module.exports = async function (context, req) {
       return { row: null, index: -1 };
     };
 
+    const findExactBalanceSheetMatch = (rows, names, latestCol, usedRowIndexes = new Set()) => {
+      for (let i = 0; i < rows.length; i++) {
+        if (usedRowIndexes.has(i)) continue;
+
+        const row = rows[i];
+        const label = getRowLabelFromRow(row);
+
+        if (!label) continue;
+        if (!rowHasNumericValueAt(row, latestCol)) continue;
+
+        if (isExactLike(label, names)) {
+          return { row, index: i };
+        }
+      }
+
+      return { row: null, index: -1 };
+    };
+
+    const resolveBalanceMatch = (rows, latestCol, targetKey, targetNames, usedRowIndexes = new Set()) => {
+      const exactNames = exactLabelGroups[targetKey] || [];
+
+      if (exactNames.length) {
+        const exact = findExactBalanceSheetMatch(rows, exactNames, latestCol, usedRowIndexes);
+        if (exact.row) return exact;
+      }
+
+      return findBestBalanceSheetMatch(rows, targetNames, latestCol, targetKey, usedRowIndexes);
+    };
+
     const makeValueObject = (row, labelOverride, latestCol, previousCol) => {
       if (!row) return null;
 
@@ -700,30 +727,72 @@ module.exports = async function (context, req) {
       const rows = mergeTableRows(balanceTable);
       const usedRowIndexes = new Set();
 
-      const totalAssetsMatch = findBestBalanceSheetMatch(rows, balanceNames.totalAssets, latestCol, "totalAssets", usedRowIndexes);
-      if (totalAssetsMatch.index >= 0) usedRowIndexes.add(totalAssetsMatch.index);
-
-      const currentAssetsMatch = findBestBalanceSheetMatch(rows, balanceNames.currentAssets, latestCol, "currentAssets", usedRowIndexes);
-      if (currentAssetsMatch.index >= 0) usedRowIndexes.add(currentAssetsMatch.index);
-
-      const nonCurrentAssetsMatch = findBestBalanceSheetMatch(rows, balanceNames.nonCurrentAssets, latestCol, "nonCurrentAssets", usedRowIndexes);
+      const nonCurrentAssetsMatch = resolveBalanceMatch(
+        rows,
+        latestCol,
+        "nonCurrentAssets",
+        balanceNames.nonCurrentAssets,
+        usedRowIndexes
+      );
       if (nonCurrentAssetsMatch.index >= 0) usedRowIndexes.add(nonCurrentAssetsMatch.index);
 
-      const totalLiabilitiesMatch = findBestBalanceSheetMatch(rows, balanceNames.totalLiabilities, latestCol, "totalLiabilities", usedRowIndexes);
+      const currentAssetsMatch = resolveBalanceMatch(
+        rows,
+        latestCol,
+        "currentAssets",
+        balanceNames.currentAssets,
+        usedRowIndexes
+      );
+      if (currentAssetsMatch.index >= 0) usedRowIndexes.add(currentAssetsMatch.index);
+
+      const totalAssetsMatch = resolveBalanceMatch(
+        rows,
+        latestCol,
+        "totalAssets",
+        balanceNames.totalAssets,
+        usedRowIndexes
+      );
+      if (totalAssetsMatch.index >= 0) usedRowIndexes.add(totalAssetsMatch.index);
+
+      const totalLiabilitiesMatch = resolveBalanceMatch(
+        rows,
+        latestCol,
+        "totalLiabilities",
+        balanceNames.totalLiabilities,
+        usedRowIndexes
+      );
       if (totalLiabilitiesMatch.index >= 0) usedRowIndexes.add(totalLiabilitiesMatch.index);
 
-      const currentLiabilitiesMatch = findBestBalanceSheetMatch(rows, balanceNames.currentLiabilities, latestCol, "currentLiabilities", usedRowIndexes);
+      const currentLiabilitiesMatch = resolveBalanceMatch(
+        rows,
+        latestCol,
+        "currentLiabilities",
+        balanceNames.currentLiabilities,
+        usedRowIndexes
+      );
       if (currentLiabilitiesMatch.index >= 0) usedRowIndexes.add(currentLiabilitiesMatch.index);
 
-      const nonCurrentLiabilitiesMatch = findBestBalanceSheetMatch(rows, balanceNames.nonCurrentLiabilities, latestCol, "nonCurrentLiabilities", usedRowIndexes);
+      const nonCurrentLiabilitiesMatch = resolveBalanceMatch(
+        rows,
+        latestCol,
+        "nonCurrentLiabilities",
+        balanceNames.nonCurrentLiabilities,
+        usedRowIndexes
+      );
       if (nonCurrentLiabilitiesMatch.index >= 0) usedRowIndexes.add(nonCurrentLiabilitiesMatch.index);
 
-      const totalEquityMatch = findBestBalanceSheetMatch(rows, balanceNames.totalEquity, latestCol, "totalEquity", usedRowIndexes);
+      const totalEquityMatch = resolveBalanceMatch(
+        rows,
+        latestCol,
+        "totalEquity",
+        balanceNames.totalEquity,
+        usedRowIndexes
+      );
       if (totalEquityMatch.index >= 0) usedRowIndexes.add(totalEquityMatch.index);
 
-      balanceExtract.totalAssets = makeValueObject(totalAssetsMatch.row, "إجمالي الأصول", latestCol, previousCol);
-      balanceExtract.currentAssets = makeValueObject(currentAssetsMatch.row, "الأصول المتداولة", latestCol, previousCol);
       balanceExtract.nonCurrentAssets = makeValueObject(nonCurrentAssetsMatch.row, "الأصول غير المتداولة", latestCol, previousCol);
+      balanceExtract.currentAssets = makeValueObject(currentAssetsMatch.row, "الأصول المتداولة", latestCol, previousCol);
+      balanceExtract.totalAssets = makeValueObject(totalAssetsMatch.row, "إجمالي الأصول", latestCol, previousCol);
 
       balanceExtract.totalLiabilities = makeValueObject(totalLiabilitiesMatch.row, "إجمالي المطلوبات", latestCol, previousCol);
       balanceExtract.currentLiabilities = makeValueObject(currentLiabilitiesMatch.row, "المطلوبات المتداولة", latestCol, previousCol);
@@ -733,6 +802,9 @@ module.exports = async function (context, req) {
 
       const totalAssetsCurrent = balanceExtract.totalAssets?.current ?? null;
       const totalAssetsPrevious = balanceExtract.totalAssets?.previous ?? null;
+
+      const currentAssetsCurrent = balanceExtract.currentAssets?.current ?? null;
+      const currentAssetsPrevious = balanceExtract.currentAssets?.previous ?? null;
 
       const nonCurrentAssetsCurrent = balanceExtract.nonCurrentAssets?.current ?? null;
       const nonCurrentAssetsPrevious = balanceExtract.nonCurrentAssets?.previous ?? null;
@@ -746,6 +818,7 @@ module.exports = async function (context, req) {
       const totalEquityCurrent = balanceExtract.totalEquity?.current ?? null;
       const totalEquityPrevious = balanceExtract.totalEquity?.previous ?? null;
 
+      // totalAssets fallback
       if (isMissingValueObj(balanceExtract.totalAssets)) {
         if (totalLiabilitiesCurrent !== null && totalEquityCurrent !== null) {
           balanceExtract.totalAssets = {
@@ -758,6 +831,7 @@ module.exports = async function (context, req) {
         }
       }
 
+      // currentAssets fallback
       if (isMissingValueObj(balanceExtract.currentAssets)) {
         const derivedTotalAssetsCurrent = balanceExtract.totalAssets?.current ?? null;
         const derivedTotalAssetsPrevious = balanceExtract.totalAssets?.previous ?? null;
@@ -773,6 +847,7 @@ module.exports = async function (context, req) {
         }
       }
 
+      // nonCurrentLiabilities fallback
       if (isMissingValueObj(balanceExtract.nonCurrentLiabilities)) {
         if (totalLiabilitiesCurrent !== null && currentLiabilitiesCurrent !== null) {
           balanceExtract.nonCurrentLiabilities = {
@@ -781,6 +856,36 @@ module.exports = async function (context, req) {
             previous: (totalLiabilitiesPrevious !== null && currentLiabilitiesPrevious !== null)
               ? totalLiabilitiesPrevious - currentLiabilitiesPrevious
               : null
+          };
+        }
+      }
+
+      // consistency repair للأصول فقط إذا direct extraction التقط صفًا خاطئًا
+      const finalTotalAssetsCurrent = balanceExtract.totalAssets?.current ?? null;
+      const finalTotalAssetsPrevious = balanceExtract.totalAssets?.previous ?? null;
+      const finalCurrentAssetsCurrent = balanceExtract.currentAssets?.current ?? null;
+      const finalCurrentAssetsPrevious = balanceExtract.currentAssets?.previous ?? null;
+      const finalNonCurrentAssetsCurrent = balanceExtract.nonCurrentAssets?.current ?? null;
+      const finalNonCurrentAssetsPrevious = balanceExtract.nonCurrentAssets?.previous ?? null;
+
+      if (
+        finalCurrentAssetsCurrent !== null &&
+        finalNonCurrentAssetsCurrent !== null &&
+        finalTotalAssetsCurrent !== null
+      ) {
+        const sumCurrent = finalCurrentAssetsCurrent + finalNonCurrentAssetsCurrent;
+        const diff = Math.abs(sumCurrent - finalTotalAssetsCurrent);
+
+        if (diff > 10) {
+          balanceExtract.totalAssets = {
+            label: "إجمالي الأصول (مصحح)",
+            current: sumCurrent,
+            previous: (
+              finalCurrentAssetsPrevious !== null &&
+              finalNonCurrentAssetsPrevious !== null
+            )
+              ? finalCurrentAssetsPrevious + finalNonCurrentAssetsPrevious
+              : finalTotalAssetsPrevious
           };
         }
       }
