@@ -608,8 +608,6 @@ module.exports = async function (context, req) {
       return findBestBalanceSheetMatch(rows, targetNames, latestCol, targetKey, usedRowIndexes);
     };
 
-    // ===== Assets exact-first staged extraction =====
-
     const extractAssetsStage = (rows, latestCol, previousCol, usedRowIndexes = new Set()) => {
       const result = {
         nonCurrentAssets: null,
@@ -665,7 +663,6 @@ module.exports = async function (context, req) {
         );
       }
 
-      // fallback 1: derive current from total - nonCurrent
       if (isMissingValueObj(result.currentAssets)) {
         const totalCurrent = result.totalAssets?.current ?? null;
         const totalPrevious = result.totalAssets?.previous ?? null;
@@ -683,7 +680,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // fallback 2: derive total from current + nonCurrent
       if (isMissingValueObj(result.totalAssets)) {
         const currentCurrent = result.currentAssets?.current ?? null;
         const currentPrevious = result.currentAssets?.previous ?? null;
@@ -701,8 +697,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // final consistency repair:
-      // if الثلاثة موجودة لكن total لا يساوي current + nonCurrent -> صحح total
       const totalCurrent = result.totalAssets?.current ?? null;
       const totalPrevious = result.totalAssets?.previous ?? null;
       const currentCurrent = result.currentAssets?.current ?? null;
@@ -732,7 +726,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // إذا currentAssets طلع سالبًا بسبب total خاطئ، أصلحه من total المصحح
       const finalTotalCurrent = result.totalAssets?.current ?? null;
       const finalTotalPrevious = result.totalAssets?.previous ?? null;
       const finalCurrentCurrent = result.currentAssets?.current ?? null;
@@ -786,7 +779,6 @@ module.exports = async function (context, req) {
       const rows = mergeTableRows(balanceTable);
       const usedRowIndexes = new Set();
 
-      // assets first, exact-first, staged
       const assetsStage = extractAssetsStage(rows, latestCol, previousCol, usedRowIndexes);
 
       balanceExtract.nonCurrentAssets = assetsStage.nonCurrentAssets;
@@ -901,8 +893,17 @@ module.exports = async function (context, req) {
       };
     }
 
+    const debugBalance = balanceTable
+      ? {
+          index: balanceTable.index,
+          sample: balanceTable.sample || [],
+          sampleTail: balanceTable.sampleTail || []
+        }
+      : null;
+
     return send(200, {
       ok: true,
+      debugBalance,
       financial: {
         pagesMeta,
         incomeStatementLite: incomeExtract,
