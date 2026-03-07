@@ -710,8 +710,8 @@ module.exports = async function (context, req) {
         previous: null
       };
 
-      // fallback أذكى:
-      // ابحث من أسفل الجدول عن أي 3 صفوف رقمية متتالية تحقق:
+      // fallback 1:
+      // ابحث من أسفل الجدول عن ثلاثية متتالية تحقق:
       // ending - beginning = net change
       if (isMissingValueObj(endingCashObj) || isMissingValueObj(beginningCashObj)) {
         const numericRows = rows.filter(r =>
@@ -746,24 +746,79 @@ module.exports = async function (context, req) {
 
           if (currentValid || previousValid) {
             beginningCashObj = {
-              label: "النقد وما في حكمه في بداية السنة (fallback)",
+              label: "النقد وما في حكمه في بداية السنة (fallback arithmetic)",
               current: beginCurrent,
               previous: beginPrevious
             };
 
             endingCashObj = {
-              label: "النقد وما في حكمه في نهاية السنة (fallback)",
+              label: "النقد وما في حكمه في نهاية السنة (fallback arithmetic)",
               current: endCurrent,
               previous: endPrevious
             };
 
             netChangeObj = {
-              label: "صافي التغير في النقد (fallback)",
+              label: "صافي التغير في النقد (fallback arithmetic)",
               current: netCurrent,
               previous: netPrevious
             };
 
             break;
+          }
+        }
+
+        // fallback 2:
+        // نمط أقوى لملفك الحالي:
+        // row3.previous == row2.current
+        // row3.current - row2.current == row1.current
+        // row3.previous - row2.previous == row1.previous
+        if (isMissingValueObj(endingCashObj) || isMissingValueObj(beginningCashObj)) {
+          for (let i = rows.length - 3; i >= 0; i--) {
+            const row1 = rows[i];
+            const row2 = rows[i + 1];
+            const row3 = rows[i + 2];
+
+            const r1Current = latestCol !== null ? parseNumberSmart(getCell(row1, latestCol)) : null;
+            const r1Previous = previousCol !== null ? parseNumberSmart(getCell(row1, previousCol)) : null;
+
+            const r2Current = latestCol !== null ? parseNumberSmart(getCell(row2, latestCol)) : null;
+            const r2Previous = previousCol !== null ? parseNumberSmart(getCell(row2, previousCol)) : null;
+
+            const r3Current = latestCol !== null ? parseNumberSmart(getCell(row3, latestCol)) : null;
+            const r3Previous = previousCol !== null ? parseNumberSmart(getCell(row3, previousCol)) : null;
+
+            const chainValid =
+              r1Current !== null &&
+              r1Previous !== null &&
+              r2Current !== null &&
+              r2Previous !== null &&
+              r3Current !== null &&
+              r3Previous !== null &&
+              r3Previous === r2Current &&
+              (r3Current - r2Current === r1Current) &&
+              (r3Previous - r2Previous === r1Previous);
+
+            if (chainValid) {
+              netChangeObj = {
+                label: "صافي التغير في النقد (fallback chain)",
+                current: r1Current,
+                previous: r1Previous
+              };
+
+              beginningCashObj = {
+                label: "النقد وما في حكمه في بداية السنة (fallback chain)",
+                current: r2Current,
+                previous: r2Previous
+              };
+
+              endingCashObj = {
+                label: "النقد وما في حكمه في نهاية السنة (fallback chain)",
+                current: r3Current,
+                previous: r3Previous
+              };
+
+              break;
+            }
           }
         }
       }
