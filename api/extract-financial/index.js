@@ -435,6 +435,20 @@ module.exports = async function (context, req) {
         score += 5;
       }
 
+      // فلترة نوع البند بقوة:
+      // لا تسمح بالتقاط صف أصول كبند مطلوبات، ولا العكس
+      if (targetKey.includes("Liabilities") && !isLiabilities) {
+        score -= 35;
+      }
+
+      if (targetKey.includes("Assets") && !isAssets) {
+        score -= 35;
+      }
+
+      if (targetKey === "totalEquity" && !isEquity) {
+        score -= 35;
+      }
+
       // تمييز current / nonCurrent بدقة
       if (targetKey === "currentAssets") {
         if (isCurrent) score += 8;
@@ -473,6 +487,17 @@ module.exports = async function (context, req) {
 
       if (targetKey === "totalLiabilities" && isTotalRow && isLiabilities && !isCurrent && !isNonCurrent) {
         score += 14;
+      }
+
+      // شدّد أكثر على nonCurrentLiabilities:
+      // يجب أن يكون من المطلوبات + غير المتداولة
+      if (targetKey === "nonCurrentLiabilities") {
+        if (isLiabilities && isNonCurrent) {
+          score += 12;
+        }
+        if (!isLiabilities) {
+          score -= 25;
+        }
       }
 
       const nearBottomRatio = totalRows > 0 ? (rowIndex / totalRows) : 0;
