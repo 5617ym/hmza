@@ -710,17 +710,18 @@ module.exports = async function (context, req) {
         previous: null
       };
 
+      // fallback أذكى:
+      // ابحث من أسفل الجدول عن أي 3 صفوف رقمية متتالية تحقق:
+      // ending - beginning = net change
       if (isMissingValueObj(endingCashObj) || isMissingValueObj(beginningCashObj)) {
         const numericRows = rows.filter(r =>
           rowHasNumericValueAt(r, latestCol) || rowHasNumericValueAt(r, previousCol)
         );
 
-        if (numericRows.length >= 3) {
-          const last3 = numericRows.slice(-3);
-
-          const netRow = last3[0] || null;
-          const beginRow = last3[1] || null;
-          const endRow = last3[2] || null;
+        for (let i = numericRows.length - 3; i >= 0; i--) {
+          const netRow = numericRows[i];
+          const beginRow = numericRows[i + 1];
+          const endRow = numericRows[i + 2];
 
           const netCurrent = latestCol !== null ? parseNumberSmart(getCell(netRow, latestCol)) : null;
           const netPrevious = previousCol !== null ? parseNumberSmart(getCell(netRow, previousCol)) : null;
@@ -731,13 +732,19 @@ module.exports = async function (context, req) {
           const endCurrent = latestCol !== null ? parseNumberSmart(getCell(endRow, latestCol)) : null;
           const endPrevious = previousCol !== null ? parseNumberSmart(getCell(endRow, previousCol)) : null;
 
-          const arithmeticLooksValid =
+          const currentValid =
             endCurrent !== null &&
             beginCurrent !== null &&
             netCurrent !== null &&
             (endCurrent - beginCurrent === netCurrent);
 
-          if (arithmeticLooksValid) {
+          const previousValid =
+            endPrevious !== null &&
+            beginPrevious !== null &&
+            netPrevious !== null &&
+            (endPrevious - beginPrevious === netPrevious);
+
+          if (currentValid || previousValid) {
             beginningCashObj = {
               label: "النقد وما في حكمه في بداية السنة (fallback)",
               current: beginCurrent,
@@ -755,6 +762,8 @@ module.exports = async function (context, req) {
               current: netCurrent,
               previous: netPrevious
             };
+
+            break;
           }
         }
       }
