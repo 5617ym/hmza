@@ -1,11 +1,11 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 3B (Extract Financial - Income Statement Stable + Balance Sheet Improving)
+CURRENT_PHASE: 3B (Extract Financial - Income Statement Stable + Balance Sheet Stable)
 
 CURRENT_TASK:
-تثبيت مسار استخراج قائمة الدخل والمحافظة على استقراره،
-ثم تحسين استخراج قائمة المركز المالي بدون كسر البناء الحالي،
-مع بدء تجهيز خطوة دمج sample + sampleTail لرفع دقة الالتقاط.
+المحافظة على استقرار استخراج قائمة الدخل وقائمة المركز المالي،
+ثم الانتقال إلى بناء cashFlowLite بشكل متدرج وصحي
+بدون كسر ما استقر في extract-financial.
 
 المسار الحالي للنظام:
 
@@ -38,51 +38,54 @@ LAST_RESULT:
   previous = 2023
 - parseNumberSmart يعمل بشكل صحيح مع الأرقام العربية والفواصل المختلطة
 - extract-financial يستخرج incomeStatementLite بنجاح
-- extract-financial يستخرج balanceSheetLite جزئياً بنجاح
-- تم الوصول لاستخراج منطقي جيد في الميزانية:
-  - totalLiabilities
-  - totalEquity
-  - nonCurrentAssets
-  - currentLiabilities
-- تم تفعيل اشتقاقات مساعدة لتعويض القيم الناقصة:
+- extract-financial يستخرج balanceSheetLite بنجاح
+- تم تثبيت منطق الميزانية بنتائج محاسبية متماسكة:
+  - nonCurrentAssets = 551,480,387
+  - totalAssets = 1,770,075,646
+  - currentAssets = 1,218,595,259
+  - totalLiabilities = 520,635,218
+  - currentLiabilities = 458,049,349
+  - nonCurrentLiabilities = 62,585,869
+  - totalEquity = 1,249,440,428
+- تم استخدام اشتقاقات مساعدة صحيحة عند الحاجة:
   - totalAssets = totalLiabilities + totalEquity
   - currentAssets = totalAssets - nonCurrentAssets
   - nonCurrentLiabilities = totalLiabilities - currentLiabilities
+- تم تأكيد أن المعادلة المحاسبية متماسكة
+- تم الحفاظ على استقرار incomeStatementLite بدون كسر
 
 ACTIVE_PROBLEM:
 
-استخراج قائمة المركز المالي لم يصل بعد لمرحلة "مستقر تماماً" لأن الالتقاط ما زال يعتمد على sample/sampleTail بشكل جزئي،
-وبعض البنود قد تُلتقط بصياغة غير مثالية أو من صف قريب بدلاً من صف الإجمالي النهائي في بعض التقارير.
+قائمة المركز المالي أصبحت مستقرة عملياً في هذا الملف الاختباري،
+لكن cashFlowLite ما زال يرجع null
+ويحتاج بناء منطق التقاط مستقل ومتدرج.
 
 المشكلة الحالية ليست في Azure ولا في analyze،
 بل في منطق extract-financial نفسه، تحديداً في:
 
-1) دقة اختيار صفوف الميزانية
-2) الاعتماد على label matching فقط
-3) الحاجة لدمج sample + sampleTail بشكل أقوى ومنهجي
-4) الحاجة لتحسين اكتشاف الصف الإجمالي الحقيقي لكل بند
-5) تجنب أي تعديل يكسر استقرار قائمة الدخل الحالية
+1) تحديد الجدول الصحيح للتدفقات النقدية بثبات
+2) التقاط صف النقد في نهاية السنة
+3) التقاط صف النقد في بداية السنة
+4) اشتقاق netChangeInCash بشكل صحيح
+5) المحافظة على استقرار incomeStatementLite و balanceSheetLite
 
 IMPORTANT_NOTE:
 
-تم الاتفاق على عدم التشعب أو إعادة تغيير المنطق المستقر لقائمة الدخل.
+تم الاتفاق على عدم التشعب أو إعادة تغيير المنطق المستقر لقائمة الدخل والميزانية.
 الأولوية الآن هي البناء الصحيح والمحافظة على الاستقرار،
 وأي تطوير جديد يجب أن يكون محافظاً على ما يعمل بالفعل.
 
 NEXT_STEP (غداً):
 
-1) تنفيذ خطوة sample + sampleTail merge بشكل منظم داخل extract-financial
-2) تحسين قراءة صفوف الميزانية من الجدول الصحيح بدون كسر incomeStatementLite
-3) تثبيت منطق التقاط:
-   - totalAssets
-   - currentAssets
-   - nonCurrentAssets
-   - totalLiabilities
-   - currentLiabilities
-   - nonCurrentLiabilities
-   - totalEquity
-4) بعد استقرار الميزانية ننتقل للخطوة التالية:
-   - cashFlowLite
+1) بناء cashFlowLite بشكل متدرج وصحي داخل extract-financial
+2) تثبيت منطق التقاط:
+   - endingCash
+   - beginningCash
+   - netChangeInCash
+3) استخدام exact match أولاً ثم fallback منطقي عند الحاجة
+4) اختبار نفس ملف PDF الحقيقي للتأكد من عدم كسر:
+   - incomeStatementLite
+   - balanceSheetLite
 
 STATUS:
 IN_PROGRESS
