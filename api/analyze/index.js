@@ -67,7 +67,7 @@ module.exports = async function (context, req) {
       return { prefix, res, opLoc, txt };
     };
 
-    // ✅ جرّب المسار الجديد أولاً ثم القديم تلقائياً
+    // جرّب المسار الجديد أولاً ثم القديم تلقائياً
     let started = await startAnalyze("documentintelligence");
     if (!started.res.ok || !started.opLoc) {
       const maybe404 =
@@ -117,7 +117,9 @@ module.exports = async function (context, req) {
       await sleep(pollEveryMs);
     }
 
-    if (!diJson) return send(500, { ok: false, error: "No DI response (empty)" });
+    if (!diJson) {
+      return send(500, { ok: false, error: "No DI response (empty)" });
+    }
 
     if (String(diJson?.status || "").toLowerCase() !== "succeeded") {
       return send(500, {
@@ -143,14 +145,10 @@ module.exports = async function (context, req) {
 
     const tables = Array.isArray(analyzeResult.tables) ? analyzeResult.tables : [];
 
-    /**
-     * ✅ FIX #1:
-     * بدل اختيار "الأطول" فقط، نجمع النصوص داخل نفس الخلية
-     * لأن DI أحياناً يقسم النص أو يكرر أجزاء
-     */
     const buildMatrix = (table) => {
       const rowCount = Number(table?.rowCount || 0);
       const colCount = Number(table?.columnCount || 0);
+
       const matrix = Array.from({ length: rowCount }, () =>
         Array.from({ length: colCount }, () => "")
       );
@@ -159,22 +157,20 @@ module.exports = async function (context, req) {
       for (const cell of cells) {
         const r = Number(cell?.rowIndex ?? -1);
         const c = Number(cell?.columnIndex ?? -1);
+
         if (!(r >= 0 && r < rowCount && c >= 0 && c < colCount)) continue;
 
         const content = String(cell?.content ?? "").trim();
         if (!content) continue;
 
-        // دمج بدل الاستبدال
         const prev = matrix[r][c];
         if (!prev) {
           matrix[r][c] = content;
-        } else {
-          // منع تكرار نفس النص
-          if (!prev.includes(content)) {
-            matrix[r][c] = (prev + " " + content).trim();
-          }
+        } else if (!prev.includes(content)) {
+          matrix[r][c] = `${prev} ${content}`.trim();
         }
       }
+
       return matrix;
     };
 
@@ -182,11 +178,6 @@ module.exports = async function (context, req) {
     const takeTail = (rows, n) => rows.slice(Math.max(0, rows.length - n));
 
     const previewHeadRows = 12;
-
-    /**
-     * ✅ FIX #2:
-     * نخلي tail أكبر عشان نضمن وجود الإجماليات (غالباً بآخر صفحة/آخر جزء)
-     */
     const previewTailRows = 22;
 
     const tablesPreview = tables.map((t, idx) => {
@@ -198,10 +189,9 @@ module.exports = async function (context, req) {
       const matrix = buildMatrix(t);
 
       const sample = takeHead(matrix, previewHeadRows);
+      const rawTail = rowCount > previewHeadRows ? takeTail(matrix, previewTailRows) : [];
 
-      // tail دائماً من آخر الجدول، ثم ننظف التداخل مع head
-      const rawTail = takeTail(matrix, previewTailRows);
-
+      // منع تكرار الصفوف الموجودة أصلًا في sample
       const headSet = new Set(sample.map((r) => JSON.stringify(r)));
       const sampleTail = rawTail.filter((r) => !headSet.has(JSON.stringify(r)));
 
@@ -211,7 +201,7 @@ module.exports = async function (context, req) {
         columnCount,
         pageNumber,
         sample,
-        sampleTail, // ✅ الآن أقوى لالتقاط الإجماليات
+        sampleTail,
       };
     });
 
