@@ -1,10 +1,9 @@
 // api/extract-financial/index.js
 module.exports = async function (context, req) {
-
   const send = (status, payload) => {
     context.res = {
       status,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
+      headers: { "Content-Type": "application/json; charset": "utf-8" },
       body: payload
     };
   };
@@ -33,8 +32,7 @@ module.exports = async function (context, req) {
         "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
         "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9"
       };
-
-      return String(s || "").replace(/[٠-٩]/g, d => map[d] || d);
+      return String(s || "").replace(/[٠-٩]/g, (d) => map[d] || d);
     };
 
     const normalizeSeparators = (s) => {
@@ -55,8 +53,6 @@ module.exports = async function (context, req) {
         .replace(/\s+/g, " ")
         .trim();
     };
-
-
 
     const parseNumberSmart = (raw) => {
       if (raw === null || raw === undefined) return null;
@@ -106,9 +102,21 @@ module.exports = async function (context, req) {
       return m ? Number(m[1]) : null;
     };
 
+    const getCell = (row, index) => {
+      if (!Array.isArray(row)) return "";
+      if (index === null || index === undefined) return "";
+      return row[index];
+    };
+
+    const rowHasNumericValueAt = (row, colIndex) => {
+      if (!Array.isArray(row)) return false;
+      if (colIndex === null || colIndex === undefined) return false;
+      return parseNumberSmart(row[colIndex]) !== null;
+    };
+
     const detectColumns = (table) => {
-      const rows = table.sample || [];
-      const colCount = Number(table.columnCount) || 0;
+      const rows = Array.isArray(table?.sample) ? table.sample : [];
+      const colCount = Number(table?.columnCount) || 0;
       const cols = [];
 
       for (let i = 0; i < colCount; i++) {
@@ -123,7 +131,6 @@ module.exports = async function (context, req) {
           const y = findYear(cell);
 
           if (y) c.years.push(y);
-
           if (cell.includes("إيضاح") || cell.includes("ايضاح") || cell.includes("note")) {
             c.hasNote = true;
           }
@@ -137,10 +144,10 @@ module.exports = async function (context, req) {
     };
 
     const pickLatestColumns = (cols) => {
-      const usable = cols.filter(c => !c.hasNote);
+      const usable = cols.filter((c) => !c.hasNote);
       const years = [];
 
-      usable.forEach(c => c.years.forEach(y => years.push(y)));
+      usable.forEach((c) => c.years.forEach((y) => years.push(y)));
 
       if (!years.length) {
         return { latest: null, previous: null, latestYear: null, previousYear: null };
@@ -150,9 +157,9 @@ module.exports = async function (context, req) {
       const maxYear = uniqueYears[0];
       const prevYear = uniqueYears[1] || null;
 
-      const latest = usable.find(c => c.years.includes(maxYear)) || null;
+      const latest = usable.find((c) => c.years.includes(maxYear)) || null;
       const previous = prevYear
-        ? (usable.find(c => c.years.includes(prevYear)) || null)
+        ? usable.find((c) => c.years.includes(prevYear)) || null
         : null;
 
       return {
@@ -161,12 +168,6 @@ module.exports = async function (context, req) {
         latestYear: maxYear,
         previousYear: prevYear
       };
-    };
-
-    const getCell = (row, index) => {
-      if (!Array.isArray(row)) return "";
-      if (index === null || index === undefined) return "";
-      return row[index];
     };
 
     const getRowLabelFromRow = (row) => {
@@ -186,102 +187,10 @@ module.exports = async function (context, req) {
       return stripNonTextNoise(candidates[0] || "");
     };
 
-    const rowHasNumericValueAt = (row, colIndex) => {
-      if (!Array.isArray(row)) return false;
-      if (colIndex === null || colIndex === undefined) return false;
-      return parseNumberSmart(row[colIndex]) !== null;
-    };
-
-        const findRowByLabel = (rows, names) => {
-      for (const r of rows) {
-        const label = getRowLabelFromRow(r);
-        if (!label) continue;
-
-        for (const n of names) {
-          if (label.includes(norm(n))) {
-            return r;
-          }
-        }
-      }
-      return null;
-    };
-
-    const findExactBalanceSheetMatch = (rows, names, latestCol, usedRowIndexes = new Set()) => {
-      for (let i = 0; i < rows.length; i++) {
-        if (usedRowIndexes.has(i)) continue;
-
-        const row = rows[i];
-        const label = getRowLabelFromRow(row);
-
-        if (!label) continue;
-        if (!rowHasNumericValueAt(row, latestCol)) continue;
-
-        const s = stripNonTextNoise(label);
-        if (names.some(n => s === norm(n))) {
-          return { row, index: i };
-        }
-      }
-
-      return { row: null, index: -1 };
-    };
-
-    const findContainsBalanceSheetMatch = (rows, names, latestCol, usedRowIndexes = new Set()) => {
-      for (let i = 0; i < rows.length; i++) {
-        if (usedRowIndexes.has(i)) continue;
-
-        const row = rows[i];
-        const label = getRowLabelFromRow(row);
-
-        if (!label) continue;
-        if (!rowHasNumericValueAt(row, latestCol)) continue;
-
-        const s = stripNonTextNoise(label);
-        if (names.some(n => s.includes(norm(n)))) {
-          return { row, index: i };
-        }
-      }
-
-      return { row: null, index: -1 };
-    };
-
-    const findExactRowMatch = (rows, names, latestCol) => {
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const label = getRowLabelFromRow(row);
-
-        if (!label) continue;
-        if (!rowHasNumericValueAt(row, latestCol)) continue;
-
-        const s = stripNonTextNoise(label);
-        if (names.some(n => s === norm(n))) {
-          return { row, index: i };
-        }
-      }
-
-      return { row: null, index: -1 };
-    };
-
-    const findContainsRowMatch = (rows, names, latestCol) => {
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const label = getRowLabelFromRow(row);
-
-        if (!label) continue;
-        if (!rowHasNumericValueAt(row, latestCol)) continue;
-
-        const s = stripNonTextNoise(label);
-        if (names.some(n => s.includes(norm(n)))) {
-          return { row, index: i };
-        }
-      }
-
-      return { row: null, index: -1 };
-    };
-
     const tableTextBlob = (table) => {
       return norm(JSON.stringify([
-        ...(table.sample || []),
-        ...(table.sampleTail || [])
+        ...(Array.isArray(table?.sample) ? table.sample : []),
+        ...(Array.isArray(table?.sampleTail) ? table.sampleTail : [])
       ]));
     };
 
@@ -297,12 +206,14 @@ module.exports = async function (context, req) {
 
       return {
         label: labelOverride || getRowLabelFromRow(row) || null,
-        current: latestCol !== null && latestCol !== undefined
-          ? parseNumberSmart(getCell(row, latestCol))
-          : null,
-        previous: previousCol !== null && previousCol !== undefined
-          ? parseNumberSmart(getCell(row, previousCol))
-          : null
+        current:
+          latestCol !== null && latestCol !== undefined
+            ? parseNumberSmart(getCell(row, latestCol))
+            : null,
+        previous:
+          previousCol !== null && previousCol !== undefined
+            ? parseNumberSmart(getCell(row, previousCol))
+            : null
       };
     };
 
@@ -343,43 +254,16 @@ module.exports = async function (context, req) {
       return Math.round(n * 100) / 100;
     };
 
-    const pctDescriptor = (value, goodThreshold, weakThreshold) => {
-      if (value === null || value === undefined) return null;
-      if (value >= goodThreshold) return "strong";
-      if (value <= weakThreshold) return "weak";
-      return "moderate";
-    };
-
-    const pushInsight = (arr, text) => {
-      if (text && !arr.includes(text)) arr.push(text);
-    };
-
     const pushUnique = (arr, text) => {
       if (text && !arr.includes(text)) arr.push(text);
     };
 
-    const cloneValueObj = (obj) => {
-      if (!obj) return null;
-      return {
-        label: obj.label ?? null,
-        current: obj.current ?? null,
-        previous: obj.previous ?? null
-      };
-    };
-
-    const makeNullValueObject = (label) => ({
-      label,
-      current: null,
-      previous: null
-    });
-
-    const normalizeKeyArray = (arr) => (Array.isArray(arr) ? arr : []).map(x => norm(x));
+    const normalizeKeyArray = (arr) => (Array.isArray(arr) ? arr : []).map((x) => norm(x));
 
     const findBestRowForNames = (rows, names, latestCol, options = {}) => {
       const normalizedNames = normalizeKeyArray(names);
       const requireNumeric = options.requireNumeric !== false;
       const exactOnly = options.exactOnly === true;
-      const containsOnly = options.containsOnly === true;
       const usedRowIndexes = options.usedRowIndexes || null;
 
       let best = { row: null, index: -1, score: -Infinity };
@@ -399,20 +283,12 @@ module.exports = async function (context, req) {
         for (const n of normalizedNames) {
           if (!n) continue;
 
-          if (s === n) {
-            score = Math.max(score, 100 + n.length);
-          } else if (!exactOnly && (s.startsWith(n) || s.endsWith(n))) {
-            score = Math.max(score, 85 + n.length);
-          } else if (!exactOnly && !containsOnly && s.includes(n)) {
-            score = Math.max(score, 70 + n.length);
-          } else if (!exactOnly && containsOnly && s.includes(n)) {
-            score = Math.max(score, 70 + n.length);
-          }
+          if (s === n) score = Math.max(score, 100 + n.length);
+          else if (!exactOnly && (s.startsWith(n) || s.endsWith(n))) score = Math.max(score, 85 + n.length);
+          else if (!exactOnly && s.includes(n)) score = Math.max(score, 70 + n.length);
         }
 
-        if (score > best.score) {
-          best = { row, index: i, score };
-        }
+        if (score > best.score) best = { row, index: i, score };
       }
 
       return best.score > -Infinity ? best : { row: null, index: -1, score: -Infinity };
@@ -423,225 +299,135 @@ module.exports = async function (context, req) {
       const usedRowIndexes = options.usedRowIndexes || new Set();
 
       for (const [key, config] of Object.entries(fieldMap)) {
-        const names = Array.isArray(config) ? config : (config.names || []);
-        const label = Array.isArray(config) ? key : (config.label || key);
-        const matcherOptions = Array.isArray(config) ? {} : {
+        const names = config.names || [];
+        const label = config.label || key;
+        const match = findBestRowForNames(rows, names, latestCol, {
           exactOnly: config.exactOnly === true,
-          containsOnly: config.containsOnly === true,
           requireNumeric: config.requireNumeric !== false,
           usedRowIndexes
-        };
-
-        const match = findBestRowForNames(rows, names, latestCol, matcherOptions);
+        });
 
         if (match.index >= 0) usedRowIndexes.add(match.index);
-
         out[key] = makeValueObject(match.row, label, latestCol, previousCol);
       }
 
       return out;
     };
 
-    const mergeExtractionStatus = (statementProfile, incomeExtract, balanceExtract, cashFlowExtract) => {
-      if (statementProfile === "bank") {
-        return {
-          incomeStatementLite: hasCurrent(incomeExtract?.totalOperatingIncome) || hasCurrent(incomeExtract?.netIncomeAfterZakat),
-          balanceSheetLite: hasCurrent(balanceExtract?.totalAssets) || hasCurrent(balanceExtract?.customerDeposits),
-          cashFlowLite: hasCurrent(cashFlowExtract?.endingCash)
-        };
-      }
-
-      return {
-        incomeStatementLite: hasCurrent(incomeExtract?.revenue),
-        balanceSheetLite: hasCurrent(balanceExtract?.totalAssets),
-        cashFlowLite: hasCurrent(cashFlowExtract?.endingCash)
-      };
-    };
-
-
-        /* =========================
-       Statement profiles + synonyms
+    /* =========================
+       Filters + profiles
        ========================= */
 
+    const isLikelyNotesTable = (table) => {
+      const text = tableTextBlob(table);
+
+      const badWords = [
+        "السياسة المحاسبية",
+        "مراجعتنا",
+        "الإيضاحات",
+        "الإيضاح",
+        "كيف",
+        "المخاطر",
+        "ضوابط",
+        "منهجية",
+        "expected credit loss",
+        "policy",
+        "note",
+        "notes",
+        "audit",
+        "review"
+      ];
+
+      const hitCount = badWords.reduce((acc, w) => acc + (text.includes(norm(w)) ? 1 : 0), 0);
+
+      return hitCount >= 2;
+    };
+
     const OPERATING_INCOME_NAMES = {
-      revenue: ["الإيرادات", "الايرادات", "المبيعات", "Sales", "Revenue"],
-      costOfRevenue: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "Cost of Revenue", "Cost of Sales"],
-      grossProfit: ["مجمل الربح", "إجمالي الربح", "Gross Profit"],
-      operatingProfit: ["الربح التشغيلي", "الدخل التشغيلي", "ربح التشغيل", "Operating Profit", "Operating Income"]
+      revenue: { label: "الإيرادات", names: ["الإيرادات", "الايرادات", "المبيعات", "revenue", "sales"] },
+      costOfRevenue: { label: "تكلفة الإيرادات", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "cost of revenue", "cost of sales"] },
+      grossProfit: { label: "مجمل الربح", names: ["مجمل الربح", "إجمالي الربح", "gross profit"] },
+      operatingProfit: { label: "الربح التشغيلي", names: ["الربح التشغيلي", "الدخل التشغيلي", "ربح التشغيل", "operating profit", "operating income"] }
     };
 
     const BANK_INCOME_NAMES = {
       incomeFromInvestmentsAndFinancing: {
         label: "الدخل من الاستثمارات والتمويل",
-        names: [
-          "الدخل من الاستثمارات والتمويل",
-          "دخل من الاستثمارات والتمويل",
-          "الدخل من التمويل والاستثمارات",
-          "income from investments and financing",
-          "income from financing and investments"
-        ]
+        names: ["الدخل من الاستثمارات والتمويل", "الدخل من التمويل والاستثمارات", "income from investments and financing"]
       },
       returnsOnInvestmentsHeldForTradingOrFV: {
         label: "عائدات على استثمارات",
-        names: [
-          "عائدات على استثمارات لأجل",
-          "عائدات على استثمارات",
-          "عائد على استثمارات",
-          "returns on investments",
-          "returns on investments held"
-        ]
+        names: ["عائدات على استثمارات لأجل", "عائدات على استثمارات", "returns on investments"]
       },
       netIncomeFromInvestmentsAndFinancing: {
         label: "صافي الدخل من الاستثمارات والتمويل",
-        names: [
-          "صافي الدخل من الاستثمارات والتمويل",
-          "صافي الدخل من التمويل والاستثمارات",
-          "صافي دخل الاستثمارات والتمويل",
-          "net income from investments and financing",
-          "net income from financing and investments"
-        ]
+        names: ["صافي الدخل من الاستثمارات والتمويل", "صافي الدخل من التمويل والاستثمارات", "net income from investments and financing"]
       },
       feeIncomeGross: {
         label: "دخل رسوم خدمات مصرفية",
-        names: [
-          "دخل رسوم خدمات مصرفية",
-          "إيرادات رسوم خدمات مصرفية",
-          "رسوم خدمات مصرفية",
-          "banking service fee income",
-          "fee income",
-          "fees from banking services"
-        ]
+        names: ["دخل رسوم خدمات مصرفية", "إيرادات رسوم خدمات مصرفية", "banking service fee income", "fee income"]
       },
       feeExpense: {
         label: "مصاريف رسوم خدمات مصرفية",
-        names: [
-          "مصاريف رسوم خدمات مصرفية",
-          "مصروفات رسوم خدمات مصرفية",
-          "مصروف رسوم خدمات مصرفية",
-          "banking service fee expenses",
-          "fee expense"
-        ]
+        names: ["مصاريف رسوم خدمات مصرفية", "مصروفات رسوم خدمات مصرفية", "banking service fee expenses", "fee expense"]
       },
       feeIncomeNet: {
         label: "رسوم خدمات مصرفية، صافي",
-        names: [
-          "رسوم خدمات مصرفية، صافي",
-          "رسوم خدمات مصرفية صافي",
-          "صافي رسوم خدمات مصرفية",
-          "net fee income",
-          "banking service fees net"
-        ]
+        names: ["رسوم خدمات مصرفية، صافي", "صافي رسوم خدمات مصرفية", "net fee income"]
       },
       totalOperatingIncome: {
         label: "إجمالي دخل العمليات",
-        names: [
-          "إجمالي دخل العمليات",
-          "اجمالي دخل العمليات",
-          "إجمالي دخل التشغيل",
-          "إجمالي الإيرادات التشغيلية",
-          "total operating income",
-          "total operating revenue"
-        ]
+        names: ["إجمالي دخل العمليات", "اجمالي دخل العمليات", "إجمالي دخل التشغيل", "total operating income"]
       },
       salariesAndEmployeeBenefits: {
         label: "رواتب ومصاريف الموظفين",
-        names: [
-          "رواتب ومصاريف الموظفين",
-          "رواتب ومزايا الموظفين",
-          "مصاريف الموظفين",
-          "salaries and employee benefits",
-          "employee expenses"
-        ]
+        names: ["رواتب ومصاريف الموظفين", "رواتب ومزايا الموظفين", "salaries and employee benefits"]
       },
       depreciationAndAmortization: {
         label: "استهلاك وإطفاء",
-        names: [
-          "استهلاك واطفاء",
-          "استهلاك وإطفاء",
-          "الاستهلاك والإطفاء",
-          "depreciation and amortization"
-        ]
+        names: ["استهلاك وإطفاء", "استهلاك واطفاء", "depreciation and amortization"]
       },
       otherOperatingExpenses: {
         label: "مصاريف عمومية وإدارية أخرى",
-        names: [
-          "مصاريف عمومية وإدارية أخرى",
-          "مصاريف ادارية وعمومية اخرى",
-          "مصروفات عمومية وإدارية أخرى",
-          "other general and administrative expenses",
-          "other operating expenses"
-        ]
+        names: ["مصاريف عمومية وإدارية أخرى", "مصروفات عمومية وإدارية أخرى", "other operating expenses"]
       },
       operatingExpensesBeforeImpairment: {
         label: "مصاريف العمليات قبل مخصصات الانخفاض",
         names: [
           "مصاريف العمليات قبل مخصصات الانخفاض في القيمة",
           "مصاريف العمليات قبل مخصصات الانخفاض",
-          "إجمالي مصاريف العمليات قبل مخصصات الانخفاض",
-          "operating expenses before impairment",
-          "total operating expenses before impairment"
+          "operating expenses before impairment"
         ]
       },
       netImpairmentChargeForFinancing: {
         label: "مخصص الانخفاض في قيمة التمويل، صافي",
         names: [
           "مخصص الانخفاض في قيمة التمويل، صافي",
-          "مخصص الانخفاض في قيمة التمويل صافي",
           "مخصص خسائر الائتمان",
           "صافي مخصص خسائر الائتمان",
-          "net impairment charge for financing",
           "credit loss provision",
           "expected credit loss provision"
         ]
       },
       totalOperatingExpenses: {
         label: "إجمالي مصاريف العمليات",
-        names: [
-          "إجمالي مصاريف العمليات",
-          "اجمالي مصاريف العمليات",
-          "إجمالي المصاريف التشغيلية",
-          "total operating expenses"
-        ]
+        names: ["إجمالي مصاريف العمليات", "اجمالي مصاريف العمليات", "total operating expenses"]
       },
       netOperatingIncome: {
         label: "صافي دخل العمليات",
-        names: [
-          "صافي دخل العمليات",
-          "صافي الدخل من العمليات",
-          "net operating income"
-        ]
+        names: ["صافي دخل العمليات", "صافي الدخل من العمليات", "net operating income"]
       },
       shareOfResultsAssociates: {
         label: "حصة في خسارة/ربح شركة زميلة",
-        names: [
-          "حصة في خسارة شركة زميلة ومشروع مشترك",
-          "حصة في ربح شركة زميلة ومشروع مشترك",
-          "حصة من نتائج شركة زميلة",
-          "share of results of associate",
-          "share of profit of associate",
-          "share of loss of associate"
-        ]
+        names: ["حصة في خسارة شركة زميلة ومشروع مشترك", "حصة في ربح شركة زميلة ومشروع مشترك", "share of results of associate"]
       },
       netIncomeBeforeZakat: {
         label: "دخل السنة قبل الزكاة",
-        names: [
-          "دخل السنة قبل الزكاة",
-          "صافي دخل السنة قبل الزكاة",
-          "الربح قبل الزكاة",
-          "صافي الربح قبل الزكاة",
-          "income before zakat",
-          "profit before zakat"
-        ]
+        names: ["دخل السنة قبل الزكاة", "صافي دخل السنة قبل الزكاة", "الربح قبل الزكاة", "income before zakat", "profit before zakat"]
       },
       zakat: {
         label: "زكاة السنة",
-        names: [
-          "زكاة السنة",
-          "الزكاة",
-          "مصروف الزكاة",
-          "zakat",
-          "zakat expense"
-        ]
+        names: ["زكاة السنة", "الزكاة", "مصروف الزكاة", "zakat"]
       },
       netIncomeAfterZakat: {
         label: "صافي دخل السنة بعد الزكاة",
@@ -651,8 +437,7 @@ module.exports = async function (context, req) {
           "صافي دخل السنة",
           "صافي الربح للسنة",
           "net income after zakat",
-          "net profit after zakat",
-          "net income for the year"
+          "net profit after zakat"
         ]
       }
     };
@@ -660,531 +445,258 @@ module.exports = async function (context, req) {
     const BANK_BALANCE_NAMES = {
       cashAndBalancesWithCentralBank: {
         label: "نقد وأرصدة لدى البنك المركزي السعودي",
-        names: [
-          "نقد وأرصدة لدى البنك المركزي السعودي",
-          "النقد والأرصدة لدى البنك المركزي السعودي",
-          "نقد وارصدة لدى البنك المركزي السعودي",
-          "cash and balances with central bank",
-          "cash and balances with saudi central bank"
-        ]
+        names: ["نقد وأرصدة لدى البنك المركزي السعودي", "النقد والأرصدة لدى البنك المركزي السعودي", "cash and balances with central bank"]
       },
       balancesWithBanksAndFinancialInstitutions: {
         label: "أرصدة لدى البنوك والمؤسسات المالية الأخرى، صافي",
-        names: [
-          "أرصدة لدى البنوك والمؤسسات المالية الأخرى، صافي",
-          "أرصدة لدى البنوك والمؤسسات المالية الأخرى صافي",
-          "ارصدة لدى البنوك والمؤسسات المالية الاخرى",
-          "balances with banks and other financial institutions",
-          "balances with banks"
-        ]
+        names: ["أرصدة لدى البنوك والمؤسسات المالية الأخرى، صافي", "أرصدة لدى البنوك والمؤسسات المالية الأخرى", "balances with banks and other financial institutions"]
       },
       investmentsAtFVTPL: {
         label: "استثمارات بالقيمة العادلة",
-        names: [
-          "استثمارات بالقيمة العادلة خلال قائمة الدخل",
-          "استثمارات بالقيمة العادلة",
-          "استثمارات بالقيمة العادلة من خلال قائمة الدخل",
-          "investments at fair value through income statement",
-          "investments at fair value"
-        ]
+        names: ["استثمارات بالقيمة العادلة خلال قائمة الدخل", "استثمارات بالقيمة العادلة", "investments at fair value"]
       },
       investmentsAtFVOCI: {
         label: "استثمارات بالقيمة العادلة من خلال الدخل الشامل الآخر",
-        names: [
-          "استثمارات بالقيمة العادلة من خلال الدخل الشامل الآخر",
-          "استثمارات بالقيمة العادلة خلال الدخل الشامل الآخر",
-          "investments at fair value through other comprehensive income",
-          "fvoci investments"
-        ]
+        names: ["استثمارات بالقيمة العادلة من خلال الدخل الشامل الآخر", "investments at fair value through other comprehensive income"]
       },
       investmentsAtAmortizedCost: {
         label: "استثمارات بالتكلفة المطفأة، صافي",
-        names: [
-          "استثمارات بالتكلفة المطفأة، صافي",
-          "استثمارات بالتكلفة المطفأة صافي",
-          "استثمارات بالتكلفة المستنفذة، صافي",
-          "استثمارات بالتكلفة المطفاة",
-          "investments at amortized cost",
-          "investments at amortised cost"
-        ]
+        names: ["استثمارات بالتكلفة المطفأة، صافي", "استثمارات بالتكلفة المطفأة", "investments at amortized cost"]
       },
       investmentsInAssociates: {
         label: "استثمار في شركات زميلة ومشروع مشترك",
-        names: [
-          "استثمار في شركات زميلة ومشروع مشترك",
-          "استثمار في شركات زميلة",
-          "investments in associates and joint venture",
-          "investment in associate"
-        ]
+        names: ["استثمار في شركات زميلة ومشروع مشترك", "استثمار في شركات زميلة", "investment in associate"]
       },
       derivativeAssets: {
         label: "القيمة العادلة الموجبة للمشتقات",
-        names: [
-          "القيمة العادلة الموجبة للمشتقات",
-          "موجودات مشتقات",
-          "positive fair value of derivatives",
-          "derivative assets"
-        ]
+        names: ["القيمة العادلة الموجبة للمشتقات", "موجودات مشتقات", "derivative assets"]
       },
       financingNet: {
         label: "تمويل، صافي",
-        names: [
-          "تمويل، صافي",
-          "تمويل صافي",
-          "صافي التمويل",
-          "financing net",
-          "net financing"
-        ]
+        names: ["تمويل، صافي", "تمويل صافي", "صافي التمويل", "financing net", "net financing"]
       },
       propertyAndEquipment: {
         label: "ممتلكات ومعدات وموجودات حق استخدام، صافي",
-        names: [
-          "ممتلكات ومعدات وموجودات حق استخدام، صافي",
-          "ممتلكات ومعدات صافي",
-          "موجودات حق استخدام",
-          "property and equipment",
-          "right of use assets"
-        ]
+        names: ["ممتلكات ومعدات وموجودات حق استخدام، صافي", "ممتلكات ومعدات صافي", "property and equipment", "right of use assets"]
       },
       otherAssets: {
         label: "موجودات أخرى",
-        names: [
-          "موجودات أخرى",
-          "أصول أخرى",
-          "other assets"
-        ]
+        names: ["موجودات أخرى", "أصول أخرى", "other assets"]
       },
       totalAssets: {
         label: "إجمالي الموجودات",
-        names: [
-          "إجمالي الموجودات",
-          "اجمالي الموجودات",
-          "إجمالي الأصول",
-          "total assets"
-        ],
+        names: ["إجمالي الموجودات", "اجمالي الموجودات", "إجمالي الأصول", "total assets"],
         exactOnly: true
       },
-
       balancesDueToCentralBankAndBanks: {
         label: "أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى",
-        names: [
-          "أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى",
-          "ارصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الاخرى",
-          "balances due to central bank and banks",
-          "due to banks and central bank"
-        ]
+        names: ["أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى", "balances due to central bank and banks"]
       },
       customerDeposits: {
         label: "ودائع العملاء",
-        names: [
-          "ودائع العملاء",
-          "deposits from customers",
-          "customer deposits"
-        ],
+        names: ["ودائع العملاء", "deposits from customers", "customer deposits"],
         exactOnly: true
       },
       debtSecuritiesIssued: {
         label: "صكوك وشهادات إيداع مصدرة",
-        names: [
-          "صكوك وشهادات إيداع مصدرة",
-          "صكوك مصدرة",
-          "شهادات إيداع مصدرة",
-          "debt securities in issue",
-          "sukuk issued",
-          "certificates of deposit issued"
-        ]
+        names: ["صكوك وشهادات إيداع مصدرة", "صكوك مصدرة", "شهادات إيداع مصدرة", "sukuk issued", "debt securities in issue"]
       },
       derivativeLiabilities: {
         label: "القيمة العادلة السالبة للمشتقات",
-        names: [
-          "القيمة العادلة السالبة للمشتقات",
-          "مطلوبات مشتقات",
-          "negative fair value of derivatives",
-          "derivative liabilities"
-        ]
+        names: ["القيمة العادلة السالبة للمشتقات", "مطلوبات مشتقات", "derivative liabilities"]
       },
       leaseLiabilities: {
         label: "التزامات إيجار",
-        names: [
-          "التزامات إيجار",
-          "التزامات الايجار",
-          "lease liabilities"
-        ]
+        names: ["التزامات إيجار", "التزامات الايجار", "lease liabilities"]
       },
       otherLiabilities: {
         label: "مطلوبات أخرى",
-        names: [
-          "مطلوبات أخرى",
-          "التزامات أخرى",
-          "other liabilities"
-        ]
+        names: ["مطلوبات أخرى", "التزامات أخرى", "other liabilities"]
       },
       totalLiabilities: {
         label: "إجمالي المطلوبات",
-        names: [
-          "إجمالي المطلوبات",
-          "اجمالي المطلوبات",
-          "إجمالي الالتزامات",
-          "total liabilities"
-        ],
+        names: ["إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي الالتزامات", "total liabilities"],
         exactOnly: true
       },
-
       shareCapital: {
         label: "رأس المال",
-        names: [
-          "رأس المال",
-          "راس المال",
-          "share capital",
-          "capital"
-        ]
+        names: ["رأس المال", "راس المال", "share capital"]
       },
       treasuryShares: {
         label: "أسهم خزينة",
-        names: [
-          "أسهم خزينة",
-          "اسهم خزينة",
-          "treasury shares"
-        ]
+        names: ["أسهم خزينة", "اسهم خزينة", "treasury shares"]
       },
       statutoryReserve: {
         label: "احتياطي نظامي",
-        names: [
-          "احتياطي نظامي",
-          "الاحتياطي النظامي",
-          "statutory reserve"
-        ]
+        names: ["احتياطي نظامي", "الاحتياطي النظامي", "statutory reserve"]
       },
       otherReserves: {
         label: "احتياطيات أخرى",
-        names: [
-          "احتياطيات أخرى",
-          "احتياطات أخرى",
-          "other reserves"
-        ]
+        names: ["احتياطيات أخرى", "احتياطات أخرى", "other reserves"]
       },
       retainedEarnings: {
         label: "أرباح مبقاة",
-        names: [
-          "أرباح مبقاة",
-          "ارباح مبقاة",
-          "retained earnings"
-        ]
+        names: ["أرباح مبقاة", "ارباح مبقاة", "retained earnings"]
       },
       equityAttributableToShareholders: {
         label: "حقوق الملكية العائدة لمساهمي المصرف",
-        names: [
-          "حقوق الملكية العائدة لمساهمي المصرف",
-          "حقوق الملكية العائدة للمساهمين",
-          "equity attributable to shareholders",
-          "equity attributable to owners"
-        ]
+        names: ["حقوق الملكية العائدة لمساهمي المصرف", "حقوق الملكية العائدة للمساهمين", "equity attributable to shareholders"]
       },
       tier1Sukuk: {
         label: "صكوك الشريحة الأولى",
-        names: [
-          "صكوك الشريحة الأولى",
-          "صكوك الشريحة الاولى",
-          "additional tier 1 sukuk",
-          "tier 1 sukuk"
-        ]
+        names: ["صكوك الشريحة الأولى", "صكوك الشريحة الاولى", "tier 1 sukuk", "additional tier 1 sukuk"]
       },
       totalEquity: {
         label: "إجمالي حقوق الملكية",
-        names: [
-          "إجمالي حقوق الملكية",
-          "اجمالي حقوق الملكية",
-          "إجمالي حقوق المساهمين",
-          "total equity"
-        ],
+        names: ["إجمالي حقوق الملكية", "اجمالي حقوق الملكية", "إجمالي حقوق المساهمين", "total equity"],
         exactOnly: true
       }
     };
 
-    const BANK_PROFILE_KEYWORDS = [
-      "مصرف",
-      "بنك",
-      "البنك المركزي",
-      "ودائع العملاء",
-      "الدخل من الاستثمارات والتمويل",
-      "دخل رسوم خدمات مصرفية",
-      "إجمالي دخل العمليات",
-      "صكوك",
-      "شهادات إيداع",
-      "تمويل، صافي",
-      "تمويل صافي",
-      "القيمة العادلة للمشتقات",
-      "زكاة",
-      "customer deposits",
-      "banking services",
-      "total operating income",
-      "financing net"
-    ];
+    const detectStatementProfile = (tables) => {
+      let bankScore = 0;
+      let operatingScore = 0;
 
-        /* =========================
-       Profile detection
-       ========================= */
+      for (const t of tables) {
+        const text = tableTextBlob(t);
 
-    const detectStatementProfile = (tablesPreview) => {
+        if (
+          text.includes("مصرف") ||
+          text.includes("بنك") ||
+          text.includes("البنك المركزي") ||
+          text.includes("ودائع العملاء") ||
+          text.includes("الدخل من الاستثمارات والتمويل") ||
+          text.includes("دخل رسوم خدمات مصرفية") ||
+          text.includes("إجمالي دخل العمليات") ||
+          text.includes("صكوك") ||
+          text.includes("شهادات إيداع") ||
+          text.includes("تمويل، صافي") ||
+          text.includes("تمويل صافي")
+        ) {
+          bankScore += 8;
+        }
 
-      let scoreBank = 0;
-
-      for (const table of tablesPreview) {
-
-        const blob = tableTextBlob(table);
-
-        for (const k of BANK_PROFILE_KEYWORDS) {
-          if (blob.includes(norm(k))) {
-            scoreBank++;
-          }
+        if (
+          text.includes("الإيرادات") ||
+          text.includes("الايرادات") ||
+          text.includes("تكلفة الإيرادات") ||
+          text.includes("تكلفة الايرادات") ||
+          text.includes("مجمل الربح") ||
+          text.includes("الربح التشغيلي")
+        ) {
+          operatingScore += 6;
         }
       }
 
-      if (scoreBank >= 4) {
-        return "bank";
-      }
-
-      return "operating_company";
+      return bankScore >= operatingScore ? "bank" : "operating_company";
     };
-
 
     /* =========================
-       Extractors
-       ========================= */
-
-    const extractBankIncomeStatement = (rows, latestCol, previousCol) => {
-
-      const fields = extractFieldsByMap(
-        rows,
-        BANK_INCOME_NAMES,
-        latestCol,
-        previousCol
-      );
-
-      return {
-        incomeFromInvestmentsAndFinancing: fields.incomeFromInvestmentsAndFinancing,
-        returnsOnInvestmentsHeldForTradingOrFV: fields.returnsOnInvestmentsHeldForTradingOrFV,
-        netIncomeFromInvestmentsAndFinancing: fields.netIncomeFromInvestmentsAndFinancing,
-
-        feeIncomeGross: fields.feeIncomeGross,
-        feeExpense: fields.feeExpense,
-        feeIncomeNet: fields.feeIncomeNet,
-
-        totalOperatingIncome: fields.totalOperatingIncome,
-
-        salariesAndEmployeeBenefits: fields.salariesAndEmployeeBenefits,
-        depreciationAndAmortization: fields.depreciationAndAmortization,
-        otherOperatingExpenses: fields.otherOperatingExpenses,
-
-        operatingExpensesBeforeImpairment: fields.operatingExpensesBeforeImpairment,
-        netImpairmentChargeForFinancing: fields.netImpairmentChargeForFinancing,
-
-        totalOperatingExpenses: fields.totalOperatingExpenses,
-
-        netOperatingIncome: fields.netOperatingIncome,
-
-        shareOfResultsAssociates: fields.shareOfResultsAssociates,
-
-        netIncomeBeforeZakat: fields.netIncomeBeforeZakat,
-        zakat: fields.zakat,
-
-        netIncomeAfterZakat: fields.netIncomeAfterZakat
-      };
-    };
-
-
-    const extractBankBalanceSheet = (rows, latestCol, previousCol) => {
-
-      const fields = extractFieldsByMap(
-        rows,
-        BANK_BALANCE_NAMES,
-        latestCol,
-        previousCol
-      );
-
-      return {
-        cashAndBalancesWithCentralBank: fields.cashAndBalancesWithCentralBank,
-        balancesWithBanksAndFinancialInstitutions: fields.balancesWithBanksAndFinancialInstitutions,
-
-        investmentsAtFVTPL: fields.investmentsAtFVTPL,
-        investmentsAtFVOCI: fields.investmentsAtFVOCI,
-        investmentsAtAmortizedCost: fields.investmentsAtAmortizedCost,
-        investmentsInAssociates: fields.investmentsInAssociates,
-
-        derivativeAssets: fields.derivativeAssets,
-
-        financingNet: fields.financingNet,
-
-        propertyAndEquipment: fields.propertyAndEquipment,
-
-        otherAssets: fields.otherAssets,
-
-        totalAssets: fields.totalAssets,
-
-        balancesDueToCentralBankAndBanks: fields.balancesDueToCentralBankAndBanks,
-        customerDeposits: fields.customerDeposits,
-        debtSecuritiesIssued: fields.debtSecuritiesIssued,
-
-        derivativeLiabilities: fields.derivativeLiabilities,
-        leaseLiabilities: fields.leaseLiabilities,
-        otherLiabilities: fields.otherLiabilities,
-
-        totalLiabilities: fields.totalLiabilities,
-
-        shareCapital: fields.shareCapital,
-        treasuryShares: fields.treasuryShares,
-        statutoryReserve: fields.statutoryReserve,
-        otherReserves: fields.otherReserves,
-        retainedEarnings: fields.retainedEarnings,
-
-        equityAttributableToShareholders: fields.equityAttributableToShareholders,
-
-        tier1Sukuk: fields.tier1Sukuk,
-
-        totalEquity: fields.totalEquity
-      };
-    };
-
-
-    const extractOperatingIncomeStatement = (rows, latestCol, previousCol) => {
-
-      const revenueMatch = findBestRowForNames(
-        rows,
-        OPERATING_INCOME_NAMES.revenue,
-        latestCol
-      );
-
-      const costMatch = findBestRowForNames(
-        rows,
-        OPERATING_INCOME_NAMES.costOfRevenue,
-        latestCol
-      );
-
-      const grossMatch = findBestRowForNames(
-        rows,
-        OPERATING_INCOME_NAMES.grossProfit,
-        latestCol
-      );
-
-      const opMatch = findBestRowForNames(
-        rows,
-        OPERATING_INCOME_NAMES.operatingProfit,
-        latestCol
-      );
-
-      return {
-        revenue: makeValueObject(revenueMatch.row, "الإيرادات", latestCol, previousCol),
-        costOfRevenue: makeValueObject(costMatch.row, "تكلفة الإيرادات", latestCol, previousCol),
-        grossProfit: makeValueObject(grossMatch.row, "مجمل الربح", latestCol, previousCol),
-        operatingProfit: makeValueObject(opMatch.row, "الربح التشغيلي", latestCol, previousCol)
-      };
-    };
-
-
-    /* =========================
-       Router
-       ========================= */
-
-    const extractFinancialStatements = (profile, rows, latestCol, previousCol) => {
-
-      if (profile === "bank") {
-
-        return {
-          incomeStatementLite: extractBankIncomeStatement(rows, latestCol, previousCol),
-          balanceSheetLite: extractBankBalanceSheet(rows, latestCol, previousCol)
-        };
-      }
-
-      return {
-        incomeStatementLite: extractOperatingIncomeStatement(rows, latestCol, previousCol),
-        balanceSheetLite: null
-      };
-    };
-
-        /* =========================
        Table scoring
        ========================= */
 
-    const scoreIncomeTable = (table) => {
+    const scoreIncomeTable = (table, statementProfile) => {
       const text = tableTextBlob(table);
+      if (isLikelyNotesTable(table)) return -100;
+
       let score = 0;
 
-      if (text.includes("الإيرادات") || text.includes("الايرادات")) score += 8;
-      if (text.includes("تكلفة الإيرادات") || text.includes("تكلفة الايرادات")) score += 6;
-      if (text.includes("مجمل الربح")) score += 6;
-      if (text.includes("الربح التشغيلي")) score += 6;
-      if (text.includes("قائمة الدخل")) score += 4;
-      if (text.includes("الربح")) score += 2;
-      if (text.includes("المراجعة") || text.includes("أمر المراجعة") || text.includes("امر المراجعة")) score -= 10;
-      if (text.includes("الموجودات") || text.includes("الأصول")) score -= 4;
-      if (text.includes("التدفقات النقدية")) score -= 4;
+      if (statementProfile === "bank") {
+        if (text.includes("قائمة الدخل")) score += 8;
+        if (text.includes("قائمة الدخل الموحدة")) score += 10;
+        if (text.includes("الدخل من الاستثمارات والتمويل")) score += 20;
+        if (text.includes("صافي الدخل من الاستثمارات والتمويل")) score += 18;
+        if (text.includes("دخل رسوم خدمات مصرفية")) score += 14;
+        if (text.includes("إجمالي دخل العمليات")) score += 22;
+        if (text.includes("مصاريف العمليات قبل مخصصات الانخفاض")) score += 18;
+        if (text.includes("مخصص الانخفاض في قيمة التمويل")) score += 18;
+        if (text.includes("مخصص خسائر الائتمان")) score += 18;
+        if (text.includes("صافي دخل العمليات")) score += 18;
+        if (text.includes("دخل السنة قبل الزكاة")) score += 20;
+        if (text.includes("صافي دخل السنة بعد الزكاة")) score += 22;
+        if (text.includes("مصرف") || text.includes("بنك")) score += 4;
+
+        if (text.includes("التدفقات النقدية")) score -= 8;
+        if (text.includes("المركز المالي")) score -= 6;
+      } else {
+        if (text.includes("الإيرادات") || text.includes("الايرادات")) score += 8;
+        if (text.includes("تكلفة الإيرادات") || text.includes("تكلفة الايرادات")) score += 6;
+        if (text.includes("مجمل الربح")) score += 6;
+        if (text.includes("الربح التشغيلي")) score += 6;
+        if (text.includes("قائمة الدخل")) score += 4;
+        if (text.includes("الربح")) score += 2;
+        if (text.includes("الموجودات") || text.includes("الأصول")) score -= 4;
+        if (text.includes("التدفقات النقدية")) score -= 4;
+      }
+
+      if (Number(table?.pageNumber) >= 2 && Number(table?.pageNumber) <= 12) score += 2;
+      if (Number(table?.rowCount) >= 10) score += 2;
 
       return score;
     };
 
-    const pickBestIncomeTable = (tables) => {
-      let best = null;
-      let bestScore = -Infinity;
-
-      for (const t of tables) {
-        const score = scoreIncomeTable(t);
-        if (score > bestScore) {
-          best = t;
-          bestScore = score;
-        }
-      }
-
-      return bestScore > 0 ? best : null;
-    };
-
-    const scoreBalanceTable = (table) => {
+    const scoreBalanceTable = (table, statementProfile) => {
       const text = tableTextBlob(table);
+      if (isLikelyNotesTable(table)) return -100;
+
       let score = 0;
 
-      if (text.includes("الموجودات")) score += 7;
-      if (text.includes("الأصول")) score += 7;
-      if (text.includes("المطلوبات")) score += 7;
-      if (text.includes("حقوق الملكية")) score += 7;
-      if (text.includes("إجمالي الموجودات") || text.includes("إجمالي الأصول")) score += 8;
-      if (text.includes("إجمالي المطلوبات")) score += 8;
-      if (text.includes("إجمالي حقوق الملكية")) score += 8;
-      if (text.includes("قائمة المركز المالي") || text.includes("المركز المالي")) score += 5;
+      if (statementProfile === "bank") {
+        if (text.includes("قائمة المركز المالي")) score += 10;
+        if (text.includes("قائمة المركز المالي الموحدة")) score += 12;
+        if (text.includes("الموجودات")) score += 5;
+        if (text.includes("المطلوبات وحقوق الملكية")) score += 10;
+        if (text.includes("نقد وأرصدة لدى البنك المركزي السعودي")) score += 18;
+        if (text.includes("أرصدة لدى البنوك والمؤسسات المالية الأخرى")) score += 14;
+        if (text.includes("استثمارات بالقيمة العادلة")) score += 12;
+        if (text.includes("استثمارات بالتكلفة")) score += 10;
+        if (text.includes("تمويل، صافي") || text.includes("تمويل صافي")) score += 20;
+        if (text.includes("ودائع العملاء")) score += 22;
+        if (text.includes("صكوك وشهادات إيداع مصدرة")) score += 18;
+        if (text.includes("صكوك الشريحة الأولى")) score += 16;
+        if (text.includes("إجمالي الموجودات")) score += 18;
+        if (text.includes("إجمالي المطلوبات")) score += 18;
+        if (text.includes("إجمالي حقوق الملكية")) score += 18;
 
-      if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 6;
-      if (text.includes("التدفقات النقدية")) score -= 6;
+        if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 8;
+        if (text.includes("التدفقات النقدية")) score -= 8;
+      } else {
+        if (text.includes("الموجودات")) score += 7;
+        if (text.includes("الأصول")) score += 7;
+        if (text.includes("المطلوبات")) score += 7;
+        if (text.includes("حقوق الملكية")) score += 7;
+        if (text.includes("إجمالي الموجودات") || text.includes("إجمالي الأصول")) score += 8;
+        if (text.includes("إجمالي المطلوبات")) score += 8;
+        if (text.includes("إجمالي حقوق الملكية")) score += 8;
+        if (text.includes("قائمة المركز المالي") || text.includes("المركز المالي")) score += 5;
 
-      return score;
-    };
-
-    const pickBestBalanceTable = (tables) => {
-      let best = null;
-      let bestScore = -Infinity;
-
-      for (const t of tables) {
-        const score = scoreBalanceTable(t);
-        if (score > bestScore) {
-          best = t;
-          bestScore = score;
-        }
+        if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 6;
+        if (text.includes("التدفقات النقدية")) score -= 6;
       }
 
-      return bestScore > 0 ? best : null;
+      if (Number(table?.pageNumber) >= 2 && Number(table?.pageNumber) <= 12) score += 2;
+      if (Number(table?.rowCount) >= 10) score += 2;
+
+      return score;
     };
 
     const scoreCashFlowTable = (table) => {
       const text = tableTextBlob(table);
+      if (isLikelyNotesTable(table)) return -100;
+
       let score = 0;
 
-      if (text.includes("التدفقات النقدية")) score += 12;
-      if (text.includes("قائمة التدفقات النقدية")) score += 16;
+      if (text.includes("التدفقات النقدية")) score += 16;
+      if (text.includes("قائمة التدفقات النقدية")) score += 20;
       if (text.includes("cash flow")) score += 12;
-      if (text.includes("النقد وما في حكمه")) score += 10;
-      if (text.includes("cash and cash")) score += 10;
-      if (text.includes("صافي التغير")) score += 8;
+      if (text.includes("النقد وما في حكمه")) score += 12;
+      if (text.includes("النقد والنقد المعادل")) score += 12;
+      if (text.includes("صافي التغير")) score += 10;
       if (text.includes("net change")) score += 8;
 
-      if (Number(table.columnCount) >= 2 && Number(table.columnCount) <= 4) score += 3;
-      if (Number(table.rowCount) >= 15) score += 3;
+      if (Number(table?.columnCount) >= 2 && Number(table?.columnCount) <= 4) score += 3;
+      if (Number(table?.rowCount) >= 12) score += 4;
+      if (Number(table?.pageNumber) >= 3 && Number(table?.pageNumber) <= 15) score += 3;
 
       if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 5;
       if (text.includes("الموجودات") || text.includes("حقوق الملكية")) score -= 5;
@@ -1192,12 +704,12 @@ module.exports = async function (context, req) {
       return score;
     };
 
-    const pickBestCashTable = (tables) => {
+    const pickBestTable = (tables, scorer) => {
       let best = null;
       let bestScore = -Infinity;
 
       for (const t of tables) {
-        const score = scoreCashFlowTable(t);
+        const score = scorer(t);
         if (score > bestScore) {
           best = t;
           bestScore = score;
@@ -1208,20 +720,22 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       Main extraction flow
+       Profile
        ========================= */
 
     const statementProfile = detectStatementProfile(tablesPreview);
 
+    /* =========================
+       Income extraction
+       ========================= */
+
     let incomeExtract = {};
-    let balanceExtract = {};
-    let cashFlowExtract = {};
-
     let incomeYears = { current: null, previous: null };
-    let balanceYears = { current: null, previous: null };
-    let cashFlowYears = { current: null, previous: null };
 
-    const incomeTable = pickBestIncomeTable(tablesPreview);
+    const incomeTable = pickBestTable(
+      tablesPreview,
+      (t) => scoreIncomeTable(t, statementProfile)
+    );
 
     if (incomeTable) {
       const cols = detectColumns(incomeTable);
@@ -1236,17 +750,86 @@ module.exports = async function (context, req) {
       const previousCol = picked.previous?.col ?? null;
       const rows = mergeTableRows(incomeTable);
 
-      const routed = extractFinancialStatements(
-        statementProfile,
-        rows,
-        latestCol,
-        previousCol
-      );
+      if (statementProfile === "bank") {
+        const usedRowIndexes = new Set();
+        incomeExtract = extractFieldsByMap(rows, BANK_INCOME_NAMES, latestCol, previousCol, { usedRowIndexes });
 
-      incomeExtract = routed.incomeStatementLite || {};
+        if (
+          isMissingValueObj(incomeExtract.netIncomeAfterZakat) &&
+          !isMissingValueObj(incomeExtract.netIncomeBeforeZakat) &&
+          !isMissingValueObj(incomeExtract.zakat)
+        ) {
+          incomeExtract.netIncomeAfterZakat = {
+            label: "صافي دخل السنة بعد الزكاة (مشتق)",
+            current:
+              incomeExtract.netIncomeBeforeZakat.current !== null &&
+              incomeExtract.zakat.current !== null
+                ? incomeExtract.netIncomeBeforeZakat.current - incomeExtract.zakat.current
+                : null,
+            previous:
+              incomeExtract.netIncomeBeforeZakat.previous !== null &&
+              incomeExtract.zakat.previous !== null
+                ? incomeExtract.netIncomeBeforeZakat.previous - incomeExtract.zakat.previous
+                : null
+          };
+        }
+
+        if (
+          isMissingValueObj(incomeExtract.totalOperatingExpenses) &&
+          !isMissingValueObj(incomeExtract.operatingExpensesBeforeImpairment) &&
+          !isMissingValueObj(incomeExtract.netImpairmentChargeForFinancing)
+        ) {
+          incomeExtract.totalOperatingExpenses = {
+            label: "إجمالي مصاريف العمليات (مشتق)",
+            current:
+              incomeExtract.operatingExpensesBeforeImpairment.current !== null &&
+              incomeExtract.netImpairmentChargeForFinancing.current !== null
+                ? incomeExtract.operatingExpensesBeforeImpairment.current + incomeExtract.netImpairmentChargeForFinancing.current
+                : null,
+            previous:
+              incomeExtract.operatingExpensesBeforeImpairment.previous !== null &&
+              incomeExtract.netImpairmentChargeForFinancing.previous !== null
+                ? incomeExtract.operatingExpensesBeforeImpairment.previous + incomeExtract.netImpairmentChargeForFinancing.previous
+                : null
+          };
+        }
+
+        if (
+          isMissingValueObj(incomeExtract.netOperatingIncome) &&
+          !isMissingValueObj(incomeExtract.totalOperatingIncome) &&
+          !isMissingValueObj(incomeExtract.totalOperatingExpenses)
+        ) {
+          incomeExtract.netOperatingIncome = {
+            label: "صافي دخل العمليات (مشتق)",
+            current:
+              incomeExtract.totalOperatingIncome.current !== null &&
+              incomeExtract.totalOperatingExpenses.current !== null
+                ? incomeExtract.totalOperatingIncome.current - incomeExtract.totalOperatingExpenses.current
+                : null,
+            previous:
+              incomeExtract.totalOperatingIncome.previous !== null &&
+              incomeExtract.totalOperatingExpenses.previous !== null
+                ? incomeExtract.totalOperatingIncome.previous - incomeExtract.totalOperatingExpenses.previous
+                : null
+          };
+        }
+      } else {
+        const usedRowIndexes = new Set();
+        incomeExtract = extractFieldsByMap(rows, OPERATING_INCOME_NAMES, latestCol, previousCol, { usedRowIndexes });
+      }
     }
 
-    const balanceTable = pickBestBalanceTable(tablesPreview);
+    /* =========================
+       Balance extraction
+       ========================= */
+
+    let balanceExtract = {};
+    let balanceYears = { current: null, previous: null };
+
+    const balanceTable = pickBestTable(
+      tablesPreview,
+      (t) => scoreBalanceTable(t, statementProfile)
+    );
 
     if (balanceTable) {
       const cols = detectColumns(balanceTable);
@@ -1262,17 +845,76 @@ module.exports = async function (context, req) {
       const rows = mergeTableRows(balanceTable);
 
       if (statementProfile === "bank") {
-        balanceExtract = extractBankBalanceSheet(rows, latestCol, previousCol);
+        const usedRowIndexes = new Set();
+        balanceExtract = extractFieldsByMap(rows, BANK_BALANCE_NAMES, latestCol, previousCol, { usedRowIndexes });
+
+        if (isMissingValueObj(balanceExtract.totalAssets)) {
+          const altTotalAssets = findBestRowForNames(
+            rows,
+            ["إجمالي المطلوبات وحقوق الملكية", "اجمالي المطلوبات وحقوق الملكية", "total liabilities and equity"],
+            latestCol,
+            { usedRowIndexes }
+          );
+
+          if (altTotalAssets.index >= 0) {
+            usedRowIndexes.add(altTotalAssets.index);
+            balanceExtract.totalAssets = makeValueObject(
+              altTotalAssets.row,
+              "إجمالي الموجودات",
+              latestCol,
+              previousCol
+            );
+          }
+        }
+
+        if (
+          isMissingValueObj(balanceExtract.totalEquity) &&
+          !isMissingValueObj(balanceExtract.equityAttributableToShareholders) &&
+          !isMissingValueObj(balanceExtract.tier1Sukuk)
+        ) {
+          balanceExtract.totalEquity = {
+            label: "إجمالي حقوق الملكية (مشتق)",
+            current:
+              balanceExtract.equityAttributableToShareholders.current !== null &&
+              balanceExtract.tier1Sukuk.current !== null
+                ? balanceExtract.equityAttributableToShareholders.current + balanceExtract.tier1Sukuk.current
+                : null,
+            previous:
+              balanceExtract.equityAttributableToShareholders.previous !== null &&
+              balanceExtract.tier1Sukuk.previous !== null
+                ? balanceExtract.equityAttributableToShareholders.previous + balanceExtract.tier1Sukuk.previous
+                : null
+          };
+        }
+
+        if (
+          isMissingValueObj(balanceExtract.totalLiabilities) &&
+          !isMissingValueObj(balanceExtract.totalAssets) &&
+          !isMissingValueObj(balanceExtract.totalEquity)
+        ) {
+          balanceExtract.totalLiabilities = {
+            label: "إجمالي المطلوبات (مشتق)",
+            current:
+              balanceExtract.totalAssets.current !== null &&
+              balanceExtract.totalEquity.current !== null
+                ? balanceExtract.totalAssets.current - balanceExtract.totalEquity.current
+                : null,
+            previous:
+              balanceExtract.totalAssets.previous !== null &&
+              balanceExtract.totalEquity.previous !== null
+                ? balanceExtract.totalAssets.previous - balanceExtract.totalEquity.previous
+                : null
+          };
+        }
       } else {
         const usedRowIndexes = new Set();
 
-        const nonCurrentAssetsMatch = findExactBalanceSheetMatch(
+        const nonCurrentAssetsMatch = findBestRowForNames(
           rows,
           ["إجمالي الموجودات غير المتداولة", "إجمالي الأصول غير المتداولة"],
           latestCol,
-          usedRowIndexes
+          { exactOnly: true, usedRowIndexes }
         );
-
         if (nonCurrentAssetsMatch.index >= 0) usedRowIndexes.add(nonCurrentAssetsMatch.index);
 
         balanceExtract.nonCurrentAssets = makeValueObject(
@@ -1282,43 +924,80 @@ module.exports = async function (context, req) {
           previousCol
         );
 
-        const totalAssetsDirectMatch = findExactBalanceSheetMatch(
+        const totalAssetsMatch = findBestRowForNames(
           rows,
           ["إجمالي الموجودات", "إجمالي الأصول", "مجموع الأصول"],
           latestCol,
-          usedRowIndexes
+          { exactOnly: true, usedRowIndexes }
         );
+        if (totalAssetsMatch.index >= 0) usedRowIndexes.add(totalAssetsMatch.index);
 
-        if (totalAssetsDirectMatch.index >= 0) usedRowIndexes.add(totalAssetsDirectMatch.index);
-
-        let totalAssetsObj = makeValueObject(
-          totalAssetsDirectMatch.row,
+        balanceExtract.totalAssets = makeValueObject(
+          totalAssetsMatch.row,
           "إجمالي الأصول",
           latestCol,
           previousCol
         );
 
-        if (isMissingValueObj(totalAssetsObj)) {
-          const totalAssetsFromAccountingMatch = findContainsBalanceSheetMatch(
-            rows,
-            ["إجمالي حقوق الملكية والمطلوبات"],
-            latestCol,
-            usedRowIndexes
-          );
+        const totalLiabilitiesMatch = findBestRowForNames(
+          rows,
+          ["إجمالي المطلوبات", "إجمالي الالتزامات", "مجموع المطلوبات", "مجموع الالتزامات"],
+          latestCol,
+          { exactOnly: true, usedRowIndexes }
+        );
+        if (totalLiabilitiesMatch.index >= 0) usedRowIndexes.add(totalLiabilitiesMatch.index);
 
-          if (totalAssetsFromAccountingMatch.index >= 0) {
-            usedRowIndexes.add(totalAssetsFromAccountingMatch.index);
+        balanceExtract.totalLiabilities = makeValueObject(
+          totalLiabilitiesMatch.row,
+          "إجمالي المطلوبات",
+          latestCol,
+          previousCol
+        );
 
-            totalAssetsObj = makeValueObject(
-              totalAssetsFromAccountingMatch.row,
-              "إجمالي الأصول",
-              latestCol,
-              previousCol
-            );
-          }
-        }
+        const currentLiabilitiesMatch = findBestRowForNames(
+          rows,
+          ["إجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة"],
+          latestCol,
+          { exactOnly: true, usedRowIndexes }
+        );
+        if (currentLiabilitiesMatch.index >= 0) usedRowIndexes.add(currentLiabilitiesMatch.index);
 
-        balanceExtract.totalAssets = totalAssetsObj;
+        balanceExtract.currentLiabilities = makeValueObject(
+          currentLiabilitiesMatch.row,
+          "المطلوبات المتداولة",
+          latestCol,
+          previousCol
+        );
+
+        const nonCurrentLiabilitiesMatch = findBestRowForNames(
+          rows,
+          ["إجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة"],
+          latestCol,
+          { exactOnly: true, usedRowIndexes }
+        );
+        if (nonCurrentLiabilitiesMatch.index >= 0) usedRowIndexes.add(nonCurrentLiabilitiesMatch.index);
+
+        balanceExtract.nonCurrentLiabilities = makeValueObject(
+          nonCurrentLiabilitiesMatch.row,
+          "المطلوبات غير المتداولة",
+          latestCol,
+          previousCol
+        );
+
+        const totalEquityMatch = findBestRowForNames(
+          rows,
+          ["إجمالي حقوق الملكية", "إجمالي حقوق المساهمين", "مجموع حقوق الملكية"],
+          latestCol,
+          { exactOnly: true, usedRowIndexes }
+        );
+        if (totalEquityMatch.index >= 0) usedRowIndexes.add(totalEquityMatch.index);
+
+        balanceExtract.totalEquity = makeValueObject(
+          totalEquityMatch.row,
+          "إجمالي حقوق الملكية",
+          latestCol,
+          previousCol
+        );
 
         if (hasCurrent(balanceExtract.totalAssets) && hasCurrent(balanceExtract.nonCurrentAssets)) {
           balanceExtract.currentAssets = {
@@ -1333,76 +1012,50 @@ module.exports = async function (context, req) {
           balanceExtract.currentAssets = null;
         }
 
-        const totalLiabilitiesMatch = findExactBalanceSheetMatch(
-          rows,
-          ["إجمالي المطلوبات", "إجمالي الالتزامات", "مجموع المطلوبات", "مجموع الالتزامات"],
-          latestCol,
-          usedRowIndexes
-        );
-        if (totalLiabilitiesMatch.index >= 0) usedRowIndexes.add(totalLiabilitiesMatch.index);
+        if (isMissingValueObj(balanceExtract.nonCurrentLiabilities)) {
+          if (
+            balanceExtract.totalLiabilities?.current !== null &&
+            balanceExtract.currentLiabilities?.current !== null
+          ) {
+            balanceExtract.nonCurrentLiabilities = {
+              label: "المطلوبات غير المتداولة (مشتق)",
+              current: balanceExtract.totalLiabilities.current - balanceExtract.currentLiabilities.current,
+              previous:
+                balanceExtract.totalLiabilities?.previous !== null &&
+                balanceExtract.currentLiabilities?.previous !== null
+                  ? balanceExtract.totalLiabilities.previous - balanceExtract.currentLiabilities.previous
+                  : null
+            };
+          }
+        }
 
-        balanceExtract.totalLiabilities = makeValueObject(
-          totalLiabilitiesMatch.row,
-          "إجمالي المطلوبات",
-          latestCol,
-          previousCol
-        );
-
-        const currentLiabilitiesMatch = findExactBalanceSheetMatch(
-          rows,
-          ["إجمالي المطلوبات المتداولة", "إجمالي الالتزامات المتداولة"],
-          latestCol,
-          usedRowIndexes
-        );
-        if (currentLiabilitiesMatch.index >= 0) usedRowIndexes.add(currentLiabilitiesMatch.index);
-
-        balanceExtract.currentLiabilities = makeValueObject(
-          currentLiabilitiesMatch.row,
-          "المطلوبات المتداولة",
-          latestCol,
-          previousCol
-        );
-
-        const nonCurrentLiabilitiesMatch = findExactBalanceSheetMatch(
-          rows,
-          ["إجمالي المطلوبات غير المتداولة", "إجمالي الالتزامات غير المتداولة"],
-          latestCol,
-          usedRowIndexes
-        );
-        if (nonCurrentLiabilitiesMatch.index >= 0) usedRowIndexes.add(nonCurrentLiabilitiesMatch.index);
-
-        balanceExtract.nonCurrentLiabilities = makeValueObject(
-          nonCurrentLiabilitiesMatch.row,
-          "المطلوبات غير المتداولة",
-          latestCol,
-          previousCol
-        );
-
-        const totalEquityMatch = findExactBalanceSheetMatch(
-          rows,
-          ["إجمالي حقوق الملكية", "إجمالي حقوق المساهمين", "مجموع حقوق الملكية"],
-          latestCol,
-          usedRowIndexes
-        );
-        if (totalEquityMatch.index >= 0) usedRowIndexes.add(totalEquityMatch.index);
-
-        balanceExtract.totalEquity = makeValueObject(
-          totalEquityMatch.row,
-          "إجمالي حقوق الملكية",
-          latestCol,
-          previousCol
-        );
+        if (isMissingValueObj(balanceExtract.totalAssets)) {
+          if (
+            balanceExtract.totalLiabilities?.current !== null &&
+            balanceExtract.totalEquity?.current !== null
+          ) {
+            balanceExtract.totalAssets = {
+              label: "إجمالي الأصول (مشتق)",
+              current: balanceExtract.totalLiabilities.current + balanceExtract.totalEquity.current,
+              previous:
+                balanceExtract.totalLiabilities?.previous !== null &&
+                balanceExtract.totalEquity?.previous !== null
+                  ? balanceExtract.totalLiabilities.previous + balanceExtract.totalEquity.previous
+                  : null
+            };
+          }
+        }
       }
     }
 
     /* =========================
-       Cash flow
+       Cash flow extraction
        ========================= */
 
     const detectCashTriplet = (rows, latestCol, previousCol) => {
       if (latestCol === null || previousCol === null) return null;
 
-      const numericRows = rows.filter(r =>
+      const numericRows = rows.filter((r) =>
         rowHasNumericValueAt(r, latestCol) || rowHasNumericValueAt(r, previousCol)
       );
 
@@ -1456,7 +1109,10 @@ module.exports = async function (context, req) {
       return null;
     };
 
-    const cashTable = pickBestCashTable(tablesPreview);
+    let cashFlowExtract = {};
+    let cashFlowYears = { current: null, previous: null };
+
+    const cashTable = pickBestTable(tablesPreview, scoreCashFlowTable);
 
     if (cashTable) {
       const cols = detectColumns(cashTable);
@@ -1469,42 +1125,24 @@ module.exports = async function (context, req) {
 
       const latestCol = picked.latest?.col ?? null;
       const previousCol = picked.previous?.col ?? null;
-
       const rows = mergeTableRows(cashTable);
 
-      const endingCashNamesExact = [
+      const endingCashNames = [
         "النقد وما في حكمه في نهاية السنة",
         "النقد والنقد المعادل في نهاية السنة",
         "النقد وما في حكمه في نهاية الفترة",
         "النقد والنقد المعادل في نهاية الفترة"
       ];
 
-      const beginningCashNamesExact = [
+      const beginningCashNames = [
         "النقد وما في حكمه في بداية السنة",
         "النقد والنقد المعادل في بداية السنة",
         "النقد وما في حكمه في بداية الفترة",
         "النقد والنقد المعادل في بداية الفترة"
       ];
 
-      const endingCashNamesContains = [
-        "في نهاية السنة",
-        "في نهاية الفترة"
-      ];
-
-      const beginningCashNamesContains = [
-        "في بداية السنة",
-        "في بداية الفترة"
-      ];
-
-      let endingCashMatch = findExactRowMatch(rows, endingCashNamesExact, latestCol);
-      if (endingCashMatch.index < 0) {
-        endingCashMatch = findContainsRowMatch(rows, endingCashNamesContains, latestCol);
-      }
-
-      let beginningCashMatch = findExactRowMatch(rows, beginningCashNamesExact, latestCol);
-      if (beginningCashMatch.index < 0) {
-        beginningCashMatch = findContainsRowMatch(rows, beginningCashNamesContains, latestCol);
-      }
+      const endingCashMatch = findBestRowForNames(rows, endingCashNames, latestCol);
+      const beginningCashMatch = findBestRowForNames(rows, beginningCashNames, latestCol);
 
       let endingCashObj = makeValueObject(
         endingCashMatch.row,
@@ -1606,283 +1244,162 @@ module.exports = async function (context, req) {
         current: boolOrNull(cashFlowEquationCurrent),
         previous: boolOrNull(cashFlowEquationPrevious)
       },
-      completeness: statementProfile === "bank"
-        ? {
-            incomeStatementLite: {
-              hasIncomeFromInvestmentsAndFinancing: hasCurrent(incomeExtract?.incomeFromInvestmentsAndFinancing),
-              hasTotalOperatingIncome: hasCurrent(incomeExtract?.totalOperatingIncome),
-              hasNetOperatingIncome: hasCurrent(incomeExtract?.netOperatingIncome),
-              hasNetIncomeBeforeZakat: hasCurrent(incomeExtract?.netIncomeBeforeZakat),
-              hasNetIncomeAfterZakat: hasCurrent(incomeExtract?.netIncomeAfterZakat)
-            },
-            balanceSheetLite: {
-              hasCashAndBalancesWithCentralBank: hasCurrent(balanceExtract?.cashAndBalancesWithCentralBank),
-              hasFinancingNet: hasCurrent(balanceExtract?.financingNet),
-              hasCustomerDeposits: hasCurrent(balanceExtract?.customerDeposits),
-              hasTotalAssets: hasCurrent(balanceExtract?.totalAssets),
-              hasTotalLiabilities: hasCurrent(balanceExtract?.totalLiabilities),
-              hasTotalEquity: hasCurrent(balanceExtract?.totalEquity)
-            },
-            cashFlowLite: {
-              hasEndingCash: hasCurrent(cashFlowExtract?.endingCash),
-              hasBeginningCash: hasCurrent(cashFlowExtract?.beginningCash),
-              hasNetChangeInCash: hasCurrent(cashFlowExtract?.netChangeInCash)
+      completeness:
+        statementProfile === "bank"
+          ? {
+              incomeStatementLite: {
+                hasIncomeFromInvestmentsAndFinancing: hasCurrent(incomeExtract?.incomeFromInvestmentsAndFinancing),
+                hasTotalOperatingIncome: hasCurrent(incomeExtract?.totalOperatingIncome),
+                hasNetOperatingIncome: hasCurrent(incomeExtract?.netOperatingIncome),
+                hasNetIncomeBeforeZakat: hasCurrent(incomeExtract?.netIncomeBeforeZakat),
+                hasNetIncomeAfterZakat: hasCurrent(incomeExtract?.netIncomeAfterZakat)
+              },
+              balanceSheetLite: {
+                hasCashAndBalancesWithCentralBank: hasCurrent(balanceExtract?.cashAndBalancesWithCentralBank),
+                hasFinancingNet: hasCurrent(balanceExtract?.financingNet),
+                hasCustomerDeposits: hasCurrent(balanceExtract?.customerDeposits),
+                hasTotalAssets: hasCurrent(balanceExtract?.totalAssets),
+                hasTotalLiabilities: hasCurrent(balanceExtract?.totalLiabilities),
+                hasTotalEquity: hasCurrent(balanceExtract?.totalEquity)
+              },
+              cashFlowLite: {
+                hasEndingCash: hasCurrent(cashFlowExtract?.endingCash),
+                hasBeginningCash: hasCurrent(cashFlowExtract?.beginningCash),
+                hasNetChangeInCash: hasCurrent(cashFlowExtract?.netChangeInCash)
+              }
             }
-          }
-        : {
-            incomeStatementLite: {
-              hasRevenue: hasCurrent(incomeExtract?.revenue),
-              hasCostOfRevenue: hasCurrent(incomeExtract?.costOfRevenue),
-              hasGrossProfit: hasCurrent(incomeExtract?.grossProfit),
-              hasOperatingProfit: hasCurrent(incomeExtract?.operatingProfit)
-            },
-            balanceSheetLite: {
-              hasTotalAssets: hasCurrent(balanceExtract?.totalAssets),
-              hasCurrentAssets: hasCurrent(balanceExtract?.currentAssets),
-              hasNonCurrentAssets: hasCurrent(balanceExtract?.nonCurrentAssets),
-              hasTotalLiabilities: hasCurrent(balanceExtract?.totalLiabilities),
-              hasCurrentLiabilities: hasCurrent(balanceExtract?.currentLiabilities),
-              hasNonCurrentLiabilities: hasCurrent(balanceExtract?.nonCurrentLiabilities),
-              hasTotalEquity: hasCurrent(balanceExtract?.totalEquity)
-            },
-            cashFlowLite: {
-              hasEndingCash: hasCurrent(cashFlowExtract?.endingCash),
-              hasBeginningCash: hasCurrent(cashFlowExtract?.beginningCash),
-              hasNetChangeInCash: hasCurrent(cashFlowExtract?.netChangeInCash)
+          : {
+              incomeStatementLite: {
+                hasRevenue: hasCurrent(incomeExtract?.revenue),
+                hasCostOfRevenue: hasCurrent(incomeExtract?.costOfRevenue),
+                hasGrossProfit: hasCurrent(incomeExtract?.grossProfit),
+                hasOperatingProfit: hasCurrent(incomeExtract?.operatingProfit)
+              },
+              balanceSheetLite: {
+                hasTotalAssets: hasCurrent(balanceExtract?.totalAssets),
+                hasCurrentAssets: hasCurrent(balanceExtract?.currentAssets),
+                hasNonCurrentAssets: hasCurrent(balanceExtract?.nonCurrentAssets),
+                hasTotalLiabilities: hasCurrent(balanceExtract?.totalLiabilities),
+                hasCurrentLiabilities: hasCurrent(balanceExtract?.currentLiabilities),
+                hasNonCurrentLiabilities: hasCurrent(balanceExtract?.nonCurrentLiabilities),
+                hasTotalEquity: hasCurrent(balanceExtract?.totalEquity)
+              },
+              cashFlowLite: {
+                hasEndingCash: hasCurrent(cashFlowExtract?.endingCash),
+                hasBeginningCash: hasCurrent(cashFlowExtract?.beginningCash),
+                hasNetChangeInCash: hasCurrent(cashFlowExtract?.netChangeInCash)
+              }
             }
-          }
     };
 
     /* =========================
-       Derived
+       Derived + ratios
        ========================= */
 
-    const derived = statementProfile === "bank"
-      ? {
-          detectedYears: {
-            incomeStatement: incomeYears,
-            balanceSheet: balanceYears,
-            cashFlow: cashFlowYears
-          },
-          growth: {
-            totalOperatingIncomePct: round2(safePercentChange(
-              incomeExtract?.totalOperatingIncome?.current ?? null,
-              incomeExtract?.totalOperatingIncome?.previous ?? null
-            )),
-            netOperatingIncomePct: round2(safePercentChange(
-              incomeExtract?.netOperatingIncome?.current ?? null,
-              incomeExtract?.netOperatingIncome?.previous ?? null
-            )),
-            netIncomeAfterZakatPct: round2(safePercentChange(
-              incomeExtract?.netIncomeAfterZakat?.current ?? null,
-              incomeExtract?.netIncomeAfterZakat?.previous ?? null
-            )),
-            financingNetPct: round2(safePercentChange(
-              balanceExtract?.financingNet?.current ?? null,
-              balanceExtract?.financingNet?.previous ?? null
-            )),
-            customerDepositsPct: round2(safePercentChange(
-              balanceExtract?.customerDeposits?.current ?? null,
-              balanceExtract?.customerDeposits?.previous ?? null
-            )),
-            totalAssetsPct: round2(safePercentChange(
-              balanceExtract?.totalAssets?.current ?? null,
-              balanceExtract?.totalAssets?.previous ?? null
-            )),
-            totalEquityPct: round2(safePercentChange(
-              balanceExtract?.totalEquity?.current ?? null,
-              balanceExtract?.totalEquity?.previous ?? null
-            )),
-            endingCashPct: round2(safePercentChange(
-              cashFlowExtract?.endingCash?.current ?? null,
-              cashFlowExtract?.endingCash?.previous ?? null
-            ))
+    const derived =
+      statementProfile === "bank"
+        ? {
+            detectedYears: {
+              incomeStatement: incomeYears,
+              balanceSheet: balanceYears,
+              cashFlow: cashFlowYears
+            },
+            growth: {
+              totalOperatingIncomePct: round2(safePercentChange(incomeExtract?.totalOperatingIncome?.current ?? null, incomeExtract?.totalOperatingIncome?.previous ?? null)),
+              netOperatingIncomePct: round2(safePercentChange(incomeExtract?.netOperatingIncome?.current ?? null, incomeExtract?.netOperatingIncome?.previous ?? null)),
+              netIncomeAfterZakatPct: round2(safePercentChange(incomeExtract?.netIncomeAfterZakat?.current ?? null, incomeExtract?.netIncomeAfterZakat?.previous ?? null)),
+              financingNetPct: round2(safePercentChange(balanceExtract?.financingNet?.current ?? null, balanceExtract?.financingNet?.previous ?? null)),
+              customerDepositsPct: round2(safePercentChange(balanceExtract?.customerDeposits?.current ?? null, balanceExtract?.customerDeposits?.previous ?? null)),
+              totalAssetsPct: round2(safePercentChange(balanceExtract?.totalAssets?.current ?? null, balanceExtract?.totalAssets?.previous ?? null)),
+              totalEquityPct: round2(safePercentChange(balanceExtract?.totalEquity?.current ?? null, balanceExtract?.totalEquity?.previous ?? null)),
+              endingCashPct: round2(safePercentChange(cashFlowExtract?.endingCash?.current ?? null, cashFlowExtract?.endingCash?.previous ?? null))
+            }
           }
-        }
-      : {
-          detectedYears: {
-            incomeStatement: incomeYears,
-            balanceSheet: balanceYears,
-            cashFlow: cashFlowYears
-          },
-          growth: {
-            revenuePct: round2(safePercentChange(
-              incomeExtract?.revenue?.current ?? null,
-              incomeExtract?.revenue?.previous ?? null
-            )),
-            grossProfitPct: round2(safePercentChange(
-              incomeExtract?.grossProfit?.current ?? null,
-              incomeExtract?.grossProfit?.previous ?? null
-            )),
-            operatingProfitPct: round2(safePercentChange(
-              incomeExtract?.operatingProfit?.current ?? null,
-              incomeExtract?.operatingProfit?.previous ?? null
-            )),
-            totalAssetsPct: round2(safePercentChange(
-              balanceExtract?.totalAssets?.current ?? null,
-              balanceExtract?.totalAssets?.previous ?? null
-            )),
-            totalEquityPct: round2(safePercentChange(
-              balanceExtract?.totalEquity?.current ?? null,
-              balanceExtract?.totalEquity?.previous ?? null
-            )),
-            endingCashPct: round2(safePercentChange(
-              cashFlowExtract?.endingCash?.current ?? null,
-              cashFlowExtract?.endingCash?.previous ?? null
-            ))
+        : {
+            detectedYears: {
+              incomeStatement: incomeYears,
+              balanceSheet: balanceYears,
+              cashFlow: cashFlowYears
+            },
+            growth: {
+              revenuePct: round2(safePercentChange(incomeExtract?.revenue?.current ?? null, incomeExtract?.revenue?.previous ?? null)),
+              grossProfitPct: round2(safePercentChange(incomeExtract?.grossProfit?.current ?? null, incomeExtract?.grossProfit?.previous ?? null)),
+              operatingProfitPct: round2(safePercentChange(incomeExtract?.operatingProfit?.current ?? null, incomeExtract?.operatingProfit?.previous ?? null)),
+              totalAssetsPct: round2(safePercentChange(balanceExtract?.totalAssets?.current ?? null, balanceExtract?.totalAssets?.previous ?? null)),
+              totalEquityPct: round2(safePercentChange(balanceExtract?.totalEquity?.current ?? null, balanceExtract?.totalEquity?.previous ?? null)),
+              endingCashPct: round2(safePercentChange(cashFlowExtract?.endingCash?.current ?? null, cashFlowExtract?.endingCash?.previous ?? null))
+            }
+          };
+
+    const ratios =
+      statementProfile === "bank"
+        ? {
+            banking: {
+              financingToDeposits: {
+                current: round2(safeRatio(balanceExtract?.financingNet?.current ?? null, balanceExtract?.customerDeposits?.current ?? null)),
+                previous: round2(safeRatio(balanceExtract?.financingNet?.previous ?? null, balanceExtract?.customerDeposits?.previous ?? null))
+              },
+              equityToAssets: {
+                current: round2(safeRatio(balanceExtract?.totalEquity?.current ?? null, balanceExtract?.totalAssets?.current ?? null)),
+                previous: round2(safeRatio(balanceExtract?.totalEquity?.previous ?? null, balanceExtract?.totalAssets?.previous ?? null))
+              },
+              depositsToAssets: {
+                current: round2(safeRatio(balanceExtract?.customerDeposits?.current ?? null, balanceExtract?.totalAssets?.current ?? null)),
+                previous: round2(safeRatio(balanceExtract?.customerDeposits?.previous ?? null, balanceExtract?.totalAssets?.previous ?? null))
+              },
+              cashToDeposits: {
+                current: round2(safeRatio(cashFlowExtract?.endingCash?.current ?? null, balanceExtract?.customerDeposits?.current ?? null)),
+                previous: round2(safeRatio(cashFlowExtract?.endingCash?.previous ?? null, balanceExtract?.customerDeposits?.previous ?? null))
+              },
+              netOperatingIncomeMarginPct: {
+                current: round2(safeMarginPct(incomeExtract?.netOperatingIncome?.current ?? null, incomeExtract?.totalOperatingIncome?.current ?? null)),
+                previous: round2(safeMarginPct(incomeExtract?.netOperatingIncome?.previous ?? null, incomeExtract?.totalOperatingIncome?.previous ?? null))
+              },
+              netIncomeMarginPct: {
+                current: round2(safeMarginPct(incomeExtract?.netIncomeAfterZakat?.current ?? null, incomeExtract?.totalOperatingIncome?.current ?? null)),
+                previous: round2(safeMarginPct(incomeExtract?.netIncomeAfterZakat?.previous ?? null, incomeExtract?.totalOperatingIncome?.previous ?? null))
+              }
+            }
           }
-        };
+        : {
+            profitability: {
+              grossMarginPct: {
+                current: round2(safeMarginPct(incomeExtract?.grossProfit?.current ?? null, incomeExtract?.revenue?.current ?? null)),
+                previous: round2(safeMarginPct(incomeExtract?.grossProfit?.previous ?? null, incomeExtract?.revenue?.previous ?? null))
+              },
+              operatingMarginPct: {
+                current: round2(safeMarginPct(incomeExtract?.operatingProfit?.current ?? null, incomeExtract?.revenue?.current ?? null)),
+                previous: round2(safeMarginPct(incomeExtract?.operatingProfit?.previous ?? null, incomeExtract?.revenue?.previous ?? null))
+              }
+            },
+            liquidity: {
+              currentRatio: {
+                current: round2(safeRatio(balanceExtract?.currentAssets?.current ?? null, balanceExtract?.currentLiabilities?.current ?? null)),
+                previous: round2(safeRatio(balanceExtract?.currentAssets?.previous ?? null, balanceExtract?.currentLiabilities?.previous ?? null))
+              },
+              cashToCurrentLiabilities: {
+                current: round2(safeRatio(cashFlowExtract?.endingCash?.current ?? null, balanceExtract?.currentLiabilities?.current ?? null)),
+                previous: round2(safeRatio(cashFlowExtract?.endingCash?.previous ?? null, balanceExtract?.currentLiabilities?.previous ?? null))
+              }
+            },
+            leverage: {
+              debtToAssets: {
+                current: round2(safeRatio(balanceExtract?.totalLiabilities?.current ?? null, balanceExtract?.totalAssets?.current ?? null)),
+                previous: round2(safeRatio(balanceExtract?.totalLiabilities?.previous ?? null, balanceExtract?.totalAssets?.previous ?? null))
+              },
+              equityRatio: {
+                current: round2(safeRatio(balanceExtract?.totalEquity?.current ?? null, balanceExtract?.totalAssets?.current ?? null)),
+                previous: round2(safeRatio(balanceExtract?.totalEquity?.previous ?? null, balanceExtract?.totalAssets?.previous ?? null))
+              },
+              debtToEquity: {
+                current: round2(safeRatio(balanceExtract?.totalLiabilities?.current ?? null, balanceExtract?.totalEquity?.current ?? null)),
+                previous: round2(safeRatio(balanceExtract?.totalLiabilities?.previous ?? null, balanceExtract?.totalEquity?.previous ?? null))
+              }
+            }
+          };
 
     /* =========================
-       Ratios
-       ========================= */
-
-    const ratios = statementProfile === "bank"
-      ? {
-          banking: {
-            financingToDeposits: {
-              current: round2(safeRatio(
-                balanceExtract?.financingNet?.current ?? null,
-                balanceExtract?.customerDeposits?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                balanceExtract?.financingNet?.previous ?? null,
-                balanceExtract?.customerDeposits?.previous ?? null
-              ))
-            },
-            equityToAssets: {
-              current: round2(safeRatio(
-                balanceExtract?.totalEquity?.current ?? null,
-                balanceExtract?.totalAssets?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                balanceExtract?.totalEquity?.previous ?? null,
-                balanceExtract?.totalAssets?.previous ?? null
-              ))
-            },
-            depositsToAssets: {
-              current: round2(safeRatio(
-                balanceExtract?.customerDeposits?.current ?? null,
-                balanceExtract?.totalAssets?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                balanceExtract?.customerDeposits?.previous ?? null,
-                balanceExtract?.totalAssets?.previous ?? null
-              ))
-            },
-            cashToDeposits: {
-              current: round2(safeRatio(
-                cashFlowExtract?.endingCash?.current ?? null,
-                balanceExtract?.customerDeposits?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                cashFlowExtract?.endingCash?.previous ?? null,
-                balanceExtract?.customerDeposits?.previous ?? null
-              ))
-            },
-            netOperatingIncomeMarginPct: {
-              current: round2(safeMarginPct(
-                incomeExtract?.netOperatingIncome?.current ?? null,
-                incomeExtract?.totalOperatingIncome?.current ?? null
-              )),
-              previous: round2(safeMarginPct(
-                incomeExtract?.netOperatingIncome?.previous ?? null,
-                incomeExtract?.totalOperatingIncome?.previous ?? null
-              ))
-            },
-            netIncomeMarginPct: {
-              current: round2(safeMarginPct(
-                incomeExtract?.netIncomeAfterZakat?.current ?? null,
-                incomeExtract?.totalOperatingIncome?.current ?? null
-              )),
-              previous: round2(safeMarginPct(
-                incomeExtract?.netIncomeAfterZakat?.previous ?? null,
-                incomeExtract?.totalOperatingIncome?.previous ?? null
-              ))
-            }
-          }
-        }
-      : {
-          profitability: {
-            grossMarginPct: {
-              current: round2(safeMarginPct(
-                incomeExtract?.grossProfit?.current ?? null,
-                incomeExtract?.revenue?.current ?? null
-              )),
-              previous: round2(safeMarginPct(
-                incomeExtract?.grossProfit?.previous ?? null,
-                incomeExtract?.revenue?.previous ?? null
-              ))
-            },
-            operatingMarginPct: {
-              current: round2(safeMarginPct(
-                incomeExtract?.operatingProfit?.current ?? null,
-                incomeExtract?.revenue?.current ?? null
-              )),
-              previous: round2(safeMarginPct(
-                incomeExtract?.operatingProfit?.previous ?? null,
-                incomeExtract?.revenue?.previous ?? null
-              ))
-            }
-          },
-          liquidity: {
-            currentRatio: {
-              current: round2(safeRatio(
-                balanceExtract?.currentAssets?.current ?? null,
-                balanceExtract?.currentLiabilities?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                balanceExtract?.currentAssets?.previous ?? null,
-                balanceExtract?.currentLiabilities?.previous ?? null
-              ))
-            },
-            cashToCurrentLiabilities: {
-              current: round2(safeRatio(
-                cashFlowExtract?.endingCash?.current ?? null,
-                balanceExtract?.currentLiabilities?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                cashFlowExtract?.endingCash?.previous ?? null,
-                balanceExtract?.currentLiabilities?.previous ?? null
-              ))
-            }
-          },
-          leverage: {
-            debtToAssets: {
-              current: round2(safeRatio(
-                balanceExtract?.totalLiabilities?.current ?? null,
-                balanceExtract?.totalAssets?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                balanceExtract?.totalLiabilities?.previous ?? null,
-                balanceExtract?.totalAssets?.previous ?? null
-              ))
-            },
-            equityRatio: {
-              current: round2(safeRatio(
-                balanceExtract?.totalEquity?.current ?? null,
-                balanceExtract?.totalAssets?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                balanceExtract?.totalEquity?.previous ?? null,
-                balanceExtract?.totalAssets?.previous ?? null
-              ))
-            },
-            debtToEquity: {
-              current: round2(safeRatio(
-                balanceExtract?.totalLiabilities?.current ?? null,
-                balanceExtract?.totalEquity?.current ?? null
-              )),
-              previous: round2(safeRatio(
-                balanceExtract?.totalLiabilities?.previous ?? null,
-                balanceExtract?.totalEquity?.previous ?? null
-              ))
-            }
-          }
-        };
-
-    /* =========================
-       Lightweight summaries
+       Signals + narrative
        ========================= */
 
     const signals = {
@@ -1964,19 +1481,7 @@ module.exports = async function (context, req) {
       summary: []
     };
 
-    if (statementProfile === "bank") {
-      pushInsight(insights.summary, "تم اكتشاف الملف كبنك واستخدام منطق استخراج بنكي.");
-    } else {
-      pushInsight(insights.summary, "تم اكتشاف الملف كشركة تشغيلية واستخدام منطق الاستخراج التقليدي.");
-    }
-
     const executiveSummary = [];
-    if (statementProfile === "bank") {
-      executiveSummary.push("تم تطبيق ملف تعريف بنكي على القوائم المالية.");
-    } else {
-      executiveSummary.push("تم تطبيق ملف تعريف شركة تشغيلية على القوائم المالية.");
-    }
-
     const evaluation = {
       strengths: [],
       watchPoints: [],
@@ -1985,29 +1490,90 @@ module.exports = async function (context, req) {
     };
 
     const investmentView = {
-      businessQuality: {
-        signal: null,
-        points: []
-      },
-      financialStability: {
-        signal: null,
-        points: []
-      },
-      growthOutlook: {
-        signal: null,
-        points: []
-      },
-      cashQuality: {
-        signal: null,
-        points: []
-      },
+      businessQuality: { signal: null, points: [] },
+      financialStability: { signal: null, points: [] },
+      growthOutlook: { signal: null, points: [] },
+      cashQuality: { signal: null, points: [] },
       overallView: [],
       investmentView: null
     };
 
+    if (statementProfile === "bank") {
+      pushUnique(insights.summary, "تم اكتشاف الملف كبنك واستخدام منطق استخراج بنكي.");
+      pushUnique(executiveSummary, "تم تطبيق ملف تعريف بنكي على القوائم المالية.");
+
+      if (signals.profitability === "strong" || signals.profitability === "good") {
+        pushUnique(evaluation.strengths, "الربحية البنكية تبدو جيدة نسبيًا.");
+      }
+      if (signals.liquidity === "tight") {
+        pushUnique(evaluation.watchPoints, "نسبة التمويل إلى الودائع مرتفعة نسبيًا وتحتاج متابعة.");
+      }
+      if (signals.leverage === "thin_capital") {
+        pushUnique(evaluation.risks, "القاعدة الرأسمالية تبدو أضعف نسبيًا وتستحق الحذر.");
+      }
+
+      investmentView.businessQuality.signal = signals.profitability;
+      investmentView.financialStability.signal = signals.leverage;
+      investmentView.growthOutlook.signal = signals.growth;
+      investmentView.cashQuality.signal = hasCurrent(cashFlowExtract?.endingCash) ? "available" : null;
+
+      if (signals.profitability === "strong" || signals.profitability === "good") {
+        pushUnique(investmentView.overallView, "الصورة الاستثمارية الأولية للبنك تميل للإيجابية.");
+        investmentView.investmentView = "positive";
+      } else if (signals.profitability === "weak" || signals.leverage === "thin_capital") {
+        pushUnique(investmentView.overallView, "الصورة الاستثمارية الحالية تميل للحذر.");
+        investmentView.investmentView = "cautious";
+      } else {
+        pushUnique(investmentView.overallView, "القراءة الاستثمارية الأولية للبنك متوازنة.");
+        investmentView.investmentView = "neutral";
+      }
+    } else {
+      pushUnique(insights.summary, "تم اكتشاف الملف كشركة تشغيلية واستخدام منطق الاستخراج التقليدي.");
+      pushUnique(executiveSummary, "تم تطبيق ملف تعريف شركة تشغيلية على القوائم المالية.");
+
+      if (signals.liquidity === "strong") {
+        pushUnique(evaluation.strengths, "السيولة الجارية تبدو قوية.");
+      }
+      if (signals.profitability === "weak") {
+        pushUnique(evaluation.watchPoints, "الربحية التشغيلية ضعيفة نسبيًا.");
+      }
+      if (signals.leverage === "high") {
+        pushUnique(evaluation.risks, "الاعتماد على المطلوبات مرتفع نسبيًا.");
+      }
+
+      investmentView.businessQuality.signal = signals.profitability;
+      investmentView.financialStability.signal = signals.leverage;
+      investmentView.growthOutlook.signal = signals.growth;
+      investmentView.cashQuality.signal = hasCurrent(cashFlowExtract?.endingCash) ? "available" : null;
+
+      if (signals.profitability === "strong" && signals.leverage !== "high") {
+        pushUnique(investmentView.overallView, "الصورة الاستثمارية الأولية تبدو إيجابية.");
+        investmentView.investmentView = "positive";
+      } else if (signals.profitability === "weak" || signals.leverage === "high") {
+        pushUnique(investmentView.overallView, "الصورة الاستثمارية الحالية تميل للحذر.");
+        investmentView.investmentView = "cautious";
+      } else {
+        pushUnique(investmentView.overallView, "القراءة الاستثمارية الأولية متوازنة.");
+        investmentView.investmentView = "neutral";
+      }
+    }
+
     /* =========================
-       Meta + response
+       Meta
        ========================= */
+
+    const extractionStatus =
+      statementProfile === "bank"
+        ? {
+            incomeStatementLite: hasCurrent(incomeExtract?.totalOperatingIncome) || hasCurrent(incomeExtract?.netIncomeAfterZakat),
+            balanceSheetLite: hasCurrent(balanceExtract?.totalAssets) || hasCurrent(balanceExtract?.customerDeposits),
+            cashFlowLite: hasCurrent(cashFlowExtract?.endingCash)
+          }
+        : {
+            incomeStatementLite: hasCurrent(incomeExtract?.revenue),
+            balanceSheetLite: hasCurrent(balanceExtract?.totalAssets),
+            cashFlowLite: hasCurrent(cashFlowExtract?.endingCash)
+          };
 
     const statements = {
       incomeStatementLite: incomeExtract,
@@ -2023,7 +1589,12 @@ module.exports = async function (context, req) {
       },
       pagesMeta,
       statementProfile,
-      extractionStatus: mergeExtractionStatus(statementProfile, incomeExtract, balanceExtract, cashFlowExtract),
+      extractionStatus,
+      selectedTables: {
+        incomePage: incomeTable?.pageNumber ?? null,
+        balancePage: balanceTable?.pageNumber ?? null,
+        cashFlowPage: cashTable?.pageNumber ?? null
+      },
       summary: {
         currentYearDetected:
           incomeYears.current !== null ||
@@ -2056,16 +1627,10 @@ module.exports = async function (context, req) {
         investmentView
       }
     });
-
   } catch (e) {
     return send(500, {
       ok: false,
       error: e.message || String(e)
     });
   }
-
 };
-
-
-
-  
