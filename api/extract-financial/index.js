@@ -277,24 +277,24 @@ module.exports = async function (context, req) {
         if (requireNumeric && !rowHasNumericValueAt(row, latestCol)) continue;
 
         const s = stripNonTextNoise(label);
+        let score = -Infinity;
 
-let score = -Infinity;
+        for (const n of normalizedNames) {
+          if (!n) continue;
 
-for (const n of normalizedNames) {
-  if (!n) continue;
+          if (s === n) {
+            score = Math.max(score, 100 + n.length);
+          } else if (!exactOnly && (s.startsWith(n) || s.endsWith(n))) {
+            score = Math.max(score, 85 + n.length);
+          } else if (!exactOnly && s.includes(n)) {
+            score = Math.max(score, 70 + n.length);
+          }
+        }
 
-  if (s === n) {
-    score = Math.max(score, 100 + n.length);
-  } else if (!exactOnly && (s.startsWith(n) || s.endsWith(n))) {
-    score = Math.max(score, 85 + n.length);
-  } else if (!exactOnly && s.includes(n)) {
-    score = Math.max(score, 70 + n.length);
-  }
-}
-
-if (score > best.score) {
-  best = { row, index: i, score };
-}
+        if (score > best.score) {
+          best = { row, index: i, score };
+        }
+      }
 
       return best.score > -Infinity ? best : { row: null, index: -1, score: -Infinity };
     };
@@ -344,8 +344,26 @@ if (score > best.score) {
       ];
 
       const hitCount = badWords.reduce((acc, w) => acc + (text.includes(norm(w)) ? 1 : 0), 0);
-
       return hitCount >= 2;
+    };
+
+    const earlyPageBoost = (pageNumber, bucket = "default") => {
+      const p = Number(pageNumber) || 9999;
+      let score = 0;
+
+      if (bucket === "cash") {
+        if (p <= 20) score += 30;
+        else if (p <= 35) score += 10;
+        else if (p >= 80) score -= 15;
+        return score;
+      }
+
+      if (p <= 12) score += 50;
+      else if (p <= 20) score += 30;
+      else if (p <= 35) score += 10;
+      else if (p >= 80) score -= 25;
+
+      return score;
     };
 
     const OPERATING_INCOME_NAMES = {
@@ -356,592 +374,599 @@ if (score > best.score) {
     };
 
     const BANK_INCOME_NAMES = {
-  incomeFromInvestmentsAndFinancing: {
-    label: "الدخل من الاستثمارات والتمويل",
-    names: [
-      "الدخل من الاستثمارات والتمويل",
-      "دخل من الاستثمارات والتمويل",
-      "الدخل من التمويل والاستثمارات",
-      "صافي الدخل من الاستثمارات والتمويل",
-      "صافي الدخل من التمويل والاستثمارات",
-      "استثمار، صافي",
-      "استثمار , صافي",
-      "استثمار،صافي",
-      "استثمار صافي",
-      "الاستثمار، صافي",
-      "الاستثمار صافي",
-      "صافي الاستثمار",
-      "دخل الاستثمار، صافي",
-      "دخل الاستثمار صافي",
-      "إيرادات الاستثمار، صافي",
-      "إيرادات الاستثمار صافي",
-      "income from investments and financing",
-      "income from financing and investments",
-      "net income from investments and financing",
-      "investment net",
-      "net investment income",
-      "investment income net"
-    ]
-  },
+      incomeFromInvestmentsAndFinancing: {
+        label: "الدخل من الاستثمارات والتمويل",
+        names: [
+          "الدخل من الاستثمارات والتمويل",
+          "دخل من الاستثمارات والتمويل",
+          "الدخل من التمويل والاستثمارات",
+          "صافي الدخل من الاستثمارات والتمويل",
+          "صافي الدخل من التمويل والاستثمارات",
+          "استثمار، صافي",
+          "استثمار , صافي",
+          "استثمار،صافي",
+          "استثمار صافي",
+          "الاستثمار، صافي",
+          "الاستثمار صافي",
+          "صافي الاستثمار",
+          "دخل الاستثمار، صافي",
+          "دخل الاستثمار صافي",
+          "إيرادات الاستثمار، صافي",
+          "إيرادات الاستثمار صافي",
+          "استثمارات بالصافي",
+          "استثمارات، بالصافي",
+          "income from investments and financing",
+          "income from financing and investments",
+          "net income from investments and financing",
+          "investment net",
+          "net investment income",
+          "investment income net"
+        ]
+      },
 
-  returnsOnInvestmentsHeldForTradingOrFV: {
-    label: "عائدات على استثمارات",
-    names: [
-      "عائدات على استثمارات لأجل",
-      "عائدات على استثمارات",
-      "عائد على استثمارات",
-      "returns on investments",
-      "returns on investments held"
-    ]
-  },
+      returnsOnInvestmentsHeldForTradingOrFV: {
+        label: "عائدات على استثمارات",
+        names: [
+          "عائدات على استثمارات لأجل",
+          "عائدات على استثمارات",
+          "عائد على استثمارات",
+          "returns on investments",
+          "returns on investments held"
+        ]
+      },
 
-  netIncomeFromInvestmentsAndFinancing: {
-    label: "صافي الدخل من الاستثمارات والتمويل",
-    names: [
-      "صافي الدخل من الاستثمارات والتمويل",
-      "صافي الدخل من التمويل والاستثمارات",
-      "صافي دخل الاستثمارات والتمويل",
-      "net income from investments and financing",
-      "net income from financing and investments"
-    ]
-  },
+      netIncomeFromInvestmentsAndFinancing: {
+        label: "صافي الدخل من الاستثمارات والتمويل",
+        names: [
+          "صافي الدخل من الاستثمارات والتمويل",
+          "صافي الدخل من التمويل والاستثمارات",
+          "صافي دخل الاستثمارات والتمويل",
+          "net income from investments and financing",
+          "net income from financing and investments"
+        ]
+      },
 
-  feeIncomeGross: {
-    label: "دخل رسوم خدمات مصرفية",
-    names: [
-      "دخل رسوم خدمات مصرفية",
-      "إيرادات رسوم خدمات مصرفية",
-      "رسوم خدمات مصرفية",
-      "دخل رسوم خدمات",
-      "إيرادات الرسوم",
-      "banking service fee income",
-      "fee income",
-      "fees from banking services"
-    ]
-  },
+      feeIncomeGross: {
+        label: "دخل رسوم خدمات مصرفية",
+        names: [
+          "دخل رسوم خدمات مصرفية",
+          "إيرادات رسوم خدمات مصرفية",
+          "رسوم خدمات مصرفية",
+          "دخل رسوم خدمات",
+          "إيرادات الرسوم",
+          "banking service fee income",
+          "fee income",
+          "fees from banking services"
+        ]
+      },
 
-  feeExpense: {
-    label: "مصاريف رسوم خدمات مصرفية",
-    names: [
-      "مصاريف رسوم خدمات مصرفية",
-      "مصروفات رسوم خدمات مصرفية",
-      "مصاريف رسوم خدمات",
-      "مصروفات رسوم خدمات",
-      "banking service fee expenses",
-      "fee expense"
-    ]
-  },
+      feeExpense: {
+        label: "مصاريف رسوم خدمات مصرفية",
+        names: [
+          "مصاريف رسوم خدمات مصرفية",
+          "مصروفات رسوم خدمات مصرفية",
+          "مصاريف رسوم خدمات",
+          "مصروفات رسوم خدمات",
+          "banking service fee expenses",
+          "fee expense"
+        ]
+      },
 
-  feeIncomeNet: {
-    label: "رسوم خدمات مصرفية، صافي",
-    names: [
-      "رسوم خدمات مصرفية، صافي",
-      "رسوم خدمات مصرفية صافي",
-      "صافي رسوم خدمات مصرفية",
-      "دخل رسوم خدمات مصرفية، صافي",
-      "دخل رسوم خدمات مصرفية صافي",
-      "net fee income",
-      "banking service fees net"
-    ]
-  },
+      feeIncomeNet: {
+        label: "رسوم خدمات مصرفية، صافي",
+        names: [
+          "رسوم خدمات مصرفية، صافي",
+          "رسوم خدمات مصرفية صافي",
+          "صافي رسوم خدمات مصرفية",
+          "دخل رسوم خدمات مصرفية، صافي",
+          "دخل رسوم خدمات مصرفية صافي",
+          "net fee income",
+          "banking service fees net"
+        ]
+      },
 
-  totalOperatingIncome: {
-    label: "إجمالي دخل العمليات",
-    names: [
-      "إجمالي دخل العمليات",
-      "اجمالي دخل العمليات",
-      "إجمالي دخل التشغيل",
-      "إجمالي الإيرادات التشغيلية",
-      "إجمالي دخل العمليات التشغيلية",
-      "total operating income",
-      "total operating revenue"
-    ]
-  },
+      totalOperatingIncome: {
+        label: "إجمالي دخل العمليات",
+        names: [
+          "إجمالي دخل العمليات",
+          "اجمالي دخل العمليات",
+          "إجمالي دخل التشغيل",
+          "إجمالي الإيرادات التشغيلية",
+          "إجمالي دخل العمليات التشغيلية",
+          "إجمالي دخل العمولات الخاصة",
+          "total operating income",
+          "total operating revenue"
+        ]
+      },
 
-  salariesAndEmployeeBenefits: {
-    label: "رواتب ومصاريف الموظفين",
-    names: [
-      "رواتب ومصاريف الموظفين",
-      "رواتب ومزايا الموظفين",
-      "مصاريف الموظفين",
-      "رواتب وبدلات الموظفين",
-      "salaries and employee benefits",
-      "employee expenses"
-    ]
-  },
+      salariesAndEmployeeBenefits: {
+        label: "رواتب ومصاريف الموظفين",
+        names: [
+          "رواتب ومصاريف الموظفين",
+          "رواتب ومزايا الموظفين",
+          "مصاريف الموظفين",
+          "رواتب وبدلات الموظفين",
+          "salaries and employee benefits",
+          "employee expenses"
+        ]
+      },
 
-  depreciationAndAmortization: {
-    label: "استهلاك وإطفاء",
-    names: [
-      "استهلاك واطفاء",
-      "استهلاك وإطفاء",
-      "الاستهلاك والإطفاء",
-      "depreciation and amortization"
-    ]
-  },
+      depreciationAndAmortization: {
+        label: "استهلاك وإطفاء",
+        names: [
+          "استهلاك واطفاء",
+          "استهلاك وإطفاء",
+          "الاستهلاك والإطفاء",
+          "depreciation and amortization"
+        ]
+      },
 
-  otherOperatingExpenses: {
-    label: "مصاريف عمومية وإدارية أخرى",
-    names: [
-      "مصاريف عمومية وإدارية أخرى",
-      "مصاريف ادارية وعمومية اخرى",
-      "مصروفات عمومية وإدارية أخرى",
-      "مصاريف أخرى",
-      "other general and administrative expenses",
-      "other operating expenses"
-    ]
-  },
+      otherOperatingExpenses: {
+        label: "مصاريف عمومية وإدارية أخرى",
+        names: [
+          "مصاريف عمومية وإدارية أخرى",
+          "مصاريف ادارية وعمومية اخرى",
+          "مصروفات عمومية وإدارية أخرى",
+          "مصاريف أخرى",
+          "other general and administrative expenses",
+          "other operating expenses"
+        ]
+      },
 
-  operatingExpensesBeforeImpairment: {
-    label: "مصاريف العمليات قبل مخصصات الانخفاض",
-    names: [
-      "مصاريف العمليات قبل مخصصات الانخفاض في القيمة",
-      "مصاريف العمليات قبل مخصصات الانخفاض",
-      "إجمالي مصاريف العمليات قبل مخصصات الانخفاض",
-      "مصاريف العمليات قبل انخفاض القيمة",
-      "operating expenses before impairment",
-      "total operating expenses before impairment"
-    ]
-  },
+      operatingExpensesBeforeImpairment: {
+        label: "مصاريف العمليات قبل مخصصات الانخفاض",
+        names: [
+          "مصاريف العمليات قبل مخصصات الانخفاض في القيمة",
+          "مصاريف العمليات قبل مخصصات الانخفاض",
+          "إجمالي مصاريف العمليات قبل مخصصات الانخفاض",
+          "مصاريف العمليات قبل انخفاض القيمة",
+          "operating expenses before impairment",
+          "total operating expenses before impairment"
+        ]
+      },
 
-  netImpairmentChargeForFinancing: {
-    label: "مخصص الانخفاض في قيمة التمويل، صافي",
-    names: [
-      "مخصص الانخفاض في قيمة التمويل، صافي",
-      "مخصص الانخفاض في قيمة التمويل صافي",
-      "مخصص خسائر الائتمان",
-      "صافي مخصص خسائر الائتمان",
-      "مخصص خسائر الائتمان المتوقعة",
-      "صافي مخصص الانخفاض",
-      "net impairment charge for financing",
-      "credit loss provision",
-      "expected credit loss provision"
-    ]
-  },
+      netImpairmentChargeForFinancing: {
+        label: "مخصص الانخفاض في قيمة التمويل، صافي",
+        names: [
+          "مخصص الانخفاض في قيمة التمويل، صافي",
+          "مخصص الانخفاض في قيمة التمويل صافي",
+          "مخصص خسائر الائتمان",
+          "صافي مخصص خسائر الائتمان",
+          "مخصص خسائر الائتمان المتوقعة",
+          "صافي مخصص الانخفاض",
+          "net impairment charge for financing",
+          "credit loss provision",
+          "expected credit loss provision"
+        ]
+      },
 
-  totalOperatingExpenses: {
-    label: "إجمالي مصاريف العمليات",
-    names: [
-      "إجمالي مصاريف العمليات",
-      "اجمالي مصاريف العمليات",
-      "إجمالي المصاريف التشغيلية",
-      "إجمالي المصروفات التشغيلية",
-      "total operating expenses"
-    ]
-  },
+      totalOperatingExpenses: {
+        label: "إجمالي مصاريف العمليات",
+        names: [
+          "إجمالي مصاريف العمليات",
+          "اجمالي مصاريف العمليات",
+          "إجمالي المصاريف التشغيلية",
+          "إجمالي المصروفات التشغيلية",
+          "total operating expenses"
+        ]
+      },
 
-  netOperatingIncome: {
-    label: "صافي دخل العمليات",
-    names: [
-      "صافي دخل العمليات",
-      "صافي الدخل من العمليات",
-      "الدخل التشغيلي الصافي",
-      "net operating income"
-    ]
-  },
+      netOperatingIncome: {
+        label: "صافي دخل العمليات",
+        names: [
+          "صافي دخل العمليات",
+          "صافي الدخل من العمليات",
+          "الدخل التشغيلي الصافي",
+          "صافي الدخل التشغيلي",
+          "net operating income"
+        ]
+      },
 
-  shareOfResultsAssociates: {
-    label: "حصة في خسارة/ربح شركة زميلة",
-    names: [
-      "حصة في خسارة شركة زميلة ومشروع مشترك",
-      "حصة في ربح شركة زميلة ومشروع مشترك",
-      "حصة من نتائج شركة زميلة",
-      "حصة في نتائج شركة زميلة",
-      "share of results of associate",
-      "share of profit of associate",
-      "share of loss of associate"
-    ]
-  },
+      shareOfResultsAssociates: {
+        label: "حصة في خسارة/ربح شركة زميلة",
+        names: [
+          "حصة في خسارة شركة زميلة ومشروع مشترك",
+          "حصة في ربح شركة زميلة ومشروع مشترك",
+          "حصة من نتائج شركة زميلة",
+          "حصة في نتائج شركة زميلة",
+          "share of results of associate",
+          "share of profit of associate",
+          "share of loss of associate"
+        ]
+      },
 
-  netIncomeBeforeZakat: {
-    label: "دخل السنة قبل الزكاة",
-    names: [
-      "دخل السنة قبل الزكاة",
-      "صافي دخل السنة قبل الزكاة",
-      "الربح قبل الزكاة",
-      "صافي الربح قبل الزكاة",
-      "دخل السنة قبل الزكاة والضريبة",
-      "income before zakat",
-      "profit before zakat"
-    ]
-  },
+      netIncomeBeforeZakat: {
+        label: "دخل السنة قبل الزكاة",
+        names: [
+          "دخل السنة قبل الزكاة",
+          "صافي دخل السنة قبل الزكاة",
+          "الربح قبل الزكاة",
+          "صافي الربح قبل الزكاة",
+          "دخل السنة قبل الزكاة والضريبة",
+          "income before zakat",
+          "profit before zakat"
+        ]
+      },
 
-  zakat: {
-    label: "زكاة السنة",
-    names: [
-      "زكاة السنة",
-      "الزكاة",
-      "مصروف الزكاة",
-      "zakat",
-      "zakat expense"
-    ]
-  },
+      zakat: {
+        label: "زكاة السنة",
+        names: [
+          "زكاة السنة",
+          "الزكاة",
+          "مصروف الزكاة",
+          "zakat",
+          "zakat expense"
+        ]
+      },
 
-  netIncomeAfterZakat: {
-    label: "صافي دخل السنة بعد الزكاة",
-    names: [
-      "صافي دخل السنة بعد الزكاة",
-      "صافي الربح بعد الزكاة",
-      "صافي دخل السنة",
-      "صافي الربح للسنة",
-      "صافي دخل السنة بعد الزكاة والضريبة",
-      "net income after zakat",
-      "net profit after zakat",
-      "net income for the year"
-    ]
-  }
-};
+      netIncomeAfterZakat: {
+        label: "صافي دخل السنة بعد الزكاة",
+        names: [
+          "صافي دخل السنة بعد الزكاة",
+          "صافي الربح بعد الزكاة",
+          "صافي دخل السنة",
+          "صافي الربح للسنة",
+          "صافي دخل السنة بعد الزكاة والضريبة",
+          "net income after zakat",
+          "net profit after zakat",
+          "net income for the year"
+        ]
+      }
+    };
+
     const BANK_BALANCE_NAMES = {
-  cashAndBalancesWithCentralBank: {
-  label: "نقد وأرصدة لدى البنك المركزي السعودي",
-  names: [
-    "نقد وأرصدة لدى البنك المركزي السعودي",
-    "النقد والأرصدة لدى البنك المركزي السعودي",
-    "نقد وارصدة لدى البنك المركزي السعودي",
-    "نقد وأرصدة لدى البنوك المركزية",
-    "النقد والأرصدة لدى البنوك المركزية",
-    "أرصدة لدى البنوك المركزية",
-    "نقد وأرصدة لدى البنك المركزي",
-    "النقد والأرصدة لدى البنك المركزي",
-    "cash and balances with central bank",
-    "cash and balances with saudi central bank",
-    "cash and balances with central banks"
-  ]
-},
+      cashAndBalancesWithCentralBank: {
+        label: "نقد وأرصدة لدى البنك المركزي السعودي",
+        names: [
+          "نقد وأرصدة لدى البنك المركزي السعودي",
+          "النقد والأرصدة لدى البنك المركزي السعودي",
+          "نقد وارصدة لدى البنك المركزي السعودي",
+          "نقد وأرصدة لدى البنوك المركزية",
+          "النقد والأرصدة لدى البنوك المركزية",
+          "أرصدة لدى البنوك المركزية",
+          "نقد وأرصدة لدى البنك المركزي",
+          "النقد والأرصدة لدى البنك المركزي",
+          "cash and balances with central bank",
+          "cash and balances with saudi central bank",
+          "cash and balances with central banks"
+        ]
+      },
 
-  balancesWithBanksAndFinancialInstitutions: {
-  label: "أرصدة لدى البنوك والمؤسسات المالية الأخرى، صافي",
-  names: [
-    "أرصدة لدى البنوك والمؤسسات المالية الأخرى، صافي",
-    "أرصدة لدى البنوك والمؤسسات المالية الأخرى صافي",
-    "أرصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي",
-    "ارصدة لدى البنوك والمؤسسات المالية الاخرى",
-    "أرصدة لدى البنوك والمؤسسات المالية الأخرى",
-    "مطالبات من البنوك والمؤسسات المالية الأخرى، صافي",
-    "مطالبات من البنوك والمؤسسات المالية الأخرى صافي",
-    "مطالبات من البنوك والمؤسسات المالية الاخرى",
-    "مطالبات من البنوك",
-    "أرصدة لدى البنوك",
-    "balances with banks and other financial institutions",
-    "balances with banks",
-    "claims on banks and other financial institutions",
-    "claims on banks"
-  ]
-},
+      balancesWithBanksAndFinancialInstitutions: {
+        label: "أرصدة لدى البنوك والمؤسسات المالية الأخرى، صافي",
+        names: [
+          "أرصدة لدى البنوك والمؤسسات المالية الأخرى، صافي",
+          "أرصدة لدى البنوك والمؤسسات المالية الأخرى صافي",
+          "أرصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي",
+          "ارصدة لدى البنوك والمؤسسات المالية الاخرى",
+          "أرصدة لدى البنوك والمؤسسات المالية الأخرى",
+          "مطالبات من البنوك والمؤسسات المالية الأخرى، صافي",
+          "مطالبات من البنوك والمؤسسات المالية الأخرى صافي",
+          "مطالبات من البنوك والمؤسسات المالية الاخرى",
+          "مطالبات من البنوك",
+          "أرصدة لدى البنوك",
+          "balances with banks and other financial institutions",
+          "balances with banks",
+          "claims on banks and other financial institutions",
+          "claims on banks"
+        ]
+      },
 
-  investmentsAtFVTPL: {
-    label: "استثمارات بالقيمة العادلة",
-    names: [
-      "استثمارات بالقيمة العادلة خلال قائمة الدخل",
-      "استثمارات بالقيمة العادلة",
-      "استثمارات بالقيمة العادلة من خلال قائمة الدخل",
-      "استثمار بالقيمة العادلة",
-      "استثمار، صافي",
-      "استثمار صافي",
-      "investments at fair value through income statement",
-      "investments at fair value"
-    ]
-  },
+      investmentsAtFVTPL: {
+        label: "استثمارات بالقيمة العادلة",
+        names: [
+          "استثمارات بالقيمة العادلة خلال قائمة الدخل",
+          "استثمارات بالقيمة العادلة",
+          "استثمارات بالقيمة العادلة من خلال قائمة الدخل",
+          "استثمار بالقيمة العادلة",
+          "استثمار، صافي",
+          "استثمار صافي",
+          "استثمارات بالصافي",
+          "investments at fair value through income statement",
+          "investments at fair value"
+        ]
+      },
 
-  investmentsAtFVOCI: {
-    label: "استثمارات بالقيمة العادلة من خلال الدخل الشامل الآخر",
-    names: [
-      "استثمارات بالقيمة العادلة من خلال الدخل الشامل الآخر",
-      "استثمارات بالقيمة العادلة خلال الدخل الشامل الآخر",
-      "استثمارات بالقيمة العادلة عبر الدخل الشامل الآخر",
-      "investments at fair value through other comprehensive income",
-      "fvoci investments"
-    ]
-  },
+      investmentsAtFVOCI: {
+        label: "استثمارات بالقيمة العادلة من خلال الدخل الشامل الآخر",
+        names: [
+          "استثمارات بالقيمة العادلة من خلال الدخل الشامل الآخر",
+          "استثمارات بالقيمة العادلة خلال الدخل الشامل الآخر",
+          "استثمارات بالقيمة العادلة عبر الدخل الشامل الآخر",
+          "investments at fair value through other comprehensive income",
+          "fvoci investments"
+        ]
+      },
 
-  investmentsAtAmortizedCost: {
-    label: "استثمارات بالتكلفة المطفأة، صافي",
-    names: [
-      "استثمارات بالتكلفة المطفأة، صافي",
-      "استثمارات بالتكلفة المطفأة صافي",
-      "استثمارات بالتكلفة المستنفذة، صافي",
-      "استثمارات بالتكلفة المطفاة",
-      "استثمارات بالتكلفة المستنفذة",
-      "investments at amortized cost",
-      "investments at amortised cost"
-    ]
-  },
+      investmentsAtAmortizedCost: {
+        label: "استثمارات بالتكلفة المطفأة، صافي",
+        names: [
+          "استثمارات بالتكلفة المطفأة، صافي",
+          "استثمارات بالتكلفة المطفأة صافي",
+          "استثمارات بالتكلفة المستنفذة، صافي",
+          "استثمارات بالتكلفة المطفاة",
+          "استثمارات بالتكلفة المستنفذة",
+          "investments at amortized cost",
+          "investments at amortised cost"
+        ]
+      },
 
-  investmentsInAssociates: {
-    label: "استثمار في شركات زميلة ومشروع مشترك",
-    names: [
-      "استثمار في شركات زميلة ومشروع مشترك",
-      "استثمار في شركات زميلة",
-      "استثمار في شركة زميلة",
-      "استثمار في شركة زميلة ومشروع مشترك",
-      "investment in associates and joint venture",
-      "investment in associate"
-    ]
-  },
+      investmentsInAssociates: {
+        label: "استثمار في شركات زميلة ومشروع مشترك",
+        names: [
+          "استثمار في شركات زميلة ومشروع مشترك",
+          "استثمار في شركات زميلة",
+          "استثمار في شركة زميلة",
+          "استثمار في شركة زميلة ومشروع مشترك",
+          "investment in associates and joint venture",
+          "investment in associate"
+        ]
+      },
 
-  derivativeAssets: {
-    label: "القيمة العادلة الموجبة للمشتقات",
-    names: [
-      "القيمة العادلة الموجبة للمشتقات",
-      "موجودات مشتقات",
-      "القيمة العادلة الموجبة للأدوات المالية المشتقة",
-      "positive fair value of derivatives",
-      "derivative assets"
-    ]
-  },
+      derivativeAssets: {
+        label: "القيمة العادلة الموجبة للمشتقات",
+        names: [
+          "القيمة العادلة الموجبة للمشتقات",
+          "موجودات مشتقات",
+          "القيمة العادلة الموجبة للأدوات المالية المشتقة",
+          "positive fair value of derivatives",
+          "derivative assets"
+        ]
+      },
 
-  financingNet: {
-  label: "تمويل، صافي",
-  names: [
-    "تمويل، صافي",
-    "تمويل , صافي",
-    "تمويل،صافي",
-    "تمويل صافي",
-    "تمويل بالصافي",
-    "التمويل، صافي",
-    "التمويل , صافي",
-    "التمويل صافي",
-    "التمويل بالصافي",
-    "صافي التمويل",
-    "تمويلات، صافي",
-    "تمويلات صافي",
-    "تمويل",
-    "التمويل",
-    "تمويل وسلف بالصافي",
-    "تمويل وسلف، بالصافي",
-    "تمويل وسلف صافي",
-    "تمويل وسلف",
-    "financing net",
-    "net financing",
-    "financings net",
-    "net financings",
-    "financing",
-    "financing and advances net",
-    "loans and advances net"
-  ]
-},
+      financingNet: {
+        label: "تمويل، صافي",
+        names: [
+          "تمويل، صافي",
+          "تمويل , صافي",
+          "تمويل،صافي",
+          "تمويل صافي",
+          "تمويل بالصافي",
+          "التمويل، صافي",
+          "التمويل , صافي",
+          "التمويل صافي",
+          "التمويل بالصافي",
+          "صافي التمويل",
+          "تمويلات، صافي",
+          "تمويلات صافي",
+          "تمويل",
+          "التمويل",
+          "تمويل وسلف بالصافي",
+          "تمويل وسلف، بالصافي",
+          "تمويل وسلف صافي",
+          "تمويل وسلف",
+          "financing net",
+          "net financing",
+          "financings net",
+          "net financings",
+          "financing",
+          "financing and advances net",
+          "loans and advances net"
+        ]
+      },
 
-  propertyAndEquipment: {
-    label: "ممتلكات ومعدات وموجودات حق استخدام، صافي",
-    names: [
-      "ممتلكات ومعدات وموجودات حق استخدام، صافي",
-      "ممتلكات ومعدات وموجودات حق استخدام صافي",
-      "ممتلكات ومعدات صافي",
-      "ممتلكات ومعدات",
-      "موجودات حق استخدام",
-      "ممتلكات ومعدات وموجودات حق الاستخدام والبرمجيات، صافي",
-      "property and equipment",
-      "right of use assets"
-    ]
-  },
+      propertyAndEquipment: {
+        label: "ممتلكات ومعدات وموجودات حق استخدام، صافي",
+        names: [
+          "ممتلكات ومعدات وموجودات حق استخدام، صافي",
+          "ممتلكات ومعدات وموجودات حق استخدام صافي",
+          "ممتلكات ومعدات صافي",
+          "ممتلكات ومعدات",
+          "موجودات حق استخدام",
+          "ممتلكات ومعدات وموجودات حق الاستخدام والبرمجيات، صافي",
+          "property and equipment",
+          "right of use assets"
+        ]
+      },
 
-  otherAssets: {
-    label: "موجودات أخرى",
-    names: [
-      "موجودات أخرى",
-      "أصول أخرى",
-      "موجودات اخرى",
-      "other assets"
-    ]
-  },
+      otherAssets: {
+        label: "موجودات أخرى",
+        names: [
+          "موجودات أخرى",
+          "أصول أخرى",
+          "موجودات اخرى",
+          "other assets"
+        ]
+      },
 
-  totalAssets: {
-    label: "إجمالي الموجودات",
-    names: [
-      "إجمالي الموجودات",
-      "اجمالي الموجودات",
-      "إجمالي الأصول",
-      "مجموع الموجودات",
-      "total assets"
-    ],
-    exactOnly: true
-  },
+      totalAssets: {
+        label: "إجمالي الموجودات",
+        names: [
+          "إجمالي الموجودات",
+          "اجمالي الموجودات",
+          "إجمالي الأصول",
+          "مجموع الموجودات",
+          "total assets"
+        ],
+        exactOnly: true
+      },
 
-  balancesDueToCentralBankAndBanks: {
-    label: "أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى",
-    names: [
-      "أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى",
-      "ارصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الاخرى",
-      "مطلوبات للبنوك، والبنك المركزي السعودي والمؤسسات المالية الأخرى",
-      "مطلوبات للبنوك والبنك المركزي السعودي والمؤسسات المالية الأخرى",
-      "مطالبات للبنوك والبنك المركزي السعودي والمؤسسات المالية الأخرى",
-      "balances due to central bank and banks",
-      "due to banks and central bank",
-      "amounts due to banks and central bank"
-    ]
-  },
+      balancesDueToCentralBankAndBanks: {
+        label: "أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى",
+        names: [
+          "أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى",
+          "ارصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الاخرى",
+          "أرصدة للبنوك، والبنك المركزي والمؤسسات المالية الأخرى",
+          "أرصدة للبنوك والبنك المركزي والمؤسسات المالية الأخرى",
+          "مطلوبات للبنوك، والبنك المركزي السعودي والمؤسسات المالية الأخرى",
+          "مطلوبات للبنوك والبنك المركزي السعودي والمؤسسات المالية الأخرى",
+          "مطالبات للبنوك والبنك المركزي السعودي والمؤسسات المالية الأخرى",
+          "balances due to central bank and banks",
+          "due to banks and central bank",
+          "amounts due to banks and central bank"
+        ]
+      },
 
-  customerDeposits: {
-    label: "ودائع العملاء",
-    names: [
-      "ودائع العملاء",
-      "ودائع العملاء",
-      "إيداعات العملاء",
-      "deposits from customers",
-      "customer deposits"
-    ],
-    exactOnly: true
-  },
+      customerDeposits: {
+        label: "ودائع العملاء",
+        names: [
+          "ودائع العملاء",
+          "إيداعات العملاء",
+          "deposits from customers",
+          "customer deposits"
+        ],
+        exactOnly: true
+      },
 
-  debtSecuritiesIssued: {
-  label: "صكوك وشهادات إيداع مصدرة",
-  names: [
-    "صكوك وشهادات إيداع مصدرة",
-    "صكوك مصدرة",
-    "شهادات إيداع مصدرة",
-    "أدوات الدين والتمويلات لأجل",
-    "أدوات الدين والتمويلات لاجل",
-    "أدوات الدين لأجل",
-    "تمويلات لأجل",
-    "صكوك وسندات دين مصدرة وقروض لأجل",
-    "صكوك وسندات دين مصدرة",
-    "قروض لأجل",
-    "صكوك حقوق ملكية",
-    "debt securities in issue",
-    "sukuk issued",
-    "certificates of deposit issued",
-    "debt instruments and term financing",
-    "term financing",
-    "equity sukuk"
-  ]
-},
+      debtSecuritiesIssued: {
+        label: "صكوك وشهادات إيداع مصدرة",
+        names: [
+          "صكوك وشهادات إيداع مصدرة",
+          "صكوك مصدرة",
+          "شهادات إيداع مصدرة",
+          "أدوات الدين والتمويلات لأجل",
+          "أدوات الدين والتمويلات لاجل",
+          "أدوات الدين لأجل",
+          "تمويلات لأجل",
+          "صكوك وسندات دين مصدرة وقروض لأجل",
+          "صكوك وسندات دين مصدرة",
+          "قروض لأجل",
+          "صكوك حقوق ملكية",
+          "debt securities in issue",
+          "sukuk issued",
+          "certificates of deposit issued",
+          "debt instruments and term financing",
+          "term financing",
+          "equity sukuk"
+        ]
+      },
 
-  derivativeLiabilities: {
-    label: "القيمة العادلة السالبة للمشتقات",
-    names: [
-      "القيمة العادلة السالبة للمشتقات",
-      "مطلوبات مشتقات",
-      "القيمة العادلة السالبة للأدوات المالية المشتقة",
-      "negative fair value of derivatives",
-      "derivative liabilities"
-    ]
-  },
+      derivativeLiabilities: {
+        label: "القيمة العادلة السالبة للمشتقات",
+        names: [
+          "القيمة العادلة السالبة للمشتقات",
+          "مطلوبات مشتقات",
+          "القيمة العادلة السالبة للأدوات المالية المشتقة",
+          "negative fair value of derivatives",
+          "derivative liabilities"
+        ]
+      },
 
-  leaseLiabilities: {
-    label: "التزامات إيجار",
-    names: [
-      "التزامات إيجار",
-      "التزامات الايجار",
-      "مطلوبات إيجار",
-      "lease liabilities"
-    ]
-  },
+      leaseLiabilities: {
+        label: "التزامات إيجار",
+        names: [
+          "التزامات إيجار",
+          "التزامات الايجار",
+          "مطلوبات إيجار",
+          "lease liabilities"
+        ]
+      },
 
-  otherLiabilities: {
-    label: "مطلوبات أخرى",
-    names: [
-      "مطلوبات أخرى",
-      "التزامات أخرى",
-      "مطلوبات اخرى",
-      "other liabilities"
-    ]
-  },
+      otherLiabilities: {
+        label: "مطلوبات أخرى",
+        names: [
+          "مطلوبات أخرى",
+          "التزامات أخرى",
+          "مطلوبات اخرى",
+          "other liabilities"
+        ]
+      },
 
-  totalLiabilities: {
-    label: "إجمالي المطلوبات",
-    names: [
-      "إجمالي المطلوبات",
-      "اجمالي المطلوبات",
-      "إجمالي الالتزامات",
-      "مجموع المطلوبات",
-      "total liabilities"
-    ],
-    exactOnly: true
-  },
+      totalLiabilities: {
+        label: "إجمالي المطلوبات",
+        names: [
+          "إجمالي المطلوبات",
+          "اجمالي المطلوبات",
+          "إجمالي الالتزامات",
+          "مجموع المطلوبات",
+          "total liabilities"
+        ],
+        exactOnly: true
+      },
 
-  shareCapital: {
-    label: "رأس المال",
-    names: [
-      "رأس المال",
-      "راس المال",
-      "رأس مال",
-      "share capital",
-      "capital"
-    ]
-  },
+      shareCapital: {
+        label: "رأس المال",
+        names: [
+          "رأس المال",
+          "راس المال",
+          "رأس مال",
+          "share capital",
+          "capital"
+        ]
+      },
 
-  treasuryShares: {
-    label: "أسهم خزينة",
-    names: [
-      "أسهم خزينة",
-      "اسهم خزينة",
-      "أسهم الخزينة",
-      "treasury shares"
-    ]
-  },
+      treasuryShares: {
+        label: "أسهم خزينة",
+        names: [
+          "أسهم خزينة",
+          "اسهم خزينة",
+          "أسهم الخزينة",
+          "treasury shares"
+        ]
+      },
 
-  statutoryReserve: {
-    label: "احتياطي نظامي",
-    names: [
-      "احتياطي نظامي",
-      "الاحتياطي النظامي",
-      "احتياطي نظامي",
-      "statutory reserve"
-    ]
-  },
+      statutoryReserve: {
+        label: "احتياطي نظامي",
+        names: [
+          "احتياطي نظامي",
+          "الاحتياطي النظامي",
+          "statutory reserve"
+        ]
+      },
 
-  otherReserves: {
-    label: "احتياطيات أخرى",
-    names: [
-      "احتياطيات أخرى",
-      "احتياطات أخرى",
-      "احتياطيات اخرى",
-      "other reserves"
-    ]
-  },
+      otherReserves: {
+        label: "احتياطيات أخرى",
+        names: [
+          "احتياطيات أخرى",
+          "احتياطات أخرى",
+          "احتياطيات اخرى",
+          "other reserves"
+        ]
+      },
 
-  retainedEarnings: {
-    label: "أرباح مبقاة",
-    names: [
-      "أرباح مبقاة",
-      "ارباح مبقاة",
-      "الأرباح المبقاة",
-      "retained earnings"
-    ]
-  },
+      retainedEarnings: {
+        label: "أرباح مبقاة",
+        names: [
+          "أرباح مبقاة",
+          "ارباح مبقاة",
+          "الأرباح المبقاة",
+          "retained earnings"
+        ]
+      },
 
-  equityAttributableToShareholders: {
-  label: "حقوق الملكية العائدة لمساهمي المصرف",
-  names: [
-    "حقوق الملكية العائدة لمساهمي المصرف",
-    "حقوق الملكية العائدة للمساهمين",
-    "حقوق الملكية العائدة إلى المساهمين في المصرف",
-    "حقوق الملكية العائدة إلى الملاك في المصرف",
-    "حقوق الملكية العائدة إلى المساهمين",
-    "حقوق الملكية العائدة إلى الملاك",
-    "حقوق المساهمين العائدة لمساهمي البنك",
-    "حقوق المساهمين العائدة إلى مساهمي البنك",
-    "حقوق المساهمين العائدة للمساهمين في البنك",
-    "equity attributable to shareholders",
-    "equity attributable to owners"
-  ]
-},
+      equityAttributableToShareholders: {
+        label: "حقوق الملكية العائدة لمساهمي المصرف",
+        names: [
+          "حقوق الملكية العائدة لمساهمي المصرف",
+          "حقوق الملكية العائدة للمساهمين",
+          "حقوق الملكية العائدة إلى المساهمين في المصرف",
+          "حقوق الملكية العائدة إلى الملاك في المصرف",
+          "حقوق الملكية العائدة إلى المساهمين",
+          "حقوق الملكية العائدة إلى الملاك",
+          "حقوق المساهمين العائدة لمساهمي البنك",
+          "حقوق المساهمين العائدة إلى مساهمي البنك",
+          "حقوق المساهمين العائدة للمساهمين في البنك",
+          "حقوق المساهمين العائدة لمساهمي المصرف",
+          "equity attributable to shareholders",
+          "equity attributable to owners"
+        ]
+      },
 
-  tier1Sukuk: {
-    label: "صكوك الشريحة الأولى",
-    names: [
-      "صكوك الشريحة الأولى",
-      "صكوك الشريحة الاولى",
-      "صكوك حقوق ملكية",
-      "صكوك ملكية",
-      "additional tier 1 sukuk",
-      "tier 1 sukuk",
-      "equity sukuk"
-    ]
-  },
+      tier1Sukuk: {
+        label: "صكوك الشريحة الأولى",
+        names: [
+          "صكوك الشريحة الأولى",
+          "صكوك الشريحة الاولى",
+          "صكوك حقوق ملكية",
+          "صكوك ملكية",
+          "additional tier 1 sukuk",
+          "tier 1 sukuk",
+          "equity sukuk"
+        ]
+      },
 
-  totalEquity: {
-    label: "إجمالي حقوق الملكية",
-    names: [
-      "إجمالي حقوق الملكية",
-      "اجمالي حقوق الملكية",
-      "إجمالي حقوق المساهمين",
-      "إجمالي حقوق الملكية العائدة إلى الملاك",
-      "total equity"
-    ],
-    exactOnly: true
-  }
-};
+      totalEquity: {
+        label: "إجمالي حقوق الملكية",
+        names: [
+          "إجمالي حقوق الملكية",
+          "اجمالي حقوق الملكية",
+          "إجمالي حقوق المساهمين",
+          "إجمالي حقوق الملكية العائدة إلى الملاك",
+          "total equity"
+        ],
+        exactOnly: true
+      }
+    };
 
     const detectStatementProfile = (tables) => {
       let bankScore = 0;
@@ -961,7 +986,9 @@ if (score > best.score) {
           text.includes("صكوك") ||
           text.includes("شهادات إيداع") ||
           text.includes("تمويل، صافي") ||
-          text.includes("تمويل صافي")
+          text.includes("تمويل صافي") ||
+          text.includes("تمويل وسلف") ||
+          text.includes("استثمارات بالصافي")
         ) {
           bankScore += 8;
         }
@@ -992,10 +1019,11 @@ if (score > best.score) {
       let score = 0;
 
       if (statementProfile === "bank") {
-        if (text.includes("قائمة الدخل")) score += 8;
-        if (text.includes("قائمة الدخل الموحدة")) score += 10;
+        if (text.includes("قائمة الدخل")) score += 12;
+        if (text.includes("قائمة الدخل الموحدة")) score += 16;
         if (text.includes("الدخل من الاستثمارات والتمويل")) score += 20;
         if (text.includes("صافي الدخل من الاستثمارات والتمويل")) score += 18;
+        if (text.includes("استثمار، صافي") || text.includes("استثمارات بالصافي")) score += 18;
         if (text.includes("دخل رسوم خدمات مصرفية")) score += 14;
         if (text.includes("إجمالي دخل العمليات")) score += 22;
         if (text.includes("مصاريف العمليات قبل مخصصات الانخفاض")) score += 18;
@@ -1006,8 +1034,8 @@ if (score > best.score) {
         if (text.includes("صافي دخل السنة بعد الزكاة")) score += 22;
         if (text.includes("مصرف") || text.includes("بنك")) score += 4;
 
-        if (text.includes("التدفقات النقدية")) score -= 8;
-        if (text.includes("المركز المالي")) score -= 6;
+        if (text.includes("التدفقات النقدية")) score -= 10;
+        if (text.includes("المركز المالي")) score -= 10;
       } else {
         if (text.includes("الإيرادات") || text.includes("الايرادات")) score += 8;
         if (text.includes("تكلفة الإيرادات") || text.includes("تكلفة الايرادات")) score += 6;
@@ -1019,8 +1047,10 @@ if (score > best.score) {
         if (text.includes("التدفقات النقدية")) score -= 4;
       }
 
-      if (Number(table?.pageNumber) >= 2 && Number(table?.pageNumber) <= 12) score += 2;
+      score += earlyPageBoost(table?.pageNumber, "income");
+
       if (Number(table?.rowCount) >= 10) score += 2;
+      if (Number(table?.columnCount) >= 3) score += 2;
 
       return score;
     };
@@ -1032,24 +1062,28 @@ if (score > best.score) {
       let score = 0;
 
       if (statementProfile === "bank") {
-        if (text.includes("قائمة المركز المالي")) score += 10;
-        if (text.includes("قائمة المركز المالي الموحدة")) score += 12;
-        if (text.includes("الموجودات")) score += 5;
-        if (text.includes("المطلوبات وحقوق الملكية")) score += 10;
+        if (text.includes("قائمة المركز المالي")) score += 16;
+        if (text.includes("قائمة المركز المالي الموحدة")) score += 20;
+        if (text.includes("الموجودات")) score += 8;
+        if (text.includes("المطلوبات وحقوق الملكية")) score += 14;
         if (text.includes("نقد وأرصدة لدى البنك المركزي السعودي")) score += 18;
+        if (text.includes("نقد وأرصدة لدى البنوك المركزية")) score += 18;
         if (text.includes("أرصدة لدى البنوك والمؤسسات المالية الأخرى")) score += 14;
+        if (text.includes("مطالبات من البنوك والمؤسسات المالية الأخرى")) score += 14;
         if (text.includes("استثمارات بالقيمة العادلة")) score += 12;
         if (text.includes("استثمارات بالتكلفة")) score += 10;
-        if (text.includes("تمويل، صافي") || text.includes("تمويل صافي")) score += 20;
+        if (text.includes("استثمارات بالصافي")) score += 12;
+        if (text.includes("تمويل، صافي") || text.includes("تمويل صافي") || text.includes("تمويل وسلف")) score += 20;
         if (text.includes("ودائع العملاء")) score += 22;
         if (text.includes("صكوك وشهادات إيداع مصدرة")) score += 18;
+        if (text.includes("صكوك وسندات دين مصدرة")) score += 18;
         if (text.includes("صكوك الشريحة الأولى")) score += 16;
         if (text.includes("إجمالي الموجودات")) score += 18;
         if (text.includes("إجمالي المطلوبات")) score += 18;
         if (text.includes("إجمالي حقوق الملكية")) score += 18;
 
         if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 8;
-        if (text.includes("التدفقات النقدية")) score -= 8;
+        if (text.includes("التدفقات النقدية")) score -= 10;
       } else {
         if (text.includes("الموجودات")) score += 7;
         if (text.includes("الأصول")) score += 7;
@@ -1064,8 +1098,10 @@ if (score > best.score) {
         if (text.includes("التدفقات النقدية")) score -= 6;
       }
 
-      if (Number(table?.pageNumber) >= 2 && Number(table?.pageNumber) <= 12) score += 2;
+      score += earlyPageBoost(table?.pageNumber, "balance");
+
       if (Number(table?.rowCount) >= 10) score += 2;
+      if (Number(table?.columnCount) >= 3) score += 2;
 
       return score;
     };
@@ -1084,9 +1120,10 @@ if (score > best.score) {
       if (text.includes("صافي التغير")) score += 10;
       if (text.includes("net change")) score += 8;
 
-      if (Number(table?.columnCount) >= 2 && Number(table?.columnCount) <= 4) score += 3;
+      if (Number(table?.columnCount) >= 2 && Number(table?.columnCount) <= 5) score += 3;
       if (Number(table?.rowCount) >= 12) score += 4;
-      if (Number(table?.pageNumber) >= 3 && Number(table?.pageNumber) <= 15) score += 3;
+
+      score += earlyPageBoost(table?.pageNumber, "cash");
 
       if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 5;
       if (text.includes("الموجودات") || text.includes("حقوق الملكية")) score -= 5;
@@ -1200,6 +1237,26 @@ if (score > best.score) {
               incomeExtract.totalOperatingIncome.previous !== null &&
               incomeExtract.totalOperatingExpenses.previous !== null
                 ? incomeExtract.totalOperatingIncome.previous - incomeExtract.totalOperatingExpenses.previous
+                : null
+          };
+        }
+
+        if (
+          isMissingValueObj(incomeExtract.totalOperatingIncome) &&
+          !isMissingValueObj(incomeExtract.incomeFromInvestmentsAndFinancing) &&
+          !isMissingValueObj(incomeExtract.feeIncomeNet)
+        ) {
+          incomeExtract.totalOperatingIncome = {
+            label: "إجمالي دخل العمليات (مشتق جزئي)",
+            current:
+              incomeExtract.incomeFromInvestmentsAndFinancing.current !== null &&
+              incomeExtract.feeIncomeNet.current !== null
+                ? incomeExtract.incomeFromInvestmentsAndFinancing.current + incomeExtract.feeIncomeNet.current
+                : null,
+            previous:
+              incomeExtract.incomeFromInvestmentsAndFinancing.previous !== null &&
+              incomeExtract.feeIncomeNet.previous !== null
+                ? incomeExtract.incomeFromInvestmentsAndFinancing.previous + incomeExtract.feeIncomeNet.previous
                 : null
           };
         }
