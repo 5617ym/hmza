@@ -278,25 +278,23 @@ module.exports = async function (context, req) {
 
         const s = stripNonTextNoise(label);
 
-        let score = -Infinity;
+let score = -Infinity;
 
-// تفضيل الصفحات الأولى من التقرير
-if (pageNumber < 10) {
-  score += 40;
-} else if (pageNumber < 20) {
-  score += 20;
+for (const n of normalizedNames) {
+  if (!n) continue;
+
+  if (s === n) {
+    score = Math.max(score, 100 + n.length);
+  } else if (!exactOnly && (s.startsWith(n) || s.endsWith(n))) {
+    score = Math.max(score, 85 + n.length);
+  } else if (!exactOnly && s.includes(n)) {
+    score = Math.max(score, 70 + n.length);
+  }
 }
 
-        for (const n of normalizedNames) {
-          if (!n) continue;
-
-          if (s === n) score = Math.max(score, 100 + n.length);
-          else if (!exactOnly && (s.startsWith(n) || s.endsWith(n))) score = Math.max(score, 85 + n.length);
-          else if (!exactOnly && s.includes(n)) score = Math.max(score, 70 + n.length);
-        }
-
-        if (score > best.score) best = { row, index: i, score };
-      }
+if (score > best.score) {
+  best = { row, index: i, score };
+}
 
       return best.score > -Infinity ? best : { row: null, index: -1, score: -Infinity };
     };
