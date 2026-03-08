@@ -474,20 +474,14 @@ module.exports = async function (context, req) {
       financingNet: {
   label: "تمويل، صافي",
   names: [
-    "تمويل، صافي",
-    "تمويل , صافي",
-    "تمويل،صافي",
-    "تمويل صافي",
-    "التمويل، صافي",
-    "التمويل , صافي",
-    "التمويل صافي",
+    "تمويل",
+    "التمويل",
     "صافي التمويل",
+    "تمويلات",
     "تمويلات، صافي",
-    "تمويلات صافي",
-    "financing net",
+    "financing",
     "net financing",
-    "financings net",
-    "net financings"
+    "financings"
   ]
 },
       propertyAndEquipment: {
