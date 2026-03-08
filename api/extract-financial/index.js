@@ -266,62 +266,42 @@ module.exports = async function (context, req) {
     };
 
     const isLikelyIndexTable = (table) => {
-      const text = tableTextBlob(table);
-      const rows = mergeTableRows(table);
 
-      const titleHits = [
-        "قائمة المركز المالي الموحدة",
-        "قائمة الدخل الموحدة",
-        "قائمة الدخل الشامل الموحدة",
-        "قائمة التغيرات في حقوق الملكية الموحدة",
-        "قائمة التدفقات النقدية الموحدة",
-        "تقرير مراجعي الحسابات المستقلين"
-      ].reduce((acc, x) => acc + (text.includes(norm(x)) ? 1 : 0), 0);
+  const rows = mergeTableRows(table);
+  const text = tableTextBlob(table);
 
-      let statementTitleRows = 0;
-      let pageRefRows = 0;
+  let statementTitles = 0;
 
-      for (const row of rows) {
-        if (!Array.isArray(row)) continue;
+  for (const row of rows) {
+    if (!Array.isArray(row)) continue;
 
-        const joined = stripNonTextNoise(row.join(" "));
+    const joined = norm(row.join(" "));
 
-        if (
-          joined.includes("قائمة المركز المالي") ||
-          joined.includes("قائمة الدخل") ||
-          joined.includes("قائمة الدخل الشامل") ||
-          joined.includes("قائمة التدفقات النقدية") ||
-          joined.includes("قائمة التغيرات")
-        ) {
-          statementTitleRows++;
-        }
+    if (
+      joined.includes("قائمة المركز المالي") ||
+      joined.includes("قائمة الدخل") ||
+      joined.includes("قائمة الدخل الشامل") ||
+      joined.includes("قائمة التدفقات النقدية") ||
+      joined.includes("قائمة التغيرات في حقوق الملكية")
+    ) {
+      statementTitles++;
+    }
+  }
 
-        const numericCells = row.filter((c) => parseNumberSmart(c) !== null).length;
-        const textCells = row.filter((c) => {
-          const s = String(c || "").trim();
-          return s && parseNumberSmart(s) === null;
-        }).length;
+  const numericRows = countRowsWithAtLeastTwoNumericCells(table);
 
-        if (numericCells === 1 && textCells >= 1) {
-          pageRefRows++;
-        }
-      }
+  // إذا وجدنا عدة عناوين قوائم في نفس الجدول فهذا فهرس
+  if (statementTitles >= 3 && numericRows <= 3) {
+    return true;
+  }
 
-      const numericRows = countRowsWithAtLeastTwoNumericCells(table);
-      const numericCells = countNumericCellsInTable(table);
+  // تقرير المراجع مع الفهرس
+  if (text.includes("تقرير مراجعي الحسابات") && statementTitles >= 2) {
+    return true;
+  }
 
-      if (titleHits >= 3 && numericRows <= 3) return true;
-      if (statementTitleRows >= 3 && pageRefRows >= 3 && numericRows <= 3) return true;
-      if (
-        text.includes("تقرير مراجعي الحسابات المستقلين") &&
-        titleHits >= 2 &&
-        numericCells < 20
-      ) {
-        return true;
-      }
-
-      return false;
-    };
+  return false;
+};
 
     const earlyPageBoost = (pageNumber, bucket = "default") => {
       const p = Number(pageNumber) || 9999;
