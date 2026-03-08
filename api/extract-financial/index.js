@@ -123,7 +123,8 @@ module.exports = async function (context, req) {
         const c = {
           col: i,
           years: [],
-          hasNote: false
+          hasNote: false,
+          numericDensity: 0
         };
 
         for (let r = 0; r < Math.min(20, rows.length); r++) {
@@ -137,14 +138,15 @@ module.exports = async function (context, req) {
         }
 
         c.years = [...new Set(c.years)];
-        // detect numeric column density
-let numericCount = 0;
-for (let r = 0; r < rows.length; r++) {
-  if (parseNumberSmart(rows[r]?.[i]) !== null) {
-    numericCount++;
-  }
-}
-c.numericDensity = numericCount / Math.max(rows.length, 1);
+
+        let numericCount = 0;
+        for (let r = 0; r < rows.length; r++) {
+          if (parseNumberSmart(rows?.[r]?.[i]) !== null) {
+            numericCount++;
+          }
+        }
+
+        c.numericDensity = numericCount / Math.max(rows.length, 1);
         cols.push(c);
       }
 
@@ -152,26 +154,21 @@ c.numericDensity = numericCount / Math.max(rows.length, 1);
     };
 
     const pickLatestColumns = (cols) => {
+      const numericCols = cols
+        .filter((c) => !c.hasNote && (c.numericDensity || 0) > 0.2)
+        .sort((a, b) => (b.numericDensity || 0) - (a.numericDensity || 0));
 
-  const numericCols = cols
-    .filter(c => !c.hasNote && (c.numericDensity || 0) > 0.2)
-    .sort((a,b) => (b.numericDensity || 0) - (a.numericDensity || 0));
+      if (numericCols.length >= 2) {
+        const ordered = [...numericCols].sort((a, b) => a.col - b.col);
+        return {
+          latest: ordered[1] || ordered[0] || null,
+          previous: ordered[0] || null,
+          latestYear: null,
+          previousYear: null
+        };
+      }
 
-  if (numericCols.length < 2) {
-    return { latest:null, previous:null, latestYear:null, previousYear:null };
-  }
-
-  return {
-    latest: numericCols[0],
-    previous: numericCols[1],
-    latestYear: null,
-    previousYear: null
-  };
-
-};
-      const usable = cols
-  .filter((c) => !c.hasNote)
-  .sort((a, b) => (b.numericDensity || 0) - (a.numericDensity || 0));
+      const usable = cols.filter((c) => !c.hasNote);
       const years = [];
 
       usable.forEach((c) => c.years.forEach((y) => years.push(y)));
@@ -1322,61 +1319,60 @@ c.numericDensity = numericCount / Math.max(rows.length, 1);
         const usedRowIndexes = new Set();
         balanceExtract = extractFieldsByMap(rows, BANK_BALANCE_NAMES, latestCol, previousCol, { usedRowIndexes });
 
-// fallback: إذا لم يتم استخراج شيء من جدول المركز المالي
-if (
-  isMissingValueObj(balanceExtract.totalAssets) &&
-  isMissingValueObj(balanceExtract.customerDeposits) &&
-  isMissingValueObj(balanceExtract.financingNet)
-) {
-  for (const t of tablesPreview) {
-    const rowsAlt = mergeTableRows(t);
-    if (!rowsAlt.length) continue;
+        if (
+          isMissingValueObj(balanceExtract.totalAssets) &&
+          isMissingValueObj(balanceExtract.customerDeposits) &&
+          isMissingValueObj(balanceExtract.financingNet)
+        ) {
+          for (const t of tablesPreview) {
+            const rowsAlt = mergeTableRows(t);
+            if (!rowsAlt.length) continue;
 
-    const colsAlt = detectColumns(t);
-    const pickedAlt = pickLatestColumns(colsAlt);
+            const colsAlt = detectColumns(t);
+            const pickedAlt = pickLatestColumns(colsAlt);
 
-    const latestAlt = pickedAlt.latest?.col ?? null;
-    const prevAlt = pickedAlt.previous?.col ?? null;
+            const latestAlt = pickedAlt.latest?.col ?? null;
+            const prevAlt = pickedAlt.previous?.col ?? null;
 
-    const usedAlt = new Set();
+            const usedAlt = new Set();
 
-    const altExtract = extractFieldsByMap(
-      rowsAlt,
-      BANK_BALANCE_NAMES,
-      latestAlt,
-      prevAlt,
-      { usedRowIndexes: usedAlt }
-    );
+            const altExtract = extractFieldsByMap(
+              rowsAlt,
+              BANK_BALANCE_NAMES,
+              latestAlt,
+              prevAlt,
+              { usedRowIndexes: usedAlt }
+            );
 
-    if (
-      hasCurrent(altExtract.totalAssets) ||
-      hasCurrent(altExtract.customerDeposits) ||
-      hasCurrent(altExtract.financingNet)
-    ) {
-      balanceExtract = altExtract;
-      break;
-    }
-  }
-}
+            if (
+              hasCurrent(altExtract.totalAssets) ||
+              hasCurrent(altExtract.customerDeposits) ||
+              hasCurrent(altExtract.financingNet)
+            ) {
+              balanceExtract = altExtract;
+              break;
+            }
+          }
+        }
 
-if (isMissingValueObj(balanceExtract.totalAssets)) {
-  const altTotalAssets = findBestRowForNames(
-    rows,
-    ["إجمالي المطلوبات وحقوق الملكية", "اجمالي المطلوبات وحقوق الملكية", "total liabilities and equity"],
-    latestCol,
-    { usedRowIndexes }
-  );
+        if (isMissingValueObj(balanceExtract.totalAssets)) {
+          const altTotalAssets = findBestRowForNames(
+            rows,
+            ["إجمالي المطلوبات وحقوق الملكية", "اجمالي المطلوبات وحقوق الملكية", "total liabilities and equity"],
+            latestCol,
+            { usedRowIndexes }
+          );
 
-  if (altTotalAssets.index >= 0) {
-    usedRowIndexes.add(altTotalAssets.index);
-    balanceExtract.totalAssets = makeValueObject(
-      altTotalAssets.row,
-      "إجمالي الموجودات",
-      latestCol,
-      previousCol
-    );
-  }
-}
+          if (altTotalAssets.index >= 0) {
+            usedRowIndexes.add(altTotalAssets.index);
+            balanceExtract.totalAssets = makeValueObject(
+              altTotalAssets.row,
+              "إجمالي الموجودات",
+              latestCol,
+              previousCol
+            );
+          }
+        }
 
         if (
           isMissingValueObj(balanceExtract.totalEquity) &&
