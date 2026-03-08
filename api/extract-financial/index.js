@@ -341,6 +341,24 @@ module.exports = async function (context, req) {
       return Math.round(n * 100) / 100;
     };
 
+    const pctDescriptor = (value, goodThreshold, weakThreshold) => {
+      if (value === null || value === undefined) return null;
+      if (value >= goodThreshold) return "strong";
+      if (value <= weakThreshold) return "weak";
+      return "moderate";
+    };
+
+    const ratioDescriptor = (value, strongThreshold, weakThreshold) => {
+      if (value === null || value === undefined) return null;
+      if (value >= strongThreshold) return "strong";
+      if (value <= weakThreshold) return "weak";
+      return "moderate";
+    };
+
+    const pushInsight = (arr, text) => {
+      if (text && !arr.includes(text)) arr.push(text);
+    };
+
     /* =========================
        Table scoring
        ========================= */
@@ -959,7 +977,7 @@ module.exports = async function (context, req) {
     }
 
     /* =========================
-       4A: Organized output
+       Organized output
        ========================= */
 
     const statements = {
@@ -1080,7 +1098,7 @@ module.exports = async function (context, req) {
     };
 
     /* =========================
-       4B: Basic ratios
+       Basic ratios
        ========================= */
 
     const ratios = {
@@ -1188,6 +1206,250 @@ module.exports = async function (context, req) {
       }
     };
 
+    /* =========================
+       4C: Insights
+       ========================= */
+
+    const insights = {
+      profitability: [],
+      liquidity: [],
+      leverage: [],
+      growth: [],
+      summary: []
+    };
+
+    const gmCurrent = ratios?.profitability?.grossMarginPct?.current ?? null;
+    const gmPrevious = ratios?.profitability?.grossMarginPct?.previous ?? null;
+    const omCurrent = ratios?.profitability?.operatingMarginPct?.current ?? null;
+    const omPrevious = ratios?.profitability?.operatingMarginPct?.previous ?? null;
+
+    const currentRatioCurrent = ratios?.liquidity?.currentRatio?.current ?? null;
+    const currentRatioPrevious = ratios?.liquidity?.currentRatio?.previous ?? null;
+    const cashCoverageCurrent = ratios?.liquidity?.cashToCurrentLiabilities?.current ?? null;
+    const cashCoveragePrevious = ratios?.liquidity?.cashToCurrentLiabilities?.previous ?? null;
+
+    const debtToAssetsCurrent = ratios?.leverage?.debtToAssets?.current ?? null;
+    const debtToAssetsPrevious = ratios?.leverage?.debtToAssets?.previous ?? null;
+    const equityRatioCurrent = ratios?.leverage?.equityRatio?.current ?? null;
+    const equityRatioPrevious = ratios?.leverage?.equityRatio?.previous ?? null;
+    const debtToEquityCurrent = ratios?.leverage?.debtToEquity?.current ?? null;
+    const debtToEquityPrevious = ratios?.leverage?.debtToEquity?.previous ?? null;
+
+    const revenueGrowth = ratios?.growth?.revenueGrowthPct ?? null;
+    const grossProfitGrowth = ratios?.growth?.grossProfitGrowthPct ?? null;
+    const operatingProfitGrowth = ratios?.growth?.operatingProfitGrowthPct ?? null;
+    const totalAssetsGrowth = ratios?.growth?.totalAssetsGrowthPct ?? null;
+    const totalEquityGrowth = ratios?.growth?.totalEquityGrowthPct ?? null;
+    const endingCashGrowth = ratios?.growth?.endingCashGrowthPct ?? null;
+
+    // Profitability insights
+    if (gmCurrent !== null && gmPrevious !== null) {
+      if (gmCurrent > gmPrevious) {
+        pushInsight(insights.profitability, "الهامش الإجمالي تحسن مقارنة بالفترة السابقة، مما يشير إلى تحسن نسبي في كفاءة تحقيق الربح من الإيرادات.");
+      } else if (gmCurrent < gmPrevious) {
+        pushInsight(insights.profitability, "الهامش الإجمالي تراجع مقارنة بالفترة السابقة، مما قد يعكس ضغوطًا أعلى على تكلفة الإيرادات أو تسعيرًا أقل كفاءة.");
+      } else {
+        pushInsight(insights.profitability, "الهامش الإجمالي بقي مستقرًا تقريبًا مقارنة بالفترة السابقة.");
+      }
+    }
+
+    if (omCurrent !== null && omPrevious !== null) {
+      if (omCurrent > omPrevious) {
+        pushInsight(insights.profitability, "هامش التشغيل ارتفع عن الفترة السابقة، وهذا يدعم وجود تحسن في الكفاءة التشغيلية.");
+      } else if (omCurrent < omPrevious) {
+        pushInsight(insights.profitability, "هامش التشغيل انخفض عن الفترة السابقة، ما قد يشير إلى زيادة الضغط التشغيلي أو ارتفاع المصروفات التشغيلية.");
+      } else {
+        pushInsight(insights.profitability, "هامش التشغيل بقي قريبًا من مستواه السابق دون تغير جوهري.");
+      }
+    }
+
+    const profitabilitySignal = pctDescriptor(omCurrent, 10, 5);
+    if (profitabilitySignal === "strong") {
+      pushInsight(insights.profitability, "الربحية التشغيلية الحالية تظهر عند مستوى جيد نسبيًا.");
+    } else if (profitabilitySignal === "moderate") {
+      pushInsight(insights.profitability, "الربحية التشغيلية الحالية مقبولة لكنها ليست مرتفعة جدًا.");
+    } else if (profitabilitySignal === "weak") {
+      pushInsight(insights.profitability, "الربحية التشغيلية الحالية ما زالت ضعيفة نسبيًا وتحتاج متابعة.");
+    }
+
+    // Liquidity insights
+    if (currentRatioCurrent !== null) {
+      if (currentRatioCurrent >= 2) {
+        pushInsight(insights.liquidity, "السيولة الجارية تبدو قوية، إذ تتجاوز الأصول المتداولة المطلوبات المتداولة بفارق مريح.");
+      } else if (currentRatioCurrent >= 1) {
+        pushInsight(insights.liquidity, "السيولة الجارية عند مستوى مقبول، لكنها ليست مرتفعة بشكل كبير.");
+      } else {
+        pushInsight(insights.liquidity, "السيولة الجارية ضعيفة نسبيًا لأن المطلوبات المتداولة تضغط على الأصول المتداولة.");
+      }
+    }
+
+    if (cashCoverageCurrent !== null) {
+      if (cashCoverageCurrent >= 1) {
+        pushInsight(insights.liquidity, "النقد وما في حكمه يغطي المطلوبات المتداولة بمستوى جيد، وهو عنصر داعم للمرونة المالية قصيرة الأجل.");
+      } else if (cashCoverageCurrent >= 0.5) {
+        pushInsight(insights.liquidity, "تغطية النقد للمطلوبات المتداولة مقبولة لكنها ليست مرتفعة جدًا.");
+      } else {
+        pushInsight(insights.liquidity, "تغطية النقد للمطلوبات المتداولة منخفضة نسبيًا، ما يعني اعتمادًا أكبر على بقية الأصول المتداولة.");
+      }
+    }
+
+    if (currentRatioCurrent !== null && currentRatioPrevious !== null) {
+      if (currentRatioCurrent > currentRatioPrevious) {
+        pushInsight(insights.liquidity, "مؤشر السيولة الجارية تحسن مقارنة بالفترة السابقة.");
+      } else if (currentRatioCurrent < currentRatioPrevious) {
+        pushInsight(insights.liquidity, "مؤشر السيولة الجارية تراجع مقارنة بالفترة السابقة، رغم بقاءه ضمن مستوى قد يظل مريحًا بحسب القيمة الحالية.");
+      }
+    }
+
+    if (cashCoverageCurrent !== null && cashCoveragePrevious !== null) {
+      if (cashCoverageCurrent < cashCoveragePrevious) {
+        pushInsight(insights.liquidity, "قدرة النقد على تغطية المطلوبات المتداولة تراجعت عن الفترة السابقة.");
+      } else if (cashCoverageCurrent > cashCoveragePrevious) {
+        pushInsight(insights.liquidity, "قدرة النقد على تغطية المطلوبات المتداولة تحسنت عن الفترة السابقة.");
+      }
+    }
+
+    // Leverage insights
+    if (debtToAssetsCurrent !== null) {
+      if (debtToAssetsCurrent < 0.4) {
+        pushInsight(insights.leverage, "نسبة المطلوبات إلى الأصول تبدو منخفضة نسبيًا، ما يشير إلى اعتماد غير مرتفع على التمويل بالالتزامات.");
+      } else if (debtToAssetsCurrent < 0.6) {
+        pushInsight(insights.leverage, "نسبة المطلوبات إلى الأصول في مستوى متوسط وتحتاج متابعة دون أن تكون مرتفعة جدًا.");
+      } else {
+        pushInsight(insights.leverage, "نسبة المطلوبات إلى الأصول مرتفعة نسبيًا، ما يعكس اعتمادًا أكبر على الالتزامات في هيكل التمويل.");
+      }
+    }
+
+    if (equityRatioCurrent !== null) {
+      if (equityRatioCurrent >= 0.6) {
+        pushInsight(insights.leverage, "نسبة حقوق الملكية إلى الأصول جيدة، وهذا يعكس متانة مقبولة في هيكل رأس المال.");
+      } else if (equityRatioCurrent >= 0.4) {
+        pushInsight(insights.leverage, "نسبة حقوق الملكية إلى الأصول متوسطة وتعطي درجة معقولة من الدعم الرأسمالي.");
+      } else {
+        pushInsight(insights.leverage, "نسبة حقوق الملكية إلى الأصول منخفضة نسبيًا، ما قد يعني اعتمادًا أكبر على الالتزامات.");
+      }
+    }
+
+    if (debtToEquityCurrent !== null) {
+      if (debtToEquityCurrent < 1) {
+        pushInsight(insights.leverage, "نسبة المطلوبات إلى حقوق الملكية تبدو تحت السيطرة.");
+      } else {
+        pushInsight(insights.leverage, "نسبة المطلوبات إلى حقوق الملكية مرتفعة نسبيًا وتستحق مراقبة إضافية.");
+      }
+    }
+
+    if (debtToAssetsCurrent !== null && debtToAssetsPrevious !== null) {
+      if (debtToAssetsCurrent < debtToAssetsPrevious) {
+        pushInsight(insights.leverage, "الاعتماد على المطلوبات انخفض مقارنة بالفترة السابقة.");
+      } else if (debtToAssetsCurrent > debtToAssetsPrevious) {
+        pushInsight(insights.leverage, "الاعتماد على المطلوبات ارتفع مقارنة بالفترة السابقة.");
+      }
+    }
+
+    if (equityRatioCurrent !== null && equityRatioPrevious !== null) {
+      if (equityRatioCurrent > equityRatioPrevious) {
+        pushInsight(insights.leverage, "حصة حقوق الملكية في تمويل الأصول تحسنت عن الفترة السابقة.");
+      } else if (equityRatioCurrent < equityRatioPrevious) {
+        pushInsight(insights.leverage, "حصة حقوق الملكية في تمويل الأصول تراجعت عن الفترة السابقة.");
+      }
+    }
+
+    if (debtToEquityCurrent !== null && debtToEquityPrevious !== null) {
+      if (debtToEquityCurrent < debtToEquityPrevious) {
+        pushInsight(insights.leverage, "نسبة المطلوبات إلى حقوق الملكية تحسنت مقارنة بالفترة السابقة.");
+      } else if (debtToEquityCurrent > debtToEquityPrevious) {
+        pushInsight(insights.leverage, "نسبة المطلوبات إلى حقوق الملكية ارتفعت مقارنة بالفترة السابقة.");
+      }
+    }
+
+    // Growth insights
+    if (revenueGrowth !== null) {
+      if (revenueGrowth > 15) {
+        pushInsight(insights.growth, "الإيرادات نمت بوتيرة جيدة مقارنة بالفترة السابقة.");
+      } else if (revenueGrowth > 0) {
+        pushInsight(insights.growth, "الإيرادات سجلت نموًا إيجابيًا لكن بوتيرة معتدلة.");
+      } else if (revenueGrowth < 0) {
+        pushInsight(insights.growth, "الإيرادات تراجعت مقارنة بالفترة السابقة.");
+      }
+    }
+
+    if (operatingProfitGrowth !== null) {
+      if (operatingProfitGrowth > 20) {
+        pushInsight(insights.growth, "الربح التشغيلي نما بقوة، وهو مؤشر إيجابي على تحسن الأداء التشغيلي.");
+      } else if (operatingProfitGrowth > 0) {
+        pushInsight(insights.growth, "الربح التشغيلي حقق نموًا إيجابيًا مقارنة بالفترة السابقة.");
+      } else if (operatingProfitGrowth < 0) {
+        pushInsight(insights.growth, "الربح التشغيلي تراجع مقارنة بالفترة السابقة.");
+      }
+    }
+
+    if (revenueGrowth !== null && operatingProfitGrowth !== null) {
+      if (operatingProfitGrowth > revenueGrowth) {
+        pushInsight(insights.growth, "نمو الربح التشغيلي أسرع من نمو الإيرادات، ما يدعم فرضية تحسن الكفاءة التشغيلية.");
+      } else if (operatingProfitGrowth < revenueGrowth) {
+        pushInsight(insights.growth, "نمو الربح التشغيلي أبطأ من نمو الإيرادات، ما قد يعني أن جزءًا من النمو تم امتصاصه عبر المصروفات.");
+      }
+    }
+
+    if (endingCashGrowth !== null) {
+      if (endingCashGrowth > 0) {
+        pushInsight(insights.growth, "الرصيد النقدي النهائي ارتفع عن الفترة السابقة.");
+      } else if (endingCashGrowth < 0) {
+        pushInsight(insights.growth, "الرصيد النقدي النهائي انخفض عن الفترة السابقة، رغم ضرورة قراءته مع جودة التدفقات واستخدامات النقد.");
+      }
+    }
+
+    if (totalAssetsGrowth !== null) {
+      if (totalAssetsGrowth > 0) {
+        pushInsight(insights.growth, "إجمالي الأصول نما مقارنة بالفترة السابقة.");
+      } else if (totalAssetsGrowth < 0) {
+        pushInsight(insights.growth, "إجمالي الأصول تراجع مقارنة بالفترة السابقة.");
+      }
+    }
+
+    if (totalEquityGrowth !== null) {
+      if (totalEquityGrowth > 0) {
+        pushInsight(insights.growth, "حقوق الملكية ارتفعت مقارنة بالفترة السابقة.");
+      } else if (totalEquityGrowth < 0) {
+        pushInsight(insights.growth, "حقوق الملكية تراجعت مقارنة بالفترة السابقة.");
+      }
+    }
+
+    // Summary insights
+    if (gmCurrent !== null && omCurrent !== null && gmPrevious !== null && omPrevious !== null) {
+      if (gmCurrent > gmPrevious && omCurrent > omPrevious) {
+        pushInsight(insights.summary, "الصورة العامة تشير إلى تحسن واضح في الربحية على مستوى الهامش الإجمالي والتشغيلي.");
+      } else if (gmCurrent < gmPrevious && omCurrent < omPrevious) {
+        pushInsight(insights.summary, "الصورة العامة تشير إلى ضغوط على الربحية مع تراجع في كل من الهامش الإجمالي والتشغيلي.");
+      }
+    }
+
+    if (boolOrNull(accountingEquationCurrent) === true && boolOrNull(cashFlowEquationCurrent) === true) {
+      pushInsight(insights.summary, "البيانات المستخرجة تبدو متماسكة محاسبيًا في المعادلات الأساسية.");
+    }
+
+    if (
+      currentRatioCurrent !== null &&
+      currentRatioCurrent >= 1.5 &&
+      debtToAssetsCurrent !== null &&
+      debtToAssetsCurrent < 0.5
+    ) {
+      pushInsight(insights.summary, "المركز المالي الحالي يبدو متماسكًا من ناحية السيولة والاعتماد على المطلوبات.");
+    }
+
+    if (
+      endingCashGrowth !== null &&
+      endingCashGrowth < 0 &&
+      operatingProfitGrowth !== null &&
+      operatingProfitGrowth > 0
+    ) {
+      pushInsight(insights.summary, "هناك تحسن في التشغيل مقابل تراجع في الرصيد النقدي النهائي، وهذه نقطة تستحق قراءة أعمق لأسباب استخدام النقد.");
+    }
+
+    if (!insights.summary.length) {
+      pushInsight(insights.summary, "القراءة الأولية تشير إلى توازن عام في الأداء، مع الحاجة إلى تحليل أعمق للتفاصيل التشغيلية والنقدية.");
+    }
+
     const meta = {
       source: {
         hasNormalized: !!normalized,
@@ -1223,7 +1485,8 @@ module.exports = async function (context, req) {
         checks,
         meta,
         derived,
-        ratios
+        ratios,
+        insights
       }
     });
 
