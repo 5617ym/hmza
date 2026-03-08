@@ -152,6 +152,23 @@ c.numericDensity = numericCount / Math.max(rows.length, 1);
     };
 
     const pickLatestColumns = (cols) => {
+
+  const numericCols = cols
+    .filter(c => !c.hasNote && (c.numericDensity || 0) > 0.2)
+    .sort((a,b) => (b.numericDensity || 0) - (a.numericDensity || 0));
+
+  if (numericCols.length < 2) {
+    return { latest:null, previous:null, latestYear:null, previousYear:null };
+  }
+
+  return {
+    latest: numericCols[0],
+    previous: numericCols[1],
+    latestYear: null,
+    previousYear: null
+  };
+
+};
       const usable = cols
   .filter((c) => !c.hasNote)
   .sort((a, b) => (b.numericDensity || 0) - (a.numericDensity || 0));
