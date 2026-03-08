@@ -10,7 +10,6 @@ module.exports = async function (context, req) {
   };
 
   try {
-
     const body = req.body || {};
     const normalized = body.normalized;
     const normalizedPrev = body.normalizedPrev || null;
@@ -381,11 +380,19 @@ module.exports = async function (context, req) {
       const text = tableTextBlob(table);
       let score = 0;
 
-      if (text.includes("التدفقات النقدية")) score += 8;
-      if (text.includes("النقد") || text.includes("النقدية")) score += 4;
-      if (text.includes("صافي")) score += 2;
-      if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 4;
-      if (text.includes("الموجودات") || text.includes("حقوق الملكية")) score -= 4;
+      if (text.includes("التدفقات النقدية")) score += 12;
+      if (text.includes("قائمة التدفقات النقدية")) score += 16;
+      if (text.includes("cash flow")) score += 12;
+      if (text.includes("النقد وما في حكمه")) score += 10;
+      if (text.includes("cash and cash")) score += 10;
+      if (text.includes("صافي التغير")) score += 8;
+      if (text.includes("net change")) score += 8;
+
+      if (Number(table.columnCount) >= 2 && Number(table.columnCount) <= 4) score += 3;
+      if (Number(table.rowCount) >= 15) score += 3;
+
+      if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 5;
+      if (text.includes("الموجودات") || text.includes("حقوق الملكية")) score -= 5;
 
       return score;
     };
@@ -450,7 +457,6 @@ module.exports = async function (context, req) {
     const balanceTable = pickBestBalanceTable(tablesPreview);
 
     if (balanceTable) {
-
       const cols = detectColumns(balanceTable);
       const picked = pickLatestColumns(cols);
 
@@ -642,12 +648,170 @@ module.exports = async function (context, req) {
        CASH FLOW
        ========================= */
 
+    const detectCashTriplet = (rows, latestCol, previousCol) => {
+      if (latestCol === null || previousCol === null) return null;
+
+      const numericRows = rows.filter(r =>
+        rowHasNumericValueAt(r, latestCol) || rowHasNumericValueAt(r, previousCol)
+      );
+
+      if (numericRows.length < 3) return null;
+
+      for (let i = numericRows.length - 3; i >= 0; i--) {
+        const row1 = numericRows[i];
+        const row2 = numericRows[i + 1];
+        const row3 = numericRows[i + 2];
+
+        const r1Current = parseNumberSmart(getCell(row1, latestCol));
+        const r1Previous = parseNumberSmart(getCell(row1, previousCol));
+
+        const r2Current = parseNumberSmart(getCell(row2, latestCol));
+        const r2Previous = parseNumberSmart(getCell(row2, previousCol));
+
+        const r3Current = parseNumberSmart(getCell(row3, latestCol));
+        const r3Previous = parseNumberSmart(getCell(row3, previousCol));
+
+        const arithmeticValid =
+          r1Current !== null &&
+          r1Previous !== null &&
+          r2Current !== null &&
+          r2Previous !== null &&
+          r3Current !== null &&
+          r3Previous !== null &&
+          (r3Current - r2Current === r1Current) &&
+          (r3Previous - r2Previous === r1Previous);
+
+        const chainValid =
+          arithmeticValid &&
+          (r3Previous === r2Current);
+
+        if (chainValid) {
+          return {
+            netChange: {
+              label: "صافي التغير في النقد (detected)",
+              current: r1Current,
+              previous: r1Previous
+            },
+            beginningCash: {
+              label: "النقد وما في حكمه في بداية السنة (detected)",
+              current: r2Current,
+              previous: r2Previous
+            },
+            endingCash: {
+              label: "النقد وما في حكمه في نهاية السنة (detected)",
+              current: r3Current,
+              previous: r3Previous
+            }
+          };
+        }
+      }
+
+      for (let i = numericRows.length - 3; i >= 0; i--) {
+        const row1 = numericRows[i];
+        const row2 = numericRows[i + 1];
+        const row3 = numericRows[i + 2];
+
+        const r1Current = parseNumberSmart(getCell(row1, latestCol));
+        const r1Previous = parseNumberSmart(getCell(row1, previousCol));
+
+        const r2Current = parseNumberSmart(getCell(row2, latestCol));
+        const r2Previous = parseNumberSmart(getCell(row2, previousCol));
+
+        const r3Current = parseNumberSmart(getCell(row3, latestCol));
+        const r3Previous = parseNumberSmart(getCell(row3, previousCol));
+
+        const arithmeticValid =
+          r1Current !== null &&
+          r1Previous !== null &&
+          r2Current !== null &&
+          r2Previous !== null &&
+          r3Current !== null &&
+          r3Previous !== null &&
+          (r3Current - r2Current === r1Current) &&
+          (r3Previous - r2Previous === r1Previous);
+
+        if (arithmeticValid) {
+          return {
+            netChange: {
+              label: "صافي التغير في النقد (detected)",
+              current: r1Current,
+              previous: r1Previous
+            },
+            beginningCash: {
+              label: "النقد وما في حكمه في بداية السنة (detected)",
+              current: r2Current,
+              previous: r2Previous
+            },
+            endingCash: {
+              label: "النقد وما في حكمه في نهاية السنة (detected)",
+              current: r3Current,
+              previous: r3Previous
+            }
+          };
+        }
+      }
+
+      return null;
+    };
+
+    const scoreCashCandidate = (table) => {
+      const baseScore = scoreCashFlowTable(table);
+      const cols = detectColumns(table);
+      const picked = pickLatestColumns(cols);
+      const latestCol = picked.latest?.col ?? null;
+      const previousCol = picked.previous?.col ?? null;
+      const rows = mergeTableRows(table);
+
+      let score = baseScore;
+
+      if (latestCol !== null && previousCol !== null) score += 4;
+      if (Number(table.columnCount) === 3 || Number(table.columnCount) === 4) score += 3;
+      if (Number(table.rowCount) >= 18) score += 4;
+
+      const detected = detectCashTriplet(rows, latestCol, previousCol);
+      if (detected) score += 40;
+
+      const text = tableTextBlob(table);
+      if (text.includes("الزكاة")) score += 1;
+      if (text.includes("الإستهلاك") || text.includes("الاستهلاك")) score += 1;
+      if (text.includes("تكاليف تمويلية") || text.includes("إيرادات تمويلية")) score += 1;
+
+      if (Number(table.pageNumber) >= 8 && Number(table.pageNumber) <= 12) score += 4;
+
+      return {
+        table,
+        score,
+        detected
+      };
+    };
+
+    const pickBestCashTableRobust = (tables) => {
+      if (!Array.isArray(tables) || !tables.length) {
+        return { table: null, detected: null };
+      }
+
+      let best = { table: null, detected: null, score: -Infinity };
+
+      for (const t of tables) {
+        const candidate = scoreCashCandidate(t);
+        if (candidate.score > best.score) {
+          best = candidate;
+        }
+      }
+
+      return {
+        table: best.score > 0 ? best.table : null,
+        detected: best.score > 0 ? best.detected : null
+      };
+    };
+
     let cashFlowExtract = {};
 
-    const cashTable = pickBestCashTable(tablesPreview);
+    const pickedCash = pickBestCashTableRobust(tablesPreview);
+    const cashTable = pickedCash.table;
+    let detectedCashTriplet = pickedCash.detected;
 
     if (cashTable) {
-
       const cols = detectColumns(cashTable);
       const picked = pickLatestColumns(cols);
 
@@ -710,117 +874,14 @@ module.exports = async function (context, req) {
         previous: null
       };
 
-      // fallback 1:
-      // ابحث من أسفل الجدول عن ثلاثية متتالية تحقق:
-      // ending - beginning = net change
-      if (isMissingValueObj(endingCashObj) || isMissingValueObj(beginningCashObj)) {
-        const numericRows = rows.filter(r =>
-          rowHasNumericValueAt(r, latestCol) || rowHasNumericValueAt(r, previousCol)
-        );
+      if ((!hasCurrent(endingCashObj) || !hasCurrent(beginningCashObj)) && !detectedCashTriplet) {
+        detectedCashTriplet = detectCashTriplet(rows, latestCol, previousCol);
+      }
 
-        for (let i = numericRows.length - 3; i >= 0; i--) {
-          const netRow = numericRows[i];
-          const beginRow = numericRows[i + 1];
-          const endRow = numericRows[i + 2];
-
-          const netCurrent = latestCol !== null ? parseNumberSmart(getCell(netRow, latestCol)) : null;
-          const netPrevious = previousCol !== null ? parseNumberSmart(getCell(netRow, previousCol)) : null;
-
-          const beginCurrent = latestCol !== null ? parseNumberSmart(getCell(beginRow, latestCol)) : null;
-          const beginPrevious = previousCol !== null ? parseNumberSmart(getCell(beginRow, previousCol)) : null;
-
-          const endCurrent = latestCol !== null ? parseNumberSmart(getCell(endRow, latestCol)) : null;
-          const endPrevious = previousCol !== null ? parseNumberSmart(getCell(endRow, previousCol)) : null;
-
-          const currentValid =
-            endCurrent !== null &&
-            beginCurrent !== null &&
-            netCurrent !== null &&
-            (endCurrent - beginCurrent === netCurrent);
-
-          const previousValid =
-            endPrevious !== null &&
-            beginPrevious !== null &&
-            netPrevious !== null &&
-            (endPrevious - beginPrevious === netPrevious);
-
-          if (currentValid || previousValid) {
-            beginningCashObj = {
-              label: "النقد وما في حكمه في بداية السنة (fallback arithmetic)",
-              current: beginCurrent,
-              previous: beginPrevious
-            };
-
-            endingCashObj = {
-              label: "النقد وما في حكمه في نهاية السنة (fallback arithmetic)",
-              current: endCurrent,
-              previous: endPrevious
-            };
-
-            netChangeObj = {
-              label: "صافي التغير في النقد (fallback arithmetic)",
-              current: netCurrent,
-              previous: netPrevious
-            };
-
-            break;
-          }
-        }
-
-        // fallback 2:
-        // نمط أقوى لملفك الحالي:
-        // row3.previous == row2.current
-        // row3.current - row2.current == row1.current
-        // row3.previous - row2.previous == row1.previous
-        if (isMissingValueObj(endingCashObj) || isMissingValueObj(beginningCashObj)) {
-          for (let i = rows.length - 3; i >= 0; i--) {
-            const row1 = rows[i];
-            const row2 = rows[i + 1];
-            const row3 = rows[i + 2];
-
-            const r1Current = latestCol !== null ? parseNumberSmart(getCell(row1, latestCol)) : null;
-            const r1Previous = previousCol !== null ? parseNumberSmart(getCell(row1, previousCol)) : null;
-
-            const r2Current = latestCol !== null ? parseNumberSmart(getCell(row2, latestCol)) : null;
-            const r2Previous = previousCol !== null ? parseNumberSmart(getCell(row2, previousCol)) : null;
-
-            const r3Current = latestCol !== null ? parseNumberSmart(getCell(row3, latestCol)) : null;
-            const r3Previous = previousCol !== null ? parseNumberSmart(getCell(row3, previousCol)) : null;
-
-            const chainValid =
-              r1Current !== null &&
-              r1Previous !== null &&
-              r2Current !== null &&
-              r2Previous !== null &&
-              r3Current !== null &&
-              r3Previous !== null &&
-              r3Previous === r2Current &&
-              (r3Current - r2Current === r1Current) &&
-              (r3Previous - r2Previous === r1Previous);
-
-            if (chainValid) {
-              netChangeObj = {
-                label: "صافي التغير في النقد (fallback chain)",
-                current: r1Current,
-                previous: r1Previous
-              };
-
-              beginningCashObj = {
-                label: "النقد وما في حكمه في بداية السنة (fallback chain)",
-                current: r2Current,
-                previous: r2Previous
-              };
-
-              endingCashObj = {
-                label: "النقد وما في حكمه في نهاية السنة (fallback chain)",
-                current: r3Current,
-                previous: r3Previous
-              };
-
-              break;
-            }
-          }
-        }
+      if ((!hasCurrent(endingCashObj) || !hasCurrent(beginningCashObj)) && detectedCashTriplet) {
+        beginningCashObj = detectedCashTriplet.beginningCash;
+        endingCashObj = detectedCashTriplet.endingCash;
+        netChangeObj = detectedCashTriplet.netChange;
       }
 
       if (netChangeObj.current === null && hasCurrent(endingCashObj) && hasCurrent(beginningCashObj)) {
