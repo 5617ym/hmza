@@ -359,6 +359,10 @@ module.exports = async function (context, req) {
       if (text && !arr.includes(text)) arr.push(text);
     };
 
+    const pushUnique = (arr, text) => {
+      if (text && !arr.includes(text)) arr.push(text);
+    };
+
     /* =========================
        Table scoring
        ========================= */
@@ -1586,19 +1590,22 @@ module.exports = async function (context, req) {
     };
 
     if (signals.liquidity === "strong") {
-      evaluation.strengths.push(
+      pushUnique(
+        evaluation.strengths,
         "السيولة القوية تمنح الشركة مرونة جيدة في مواجهة الالتزامات قصيرة الأجل."
       );
     }
 
     if (signals.leverage === "low") {
-      evaluation.strengths.push(
+      pushUnique(
+        evaluation.strengths,
         "مستوى الاعتماد على المطلوبات منخفض نسبيًا، مما يدعم استقرار الهيكل المالي."
       );
     }
 
     if (signals.growth === "strong") {
-      evaluation.strengths.push(
+      pushUnique(
+        evaluation.strengths,
         "نمو الإيرادات القوي يشير إلى توسع النشاط أو تحسن الطلب."
       );
     }
@@ -1607,13 +1614,15 @@ module.exports = async function (context, req) {
       ratios?.profitability?.grossMarginPct?.current !== null &&
       ratios?.profitability?.grossMarginPct?.current > 20
     ) {
-      evaluation.strengths.push(
+      pushUnique(
+        evaluation.strengths,
         "الهامش الإجمالي الجيد يعكس قدرة الشركة على تحقيق قيمة من الإيرادات."
       );
     }
 
     if (signals.profitability === "moderate") {
-      evaluation.watchPoints.push(
+      pushUnique(
+        evaluation.watchPoints,
         "الربحية التشغيلية مقبولة لكنها ليست مرتفعة بما يكفي لتعطي هامش أمان كبير."
       );
     }
@@ -1622,7 +1631,8 @@ module.exports = async function (context, req) {
       ratios?.liquidity?.currentRatio?.current !== null &&
       ratios?.liquidity?.currentRatio?.current < 1.5
     ) {
-      evaluation.watchPoints.push(
+      pushUnique(
+        evaluation.watchPoints,
         "السيولة الجارية ليست مرتفعة بشكل كبير وقد تحتاج متابعة في الفترات القادمة."
       );
     }
@@ -1631,7 +1641,8 @@ module.exports = async function (context, req) {
       endingCashGrowth !== null &&
       endingCashGrowth < 0
     ) {
-      evaluation.watchPoints.push(
+      pushUnique(
+        evaluation.watchPoints,
         "تراجع الرصيد النقدي النهائي يستدعي فهم استخدامات النقد خلال الفترة."
       );
     }
@@ -1641,7 +1652,8 @@ module.exports = async function (context, req) {
       revenueGrowth > 10 &&
       signals.profitability !== "strong"
     ) {
-      evaluation.opportunities.push(
+      pushUnique(
+        evaluation.opportunities,
         "في حال تحسن الكفاءة التشغيلية يمكن تحويل نمو الإيرادات إلى نمو أقوى في الأرباح."
       );
     }
@@ -1650,13 +1662,15 @@ module.exports = async function (context, req) {
       signals.leverage === "low" &&
       signals.growth === "strong"
     ) {
-      evaluation.opportunities.push(
+      pushUnique(
+        evaluation.opportunities,
         "انخفاض مستوى المديونية يتيح مجالًا للتوسع أو التمويل المستقبلي إذا لزم الأمر."
       );
     }
 
     if (signals.profitability === "weak") {
-      evaluation.risks.push(
+      pushUnique(
+        evaluation.risks,
         "ضعف الربحية التشغيلية قد يؤثر على قدرة الشركة على تمويل النمو مستقبلاً."
       );
     }
@@ -1665,7 +1679,8 @@ module.exports = async function (context, req) {
       endingCashGrowth !== null &&
       endingCashGrowth < -20
     ) {
-      evaluation.risks.push(
+      pushUnique(
+        evaluation.risks,
         "الانخفاض الكبير في الرصيد النقدي قد يشير إلى استنزاف نقدي يحتاج تحليلًا أعمق."
       );
     }
@@ -1674,9 +1689,180 @@ module.exports = async function (context, req) {
       ratios?.leverage?.debtToAssets?.current !== null &&
       ratios?.leverage?.debtToAssets?.current > 0.65
     ) {
-      evaluation.risks.push(
+      pushUnique(
+        evaluation.risks,
         "الاعتماد المرتفع على المطلوبات قد يزيد حساسية الشركة للمخاطر المالية."
       );
+    }
+
+    /* =========================
+       5C: Investment interpretation
+       ========================= */
+
+    const investmentView = {
+      businessQuality: {
+        signal: null,
+        points: []
+      },
+      financialStability: {
+        signal: null,
+        points: []
+      },
+      growthOutlook: {
+        signal: null,
+        points: []
+      },
+      cashQuality: {
+        signal: null,
+        points: []
+      },
+      overallView: [],
+      investmentView: null
+    };
+
+    // businessQuality
+    if (gmCurrent !== null && omCurrent !== null) {
+      if (gmCurrent >= 20 && omCurrent >= 8) {
+        investmentView.businessQuality.signal = "good";
+        pushUnique(investmentView.businessQuality.points, "الهوامش الحالية تعكس نموذج أعمال قادرًا على توليد ربحية تشغيلية مقبولة إلى جيدة.");
+      } else if (gmCurrent >= 15 && omCurrent >= 4) {
+        investmentView.businessQuality.signal = "acceptable";
+        pushUnique(investmentView.businessQuality.points, "نموذج الأعمال يبدو مقبولًا من ناحية الربحية، لكنه ليس عند مستوى القوة العالية بعد.");
+      } else {
+        investmentView.businessQuality.signal = "weak";
+        pushUnique(investmentView.businessQuality.points, "الهوامش الحالية تشير إلى أن جودة الربحية التشغيلية ما زالت ضعيفة نسبيًا.");
+      }
+    }
+
+    if (revenueGrowth !== null && operatingProfitGrowth !== null) {
+      if (operatingProfitGrowth > revenueGrowth) {
+        pushUnique(investmentView.businessQuality.points, "الأرباح التشغيلية تنمو أسرع من الإيرادات، وهذا يدعم تحسن الكفاءة التشغيلية.");
+      } else if (operatingProfitGrowth < revenueGrowth) {
+        pushUnique(investmentView.businessQuality.points, "الإيرادات تنمو أسرع من الأرباح التشغيلية، ما قد يعني أن جزءًا من النمو يذهب إلى المصروفات.");
+      }
+    }
+
+    // financialStability
+    if (currentRatioCurrent !== null && debtToAssetsCurrent !== null) {
+      if (currentRatioCurrent >= 1.5 && debtToAssetsCurrent < 0.5) {
+        investmentView.financialStability.signal = "strong";
+        pushUnique(investmentView.financialStability.points, "المركز المالي يبدو متماسكًا من ناحية السيولة وهيكل التمويل.");
+      } else if (currentRatioCurrent >= 1 && debtToAssetsCurrent < 0.65) {
+        investmentView.financialStability.signal = "acceptable";
+        pushUnique(investmentView.financialStability.points, "المركز المالي مقبول إجمالًا لكنه يحتاج متابعة في بعض الجوانب.");
+      } else {
+        investmentView.financialStability.signal = "fragile";
+        pushUnique(investmentView.financialStability.points, "المركز المالي يبدو أكثر حساسية ويحتاج حذرًا في قراءة السيولة أو المديونية.");
+      }
+    }
+
+    if (equityRatioCurrent !== null) {
+      if (equityRatioCurrent >= 0.6) {
+        pushUnique(investmentView.financialStability.points, "نسبة حقوق الملكية إلى الأصول تدعم متانة هيكل رأس المال.");
+      } else if (equityRatioCurrent < 0.4) {
+        pushUnique(investmentView.financialStability.points, "انخفاض حصة حقوق الملكية في الأصول يعني اعتمادًا أكبر على المطلوبات.");
+      }
+    }
+
+    // growthOutlook
+    if (revenueGrowth !== null) {
+      if (revenueGrowth > 15) {
+        investmentView.growthOutlook.signal = "strong";
+        pushUnique(investmentView.growthOutlook.points, "النمو الحالي في الإيرادات قوي ويعطي انطباعًا إيجابيًا عن توسع النشاط.");
+      } else if (revenueGrowth > 5) {
+        investmentView.growthOutlook.signal = "moderate";
+        pushUnique(investmentView.growthOutlook.points, "النمو الحالي إيجابي لكنه لا يزال في النطاق المتوسط.");
+      } else if (revenueGrowth > 0) {
+        investmentView.growthOutlook.signal = "slow";
+        pushUnique(investmentView.growthOutlook.points, "النمو موجود لكنه بطيء نسبيًا.");
+      } else {
+        investmentView.growthOutlook.signal = "negative";
+        pushUnique(investmentView.growthOutlook.points, "تراجع الإيرادات يضعف وضوح النظرة المستقبلية للنمو.");
+      }
+    }
+
+    if (totalAssetsGrowth !== null && totalAssetsGrowth > 0) {
+      pushUnique(investmentView.growthOutlook.points, "ارتفاع إجمالي الأصول يدعم وجود توسع في القاعدة التشغيلية أو الاستثمارية.");
+    }
+
+    if (totalEquityGrowth !== null && totalEquityGrowth > 0) {
+      pushUnique(investmentView.growthOutlook.points, "نمو حقوق الملكية يضيف دعمًا إيجابيًا لمسار التوسع والاستدامة.");
+    }
+
+    // cashQuality
+    if (cashFlowEquationCurrent === true) {
+      pushUnique(investmentView.cashQuality.points, "المعادلة النقدية الأساسية متماسكة في الفترة الحالية.");
+    }
+
+    if (
+      endingCashGrowth !== null &&
+      operatingProfitGrowth !== null
+    ) {
+      if (endingCashGrowth < 0 && operatingProfitGrowth > 0) {
+        investmentView.cashQuality.signal = "mixed";
+        pushUnique(investmentView.cashQuality.points, "هناك تحسن تشغيلي مقابل تراجع في الرصيد النقدي النهائي، ما يجعل جودة التحول إلى نقد بحاجة لقراءة أعمق.");
+      } else if (endingCashGrowth > 0 && operatingProfitGrowth > 0) {
+        investmentView.cashQuality.signal = "good";
+        pushUnique(investmentView.cashQuality.points, "تحسن الأرباح التشغيلية وتنامي الرصيد النقدي يعطيان إشارة جيدة على جودة الدعم النقدي.");
+      } else if (endingCashGrowth < 0) {
+        investmentView.cashQuality.signal = "weak";
+        pushUnique(investmentView.cashQuality.points, "تراجع الرصيد النقدي النهائي يفرض الحذر عند تقييم جودة النقد.");
+      } else {
+        investmentView.cashQuality.signal = "acceptable";
+      }
+    }
+
+    if (cashCoverageCurrent !== null) {
+      if (cashCoverageCurrent >= 1) {
+        pushUnique(investmentView.cashQuality.points, "النقد الحالي يغطي المطلوبات المتداولة بمستوى جيد.");
+      } else if (cashCoverageCurrent < 0.5) {
+        pushUnique(investmentView.cashQuality.points, "تغطية النقد للمطلوبات المتداولة منخفضة نسبيًا.");
+      }
+    }
+
+    // overallView
+    if (
+      investmentView.businessQuality.signal === "good" &&
+      investmentView.financialStability.signal === "strong" &&
+      (investmentView.growthOutlook.signal === "strong" || investmentView.growthOutlook.signal === "moderate")
+    ) {
+      pushUnique(investmentView.overallView, "الصورة الاستثمارية الأولية تبدو إيجابية، مع توازن جيد بين النمو والاستقرار المالي.");
+      investmentView.investmentView = "positive";
+    }
+
+    if (
+      investmentView.businessQuality.signal === "acceptable" &&
+      investmentView.financialStability.signal === "acceptable"
+    ) {
+      pushUnique(investmentView.overallView, "الصورة الاستثمارية تبدو مقبولة، لكن ما زالت تحتاج متابعة لجودة الربحية والتدفقات.");
+      if (!investmentView.investmentView) investmentView.investmentView = "neutral";
+    }
+
+    if (
+      investmentView.businessQuality.signal === "weak" ||
+      investmentView.financialStability.signal === "fragile" ||
+      investmentView.growthOutlook.signal === "negative"
+    ) {
+      pushUnique(investmentView.overallView, "الصورة الاستثمارية الحالية تميل إلى الحذر بسبب ضعف في بعض العناصر الأساسية.");
+      investmentView.investmentView = "cautious";
+    }
+
+    if (
+      endingCashGrowth !== null &&
+      endingCashGrowth < 0 &&
+      operatingProfitGrowth !== null &&
+      operatingProfitGrowth > 0
+    ) {
+      pushUnique(investmentView.overallView, "أهم نقطة متابعة حالية هي تفسير سبب تراجع النقد رغم تحسن التشغيل.");
+    }
+
+    if (!investmentView.overallView.length) {
+      pushUnique(investmentView.overallView, "القراءة الاستثمارية الأولية متوازنة وتحتاج التعمق أكثر قبل بناء حكم نهائي أقوى.");
+      if (!investmentView.investmentView) investmentView.investmentView = "neutral";
+    }
+
+    if (!investmentView.investmentView) {
+      investmentView.investmentView = "neutral";
     }
 
     const meta = {
@@ -1718,7 +1904,8 @@ module.exports = async function (context, req) {
         signals,
         insights,
         executiveSummary,
-        evaluation
+        evaluation,
+        investmentView
       }
     });
 
