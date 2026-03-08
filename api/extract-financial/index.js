@@ -1263,12 +1263,12 @@ module.exports = async function (context, req) {
       }
     }
 
-    const profitabilitySignal = pctDescriptor(omCurrent, 10, 5);
-    if (profitabilitySignal === "strong") {
+    const profitabilitySignalHint = pctDescriptor(omCurrent, 10, 5);
+    if (profitabilitySignalHint === "strong") {
       pushInsight(insights.profitability, "الربحية التشغيلية الحالية تظهر عند مستوى جيد نسبيًا.");
-    } else if (profitabilitySignal === "moderate") {
+    } else if (profitabilitySignalHint === "moderate") {
       pushInsight(insights.profitability, "الربحية التشغيلية الحالية مقبولة لكنها ليست مرتفعة جدًا.");
-    } else if (profitabilitySignal === "weak") {
+    } else if (profitabilitySignalHint === "weak") {
       pushInsight(insights.profitability, "الربحية التشغيلية الحالية ما زالت ضعيفة نسبيًا وتحتاج متابعة.");
     }
 
@@ -1450,6 +1450,130 @@ module.exports = async function (context, req) {
       pushInsight(insights.summary, "القراءة الأولية تشير إلى توازن عام في الأداء، مع الحاجة إلى تحليل أعمق للتفاصيل التشغيلية والنقدية.");
     }
 
+    /* =========================
+       5A: Financial signals
+       ========================= */
+
+    const signals = {
+      profitability: null,
+      liquidity: null,
+      leverage: null,
+      growth: null
+    };
+
+    const opMargin = ratios?.profitability?.operatingMarginPct?.current ?? null;
+    const currentRatio = ratios?.liquidity?.currentRatio?.current ?? null;
+    const debtToAssets = ratios?.leverage?.debtToAssets?.current ?? null;
+
+    if (opMargin !== null) {
+      if (opMargin >= 15) signals.profitability = "strong";
+      else if (opMargin >= 8) signals.profitability = "good";
+      else if (opMargin >= 4) signals.profitability = "moderate";
+      else signals.profitability = "weak";
+    }
+
+    if (currentRatio !== null) {
+      if (currentRatio >= 2) signals.liquidity = "strong";
+      else if (currentRatio >= 1.2) signals.liquidity = "acceptable";
+      else signals.liquidity = "weak";
+    }
+
+    if (debtToAssets !== null) {
+      if (debtToAssets <= 0.35) signals.leverage = "low";
+      else if (debtToAssets <= 0.6) signals.leverage = "moderate";
+      else signals.leverage = "high";
+    }
+
+    if (revenueGrowth !== null) {
+      if (revenueGrowth > 15) signals.growth = "strong";
+      else if (revenueGrowth > 5) signals.growth = "moderate";
+      else if (revenueGrowth > 0) signals.growth = "slow";
+      else signals.growth = "negative";
+    }
+
+    /* =========================
+       5A: Executive summary
+       ========================= */
+
+    const executiveSummary = [];
+
+    if (signals.profitability === "strong" || signals.profitability === "good") {
+      executiveSummary.push(
+        "الربحية التشغيلية تبدو جيدة نسبيًا مقارنة بمستوى الإيرادات."
+      );
+    } else if (signals.profitability === "moderate") {
+      executiveSummary.push(
+        "الربحية التشغيلية مقبولة، لكنها ما زالت دون مستوى القوة العالية."
+      );
+    } else if (signals.profitability === "weak") {
+      executiveSummary.push(
+        "الربحية التشغيلية الحالية ضعيفة نسبيًا وتحتاج متابعة."
+      );
+    }
+
+    if (signals.liquidity === "strong") {
+      executiveSummary.push(
+        "السيولة المتاحة تبدو مريحة، حيث تغطي الأصول المتداولة المطلوبات المتداولة بفارق جيد."
+      );
+    } else if (signals.liquidity === "acceptable") {
+      executiveSummary.push(
+        "السيولة الحالية عند مستوى مقبول دون أن تكون مرتفعة جدًا."
+      );
+    } else if (signals.liquidity === "weak") {
+      executiveSummary.push(
+        "السيولة الحالية ضعيفة نسبيًا وتحتاج مراقبة."
+      );
+    }
+
+    if (signals.leverage === "low") {
+      executiveSummary.push(
+        "هيكل التمويل يميل إلى الاعتماد الأقل على المطلوبات."
+      );
+    } else if (signals.leverage === "moderate") {
+      executiveSummary.push(
+        "هيكل التمويل متوازن نسبيًا مع اعتماد متوسط على المطلوبات."
+      );
+    } else if (signals.leverage === "high") {
+      executiveSummary.push(
+        "هيكل التمويل يعتمد بشكل أعلى نسبيًا على المطلوبات."
+      );
+    }
+
+    if (signals.growth === "strong") {
+      executiveSummary.push(
+        "الإيرادات تسجل نموًا قويًا مقارنة بالفترة السابقة."
+      );
+    } else if (signals.growth === "moderate") {
+      executiveSummary.push(
+        "الإيرادات تنمو بوتيرة جيدة لكن ليست استثنائية."
+      );
+    } else if (signals.growth === "slow") {
+      executiveSummary.push(
+        "الإيرادات ما زالت تنمو ولكن بوتيرة بطيئة نسبيًا."
+      );
+    } else if (signals.growth === "negative") {
+      executiveSummary.push(
+        "الإيرادات في مسار تراجع مقارنة بالفترة السابقة."
+      );
+    }
+
+    if (
+      endingCashGrowth !== null &&
+      endingCashGrowth < 0 &&
+      operatingProfitGrowth !== null &&
+      operatingProfitGrowth > 0
+    ) {
+      executiveSummary.push(
+        "هناك تحسن تشغيلي مقابل تراجع في الرصيد النقدي النهائي، وهي نقطة تستحق تحليلًا أعمق في استخدامات النقد."
+      );
+    }
+
+    if (!executiveSummary.length) {
+      executiveSummary.push(
+        "الأداء العام متوازن دون مؤشرات استثنائية واضحة في الوقت الحالي."
+      );
+    }
+
     const meta = {
       source: {
         hasNormalized: !!normalized,
@@ -1486,7 +1610,9 @@ module.exports = async function (context, req) {
         meta,
         derived,
         ratios,
-        insights
+        signals,
+        insights,
+        executiveSummary
       }
     });
 
