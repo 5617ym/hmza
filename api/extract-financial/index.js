@@ -1295,24 +1295,61 @@ module.exports = async function (context, req) {
         const usedRowIndexes = new Set();
         balanceExtract = extractFieldsByMap(rows, BANK_BALANCE_NAMES, latestCol, previousCol, { usedRowIndexes });
 
-        if (isMissingValueObj(balanceExtract.totalAssets)) {
-          const altTotalAssets = findBestRowForNames(
-            rows,
-            ["إجمالي المطلوبات وحقوق الملكية", "اجمالي المطلوبات وحقوق الملكية", "total liabilities and equity"],
-            latestCol,
-            { usedRowIndexes }
-          );
+// fallback: إذا لم يتم استخراج شيء من جدول المركز المالي
+if (
+  isMissingValueObj(balanceExtract.totalAssets) &&
+  isMissingValueObj(balanceExtract.customerDeposits) &&
+  isMissingValueObj(balanceExtract.financingNet)
+) {
+  for (const t of tablesPreview) {
+    const rowsAlt = mergeTableRows(t);
+    if (!rowsAlt.length) continue;
 
-          if (altTotalAssets.index >= 0) {
-            usedRowIndexes.add(altTotalAssets.index);
-            balanceExtract.totalAssets = makeValueObject(
-              altTotalAssets.row,
-              "إجمالي الموجودات",
-              latestCol,
-              previousCol
-            );
-          }
-        }
+    const colsAlt = detectColumns(t);
+    const pickedAlt = pickLatestColumns(colsAlt);
+
+    const latestAlt = pickedAlt.latest?.col ?? null;
+    const prevAlt = pickedAlt.previous?.col ?? null;
+
+    const usedAlt = new Set();
+
+    const altExtract = extractFieldsByMap(
+      rowsAlt,
+      BANK_BALANCE_NAMES,
+      latestAlt,
+      prevAlt,
+      { usedRowIndexes: usedAlt }
+    );
+
+    if (
+      hasCurrent(altExtract.totalAssets) ||
+      hasCurrent(altExtract.customerDeposits) ||
+      hasCurrent(altExtract.financingNet)
+    ) {
+      balanceExtract = altExtract;
+      break;
+    }
+  }
+}
+
+if (isMissingValueObj(balanceExtract.totalAssets)) {
+  const altTotalAssets = findBestRowForNames(
+    rows,
+    ["إجمالي المطلوبات وحقوق الملكية", "اجمالي المطلوبات وحقوق الملكية", "total liabilities and equity"],
+    latestCol,
+    { usedRowIndexes }
+  );
+
+  if (altTotalAssets.index >= 0) {
+    usedRowIndexes.add(altTotalAssets.index);
+    balanceExtract.totalAssets = makeValueObject(
+      altTotalAssets.row,
+      "إجمالي الموجودات",
+      latestCol,
+      previousCol
+    );
+  }
+}
 
         if (
           isMissingValueObj(balanceExtract.totalEquity) &&
