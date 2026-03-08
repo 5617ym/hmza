@@ -280,6 +280,13 @@ module.exports = async function (context, req) {
 
         let score = -Infinity;
 
+// تفضيل الصفحات الأولى من التقرير
+if (pageNumber < 10) {
+  score += 40;
+} else if (pageNumber < 20) {
+  score += 20;
+}
+
         for (const n of normalizedNames) {
           if (!n) continue;
 
