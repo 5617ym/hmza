@@ -126,7 +126,7 @@ module.exports = async function (context, req) {
           hasNote: false
         };
 
-        for (let r = 0; r < Math.min(6, rows.length); r++) {
+        for (let r = 0; r < Math.min(20, rows.length); r++) {
           const cell = norm(rows?.[r]?.[i]);
           const y = findYear(cell);
 
@@ -137,6 +137,14 @@ module.exports = async function (context, req) {
         }
 
         c.years = [...new Set(c.years)];
+        // detect numeric column density
+let numericCount = 0;
+for (let r = 0; r < rows.length; r++) {
+  if (parseNumberSmart(rows[r]?.[i]) !== null) {
+    numericCount++;
+  }
+}
+c.numericDensity = numericCount / Math.max(rows.length, 1);
         cols.push(c);
       }
 
@@ -144,7 +152,9 @@ module.exports = async function (context, req) {
     };
 
     const pickLatestColumns = (cols) => {
-      const usable = cols.filter((c) => !c.hasNote);
+      const usable = cols
+  .filter((c) => !c.hasNote)
+  .sort((a, b) => (b.numericDensity || 0) - (a.numericDensity || 0));
       const years = [];
 
       usable.forEach((c) => c.years.forEach((y) => years.push(y)));
