@@ -3,7 +3,7 @@ module.exports = async function (context, req) {
   const send = (status, payload) => {
     context.res = {
       status,
-      headers: { "Content-Type": "application/json; charset": "utf-8" },
+      headers: { "Content-Type": "application/json; charset=utf-8" },
       body: payload
     };
   };
