@@ -141,7 +141,7 @@ module.exports = async function (context, req) {
       usable.forEach(c => c.years.forEach(y => years.push(y)));
 
       if (!years.length) {
-        return { latest: null, previous: null };
+        return { latest: null, previous: null, latestYear: null, previousYear: null };
       }
 
       const uniqueYears = [...new Set(years)].sort((a, b) => b - a);
@@ -153,7 +153,12 @@ module.exports = async function (context, req) {
         ? (usable.find(c => c.years.includes(prevYear)) || null)
         : null;
 
-      return { latest, previous };
+      return {
+        latest,
+        previous,
+        latestYear: maxYear,
+        previousYear: prevYear
+      };
     };
 
     const getCell = (row, index) => {
@@ -306,8 +311,6 @@ module.exports = async function (context, req) {
     const hasCurrent = (obj) => !!obj && obj.current !== null && obj.current !== undefined;
     const hasPrevious = (obj) => !!obj && obj.previous !== null && obj.previous !== undefined;
 
-    const asNullableNumber = (n) => Number.isFinite(n) ? n : null;
-
     const safePercentChange = (current, previous) => {
       if (current === null || current === undefined) return null;
       if (previous === null || previous === undefined) return null;
@@ -315,10 +318,27 @@ module.exports = async function (context, req) {
       return ((current - previous) / Math.abs(previous)) * 100;
     };
 
+    const safeRatio = (numerator, denominator) => {
+      if (numerator === null || numerator === undefined) return null;
+      if (denominator === null || denominator === undefined) return null;
+      if (denominator === 0) return null;
+      return numerator / denominator;
+    };
+
+    const safeMarginPct = (numerator, denominator) => {
+      const ratio = safeRatio(numerator, denominator);
+      return ratio === null ? null : ratio * 100;
+    };
+
     const boolOrNull = (value) => {
       if (value === true) return true;
       if (value === false) return false;
       return null;
+    };
+
+    const round2 = (n) => {
+      if (n === null || n === undefined) return null;
+      return Math.round(n * 100) / 100;
     };
 
     /* =========================
@@ -439,12 +459,18 @@ module.exports = async function (context, req) {
     };
 
     let incomeExtract = {};
+    let incomeYears = { current: null, previous: null };
 
     const incomeTable = pickBestIncomeTable(tablesPreview);
 
     if (incomeTable) {
       const cols = detectColumns(incomeTable);
       const picked = pickLatestColumns(cols);
+
+      incomeYears = {
+        current: picked.latestYear ?? null,
+        previous: picked.previousYear ?? null
+      };
 
       const latestCol = picked.latest?.col ?? null;
       const previousCol = picked.previous?.col ?? null;
@@ -468,12 +494,18 @@ module.exports = async function (context, req) {
        ========================= */
 
     let balanceExtract = {};
+    let balanceYears = { current: null, previous: null };
 
     const balanceTable = pickBestBalanceTable(tablesPreview);
 
     if (balanceTable) {
       const cols = detectColumns(balanceTable);
       const picked = pickLatestColumns(cols);
+
+      balanceYears = {
+        current: picked.latestYear ?? null,
+        previous: picked.previousYear ?? null
+      };
 
       const latestCol = picked.latest?.col ?? null;
       const previousCol = picked.previous?.col ?? null;
@@ -796,16 +828,20 @@ module.exports = async function (context, req) {
       return {
         table,
         score,
-        detected
+        detected,
+        years: {
+          current: picked.latestYear ?? null,
+          previous: picked.previousYear ?? null
+        }
       };
     };
 
     const pickBestCashTableRobust = (tables) => {
       if (!Array.isArray(tables) || !tables.length) {
-        return { table: null, detected: null };
+        return { table: null, detected: null, years: { current: null, previous: null } };
       }
 
-      let best = { table: null, detected: null, score: -Infinity };
+      let best = { table: null, detected: null, score: -Infinity, years: { current: null, previous: null } };
 
       for (const t of tables) {
         const candidate = scoreCashCandidate(t);
@@ -816,19 +852,27 @@ module.exports = async function (context, req) {
 
       return {
         table: best.score > 0 ? best.table : null,
-        detected: best.score > 0 ? best.detected : null
+        detected: best.score > 0 ? best.detected : null,
+        years: best.score > 0 ? best.years : { current: null, previous: null }
       };
     };
 
     let cashFlowExtract = {};
+    let cashFlowYears = { current: null, previous: null };
 
     const pickedCash = pickBestCashTableRobust(tablesPreview);
     const cashTable = pickedCash.table;
     let detectedCashTriplet = pickedCash.detected;
+    cashFlowYears = pickedCash.years || { current: null, previous: null };
 
     if (cashTable) {
       const cols = detectColumns(cashTable);
       const picked = pickLatestColumns(cols);
+
+      cashFlowYears = {
+        current: picked.latestYear ?? cashFlowYears.current ?? null,
+        previous: picked.previousYear ?? cashFlowYears.previous ?? null
+      };
 
       const latestCol = picked.latest?.col ?? null;
       const previousCol = picked.previous?.col ?? null;
@@ -924,49 +968,6 @@ module.exports = async function (context, req) {
       cashFlowLite: cashFlowExtract
     };
 
-    const derived = {
-      detectedYears: {
-        incomeStatement: {
-          current: incomeExtract?.revenue?.current !== null && incomeExtract?.revenue?.current !== undefined ? "latest" : null,
-          previous: incomeExtract?.revenue?.previous !== null && incomeExtract?.revenue?.previous !== undefined ? "previous" : null
-        },
-        balanceSheet: {
-          current: balanceExtract?.totalAssets?.current !== null && balanceExtract?.totalAssets?.current !== undefined ? "latest" : null,
-          previous: balanceExtract?.totalAssets?.previous !== null && balanceExtract?.totalAssets?.previous !== undefined ? "previous" : null
-        },
-        cashFlow: {
-          current: cashFlowExtract?.endingCash?.current !== null && cashFlowExtract?.endingCash?.current !== undefined ? "latest" : null,
-          previous: cashFlowExtract?.endingCash?.previous !== null && cashFlowExtract?.endingCash?.previous !== undefined ? "previous" : null
-        }
-      },
-      growth: {
-        revenuePct: safePercentChange(
-          incomeExtract?.revenue?.current ?? null,
-          incomeExtract?.revenue?.previous ?? null
-        ),
-        grossProfitPct: safePercentChange(
-          incomeExtract?.grossProfit?.current ?? null,
-          incomeExtract?.grossProfit?.previous ?? null
-        ),
-        operatingProfitPct: safePercentChange(
-          incomeExtract?.operatingProfit?.current ?? null,
-          incomeExtract?.operatingProfit?.previous ?? null
-        ),
-        totalAssetsPct: safePercentChange(
-          balanceExtract?.totalAssets?.current ?? null,
-          balanceExtract?.totalAssets?.previous ?? null
-        ),
-        totalEquityPct: safePercentChange(
-          balanceExtract?.totalEquity?.current ?? null,
-          balanceExtract?.totalEquity?.previous ?? null
-        ),
-        endingCashPct: safePercentChange(
-          cashFlowExtract?.endingCash?.current ?? null,
-          cashFlowExtract?.endingCash?.previous ?? null
-        )
-      }
-    };
-
     const accountingEquationCurrent =
       balanceExtract?.totalAssets?.current !== null &&
       balanceExtract?.totalAssets?.current !== undefined &&
@@ -1044,6 +1045,149 @@ module.exports = async function (context, req) {
       }
     };
 
+    const derived = {
+      detectedYears: {
+        incomeStatement: incomeYears,
+        balanceSheet: balanceYears,
+        cashFlow: cashFlowYears
+      },
+      growth: {
+        revenuePct: round2(safePercentChange(
+          incomeExtract?.revenue?.current ?? null,
+          incomeExtract?.revenue?.previous ?? null
+        )),
+        grossProfitPct: round2(safePercentChange(
+          incomeExtract?.grossProfit?.current ?? null,
+          incomeExtract?.grossProfit?.previous ?? null
+        )),
+        operatingProfitPct: round2(safePercentChange(
+          incomeExtract?.operatingProfit?.current ?? null,
+          incomeExtract?.operatingProfit?.previous ?? null
+        )),
+        totalAssetsPct: round2(safePercentChange(
+          balanceExtract?.totalAssets?.current ?? null,
+          balanceExtract?.totalAssets?.previous ?? null
+        )),
+        totalEquityPct: round2(safePercentChange(
+          balanceExtract?.totalEquity?.current ?? null,
+          balanceExtract?.totalEquity?.previous ?? null
+        )),
+        endingCashPct: round2(safePercentChange(
+          cashFlowExtract?.endingCash?.current ?? null,
+          cashFlowExtract?.endingCash?.previous ?? null
+        ))
+      }
+    };
+
+    /* =========================
+       4B: Basic ratios
+       ========================= */
+
+    const ratios = {
+      profitability: {
+        grossMarginPct: {
+          current: round2(safeMarginPct(
+            incomeExtract?.grossProfit?.current ?? null,
+            incomeExtract?.revenue?.current ?? null
+          )),
+          previous: round2(safeMarginPct(
+            incomeExtract?.grossProfit?.previous ?? null,
+            incomeExtract?.revenue?.previous ?? null
+          ))
+        },
+        operatingMarginPct: {
+          current: round2(safeMarginPct(
+            incomeExtract?.operatingProfit?.current ?? null,
+            incomeExtract?.revenue?.current ?? null
+          )),
+          previous: round2(safeMarginPct(
+            incomeExtract?.operatingProfit?.previous ?? null,
+            incomeExtract?.revenue?.previous ?? null
+          ))
+        }
+      },
+      liquidity: {
+        currentRatio: {
+          current: round2(safeRatio(
+            balanceExtract?.currentAssets?.current ?? null,
+            balanceExtract?.currentLiabilities?.current ?? null
+          )),
+          previous: round2(safeRatio(
+            balanceExtract?.currentAssets?.previous ?? null,
+            balanceExtract?.currentLiabilities?.previous ?? null
+          ))
+        },
+        cashToCurrentLiabilities: {
+          current: round2(safeRatio(
+            cashFlowExtract?.endingCash?.current ?? null,
+            balanceExtract?.currentLiabilities?.current ?? null
+          )),
+          previous: round2(safeRatio(
+            cashFlowExtract?.endingCash?.previous ?? null,
+            balanceExtract?.currentLiabilities?.previous ?? null
+          ))
+        }
+      },
+      leverage: {
+        debtToAssets: {
+          current: round2(safeRatio(
+            balanceExtract?.totalLiabilities?.current ?? null,
+            balanceExtract?.totalAssets?.current ?? null
+          )),
+          previous: round2(safeRatio(
+            balanceExtract?.totalLiabilities?.previous ?? null,
+            balanceExtract?.totalAssets?.previous ?? null
+          ))
+        },
+        equityRatio: {
+          current: round2(safeRatio(
+            balanceExtract?.totalEquity?.current ?? null,
+            balanceExtract?.totalAssets?.current ?? null
+          )),
+          previous: round2(safeRatio(
+            balanceExtract?.totalEquity?.previous ?? null,
+            balanceExtract?.totalAssets?.previous ?? null
+          ))
+        },
+        debtToEquity: {
+          current: round2(safeRatio(
+            balanceExtract?.totalLiabilities?.current ?? null,
+            balanceExtract?.totalEquity?.current ?? null
+          )),
+          previous: round2(safeRatio(
+            balanceExtract?.totalLiabilities?.previous ?? null,
+            balanceExtract?.totalEquity?.previous ?? null
+          ))
+        }
+      },
+      growth: {
+        revenueGrowthPct: round2(safePercentChange(
+          incomeExtract?.revenue?.current ?? null,
+          incomeExtract?.revenue?.previous ?? null
+        )),
+        grossProfitGrowthPct: round2(safePercentChange(
+          incomeExtract?.grossProfit?.current ?? null,
+          incomeExtract?.grossProfit?.previous ?? null
+        )),
+        operatingProfitGrowthPct: round2(safePercentChange(
+          incomeExtract?.operatingProfit?.current ?? null,
+          incomeExtract?.operatingProfit?.previous ?? null
+        )),
+        totalAssetsGrowthPct: round2(safePercentChange(
+          balanceExtract?.totalAssets?.current ?? null,
+          balanceExtract?.totalAssets?.previous ?? null
+        )),
+        totalEquityGrowthPct: round2(safePercentChange(
+          balanceExtract?.totalEquity?.current ?? null,
+          balanceExtract?.totalEquity?.previous ?? null
+        )),
+        endingCashGrowthPct: round2(safePercentChange(
+          cashFlowExtract?.endingCash?.current ?? null,
+          cashFlowExtract?.endingCash?.previous ?? null
+        ))
+      }
+    };
+
     const meta = {
       source: {
         hasNormalized: !!normalized,
@@ -1057,8 +1201,14 @@ module.exports = async function (context, req) {
         cashFlowLite: hasCurrent(cashFlowExtract?.endingCash)
       },
       summary: {
-        currentYearDetected: true,
-        previousYearDetected: true
+        currentYearDetected:
+          incomeYears.current !== null ||
+          balanceYears.current !== null ||
+          cashFlowYears.current !== null,
+        previousYearDetected:
+          incomeYears.previous !== null ||
+          balanceYears.previous !== null ||
+          cashFlowYears.previous !== null
       }
     };
 
@@ -1069,11 +1219,11 @@ module.exports = async function (context, req) {
         incomeStatementLite: incomeExtract,
         balanceSheetLite: balanceExtract,
         cashFlowLite: cashFlowExtract,
-
         statements,
         checks,
         meta,
-        derived
+        derived,
+        ratios
       }
     });
 
