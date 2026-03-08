@@ -1,17 +1,14 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 4C Completed (Core Financial Extraction + Ratios + Initial Insights Stable)
+CURRENT_PHASE: 4A (Multi-Sector Validation)
 
 CURRENT_TASK:
-إغلاق مرحلة البناء الأساسية للنظام بعد تثبيت:
-- استخراج القوائم المالية الأساسية
-- الفحوصات المحاسبية
-- النسب المالية الأساسية
-- طبقة insights الأولية
+بدء مرحلة اختبار النظام على قطاعات متعددة للتأكد من استقرار
+محرك استخراج القوائم المالية مع اختلاف أشكال التقارير المالية.
 
-ثم تحديد المسار التالي:
-إما تحسين التحليل المالي واللغة،
-أو توسيع دعم صيغ الملفات الأخرى.
+الهدف من هذه المرحلة ليس تعديل الكود،
+بل اختبار النظام على ملفات حقيقية من قطاعات مختلفة
+واكتشاف الحالات التي تحتاج منطق استخراج خاص.
 
 المسار الحالي للنظام:
 
@@ -20,107 +17,133 @@ upload-url
 → analyze (Azure Document Intelligence - prebuilt-layout)
 → extract-financial
 
-تم اختبار المسار كاملاً مع ملف PDF حقيقي بنجاح.
+طبقات التحليل الحالية داخل extract-financial:
+
+financial:
+- incomeStatementLite
+- balanceSheetLite
+- cashFlowLite
+- checks
+- ratios
+- insights
+- signals
+- summary
+- executiveSummary
+- evaluation
+- investmentView
 
 LAST_TEST:
-رفع ملف:
-"جاهز سنوي حالي #####.pdf"
 
-النتائج في Network:
+تم اختبار النظام على ملف حقيقي لقطاع البنوك
+(مصرف الإنماء – القوائم المالية السنوية).
 
-upload-url → 200
-blob upload → 201
-ingest → 200
-analyze → 200
-extract-financial → 200
+RESULT:
 
-LAST_RESULT:
+- cashFlowLite نجح في استخراج:
+  - endingCash
+  - beginningCash
+  - netChangeInCash
 
-- analyze يعمل بشكل صحيح
-- normalized.tablesPreview يتم إرجاعه بنجاح
-- extract-financial يستخرج incomeStatementLite بنجاح
-- extract-financial يستخرج balanceSheetLite بنجاح
-- extract-financial يستخرج cashFlowLite بنجاح
-- تم التحقق من المعادلات المحاسبية الأساسية بنجاح:
-  - accountingEquation.current = true
-  - accountingEquation.previous = true
-  - cashFlowEquation.current = true
-  - cashFlowEquation.previous = true
-- تم تثبيت completeness checks بنجاح لكل من:
-  - incomeStatementLite
-  - balanceSheetLite
-  - cashFlowLite
-- تم إضافة ratios أساسية بنجاح:
-  - grossMarginPct
-  - operatingMarginPct
-  - currentRatio
-  - cashToCurrentLiabilities
-  - debtToAssets
-  - equityRatio
-  - debtToEquity
-  - revenueGrowthPct
-  - grossProfitGrowthPct
-  - operatingProfitGrowthPct
-  - totalAssetsGrowthPct
-  - totalEquityGrowthPct
-  - endingCashGrowthPct
-- تم إضافة insights أولية بنجاح داخل:
-  - profitability
-  - liquidity
-  - leverage
-  - growth
-  - summary
+- cashFlowEquation = true
 
-القيم الأساسية المستقرة على الملف الاختباري:
+لكن:
 
-incomeStatementLite:
-- revenue = 2,218,662,735
-- costOfRevenue = -1,677,500,170
-- grossProfit = 541,162,565
-- operatingProfit = 168,863,674
+incomeStatementLite = null  
+balanceSheetLite = null  
+ratios = null  
+investmentView = null
 
-balanceSheetLite:
-- nonCurrentAssets = 551,480,387
-- totalAssets = 1,770,075,646
-- currentAssets = 1,218,595,259
-- totalLiabilities = 520,635,218
-- currentLiabilities = 458,049,349
-- nonCurrentLiabilities = 62,585,869
-- totalEquity = 1,249,440,428
+REASON:
 
-cashFlowLite:
-- endingCash = 1,054,080,837
-- beginningCash = 1,109,059,521
-- netChangeInCash = -54,978,684
+تم اكتشاف أن القوائم المالية للبنوك تختلف
+عن الشركات التشغيلية التقليدية.
 
-ratios (current):
-- grossMarginPct = 24.39
-- operatingMarginPct = 7.61
-- currentRatio = 2.66
-- cashToCurrentLiabilities = 2.30
-- debtToAssets = 0.29
-- equityRatio = 0.71
-- debtToEquity = 0.42
+أمثلة من ملف البنك:
 
-ACTIVE_PROBLEM:
-لا يوجد خطأ تقني حاليًا في extract-financial على الملف الاختباري الحالي.
+قائمة الدخل تحتوي على:
+- الدخل من الاستثمارات والتمويل
+- دخل رسوم خدمات مصرفية
+- إجمالي دخل العمليات
+- صافي دخل السنة
 
-IMPORTANT_NOTE:
-تم إنهاء البناء الأساسي للنظام عمليًا على مسار PDF.
-الأولوية القادمة ليست إعادة العبث بالمنطق المستقر،
-بل اختيار أحد المسارين التاليين بشكل منظم:
+بدلاً من:
 
-1) تحسين جودة التحليل المالي واللغة وصياغة insights
-2) توسيع دعم المدخلات إلى:
-   - Excel / XLSX
-   - CSV
-   - Word / DOCX
+- الإيرادات
+- تكلفة الإيرادات
+- مجمل الربح
+- الربح التشغيلي
 
-NEXT_STEP:
-اختيار المرحلة التالية من بين:
-1) Phase 5A: تحسين طبقة التحليل المالي واللغة
-أو
-2) Phase X: دعم صيغ ملفات إضافية مع الحفاظ على نفس normalized output contract
+وكذلك قائمة المركز المالي للبنوك تختلف في التصنيف.
+
+IMPORTANT_DISCOVERY:
+
+النظام الحالي يعمل بشكل جيد مع
+Operating Companies
+لكن يحتاج منطق خاص لقطاعات أخرى مثل:
+
+- Banks
+- Insurance
+- REIT
+- Investment Companies
+
+لذلك سيتم استخدام مرحلة الاختبار
+لتحديد الأنماط المختلفة للقوائم المالية.
+
+TESTING_PLAN:
+
+سيتم اختبار شركتين من كل قطاع في السوق السعودي.
+
+القطاعات المستهدفة للاختبار:
+
+- Banks
+- Insurance
+- Petrochemicals
+- Telecom
+- Retail
+- Industrial
+- Real Estate Development
+- REIT
+- Transportation
+- Energy
+
+EXPECTED_TEST_SIZE:
+
+تقريباً:
+20 شركة
+
+الهدف من الاختبارات:
+
+1) اكتشاف اختلافات القوائم المالية بين القطاعات
+2) تحديد الحالات التي يفشل فيها الاستخراج
+3) تحديد الحاجة إلى Financial Statement Profiles
+
+NO_CODE_CHANGE_RULE:
+
+خلال هذه المرحلة لا يتم تعديل الكود.
+
+يتم فقط:
+
+Test
+→ Observe
+→ Record
+
+وسيتم جمع النتائج أولاً
+ثم تحسين منطق الاستخراج لاحقاً.
+
+NEXT_PHASE:
+
+4B (Financial Statement Profiles)
+
+وسيتم فيها إضافة:
+
+- OperatingCompanyProfile
+- BankProfile
+- InsuranceProfile
+- REITProfile
+
+بحيث يستطيع النظام
+تحديد نوع القوائم المالية تلقائياً
+واستخدام منطق الاستخراج المناسب.
 
 STATUS:
-STABLE
+TESTING
