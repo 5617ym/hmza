@@ -306,6 +306,21 @@ module.exports = async function (context, req) {
     const hasCurrent = (obj) => !!obj && obj.current !== null && obj.current !== undefined;
     const hasPrevious = (obj) => !!obj && obj.previous !== null && obj.previous !== undefined;
 
+    const asNullableNumber = (n) => Number.isFinite(n) ? n : null;
+
+    const safePercentChange = (current, previous) => {
+      if (current === null || current === undefined) return null;
+      if (previous === null || previous === undefined) return null;
+      if (previous === 0) return null;
+      return ((current - previous) / Math.abs(previous)) * 100;
+    };
+
+    const boolOrNull = (value) => {
+      if (value === true) return true;
+      if (value === false) return false;
+      return null;
+    };
+
     /* =========================
        Table scoring
        ========================= */
@@ -899,13 +914,166 @@ module.exports = async function (context, req) {
       };
     }
 
+    /* =========================
+       4A: Organized output
+       ========================= */
+
+    const statements = {
+      incomeStatementLite: incomeExtract,
+      balanceSheetLite: balanceExtract,
+      cashFlowLite: cashFlowExtract
+    };
+
+    const derived = {
+      detectedYears: {
+        incomeStatement: {
+          current: incomeExtract?.revenue?.current !== null && incomeExtract?.revenue?.current !== undefined ? "latest" : null,
+          previous: incomeExtract?.revenue?.previous !== null && incomeExtract?.revenue?.previous !== undefined ? "previous" : null
+        },
+        balanceSheet: {
+          current: balanceExtract?.totalAssets?.current !== null && balanceExtract?.totalAssets?.current !== undefined ? "latest" : null,
+          previous: balanceExtract?.totalAssets?.previous !== null && balanceExtract?.totalAssets?.previous !== undefined ? "previous" : null
+        },
+        cashFlow: {
+          current: cashFlowExtract?.endingCash?.current !== null && cashFlowExtract?.endingCash?.current !== undefined ? "latest" : null,
+          previous: cashFlowExtract?.endingCash?.previous !== null && cashFlowExtract?.endingCash?.previous !== undefined ? "previous" : null
+        }
+      },
+      growth: {
+        revenuePct: safePercentChange(
+          incomeExtract?.revenue?.current ?? null,
+          incomeExtract?.revenue?.previous ?? null
+        ),
+        grossProfitPct: safePercentChange(
+          incomeExtract?.grossProfit?.current ?? null,
+          incomeExtract?.grossProfit?.previous ?? null
+        ),
+        operatingProfitPct: safePercentChange(
+          incomeExtract?.operatingProfit?.current ?? null,
+          incomeExtract?.operatingProfit?.previous ?? null
+        ),
+        totalAssetsPct: safePercentChange(
+          balanceExtract?.totalAssets?.current ?? null,
+          balanceExtract?.totalAssets?.previous ?? null
+        ),
+        totalEquityPct: safePercentChange(
+          balanceExtract?.totalEquity?.current ?? null,
+          balanceExtract?.totalEquity?.previous ?? null
+        ),
+        endingCashPct: safePercentChange(
+          cashFlowExtract?.endingCash?.current ?? null,
+          cashFlowExtract?.endingCash?.previous ?? null
+        )
+      }
+    };
+
+    const accountingEquationCurrent =
+      balanceExtract?.totalAssets?.current !== null &&
+      balanceExtract?.totalAssets?.current !== undefined &&
+      balanceExtract?.totalLiabilities?.current !== null &&
+      balanceExtract?.totalLiabilities?.current !== undefined &&
+      balanceExtract?.totalEquity?.current !== null &&
+      balanceExtract?.totalEquity?.current !== undefined
+        ? balanceExtract.totalAssets.current ===
+          (balanceExtract.totalLiabilities.current + balanceExtract.totalEquity.current)
+        : null;
+
+    const accountingEquationPrevious =
+      balanceExtract?.totalAssets?.previous !== null &&
+      balanceExtract?.totalAssets?.previous !== undefined &&
+      balanceExtract?.totalLiabilities?.previous !== null &&
+      balanceExtract?.totalLiabilities?.previous !== undefined &&
+      balanceExtract?.totalEquity?.previous !== null &&
+      balanceExtract?.totalEquity?.previous !== undefined
+        ? balanceExtract.totalAssets.previous ===
+          (balanceExtract.totalLiabilities.previous + balanceExtract.totalEquity.previous)
+        : null;
+
+    const cashFlowEquationCurrent =
+      cashFlowExtract?.endingCash?.current !== null &&
+      cashFlowExtract?.endingCash?.current !== undefined &&
+      cashFlowExtract?.beginningCash?.current !== null &&
+      cashFlowExtract?.beginningCash?.current !== undefined &&
+      cashFlowExtract?.netChangeInCash?.current !== null &&
+      cashFlowExtract?.netChangeInCash?.current !== undefined
+        ? (cashFlowExtract.endingCash.current - cashFlowExtract.beginningCash.current) ===
+          cashFlowExtract.netChangeInCash.current
+        : null;
+
+    const cashFlowEquationPrevious =
+      cashFlowExtract?.endingCash?.previous !== null &&
+      cashFlowExtract?.endingCash?.previous !== undefined &&
+      cashFlowExtract?.beginningCash?.previous !== null &&
+      cashFlowExtract?.beginningCash?.previous !== undefined &&
+      cashFlowExtract?.netChangeInCash?.previous !== null &&
+      cashFlowExtract?.netChangeInCash?.previous !== undefined
+        ? (cashFlowExtract.endingCash.previous - cashFlowExtract.beginningCash.previous) ===
+          cashFlowExtract.netChangeInCash.previous
+        : null;
+
+    const checks = {
+      accountingEquation: {
+        current: boolOrNull(accountingEquationCurrent),
+        previous: boolOrNull(accountingEquationPrevious)
+      },
+      cashFlowEquation: {
+        current: boolOrNull(cashFlowEquationCurrent),
+        previous: boolOrNull(cashFlowEquationPrevious)
+      },
+      completeness: {
+        incomeStatementLite: {
+          hasRevenue: hasCurrent(incomeExtract?.revenue),
+          hasCostOfRevenue: hasCurrent(incomeExtract?.costOfRevenue),
+          hasGrossProfit: hasCurrent(incomeExtract?.grossProfit),
+          hasOperatingProfit: hasCurrent(incomeExtract?.operatingProfit)
+        },
+        balanceSheetLite: {
+          hasTotalAssets: hasCurrent(balanceExtract?.totalAssets),
+          hasCurrentAssets: hasCurrent(balanceExtract?.currentAssets),
+          hasNonCurrentAssets: hasCurrent(balanceExtract?.nonCurrentAssets),
+          hasTotalLiabilities: hasCurrent(balanceExtract?.totalLiabilities),
+          hasCurrentLiabilities: hasCurrent(balanceExtract?.currentLiabilities),
+          hasNonCurrentLiabilities: hasCurrent(balanceExtract?.nonCurrentLiabilities),
+          hasTotalEquity: hasCurrent(balanceExtract?.totalEquity)
+        },
+        cashFlowLite: {
+          hasEndingCash: hasCurrent(cashFlowExtract?.endingCash),
+          hasBeginningCash: hasCurrent(cashFlowExtract?.beginningCash),
+          hasNetChangeInCash: hasCurrent(cashFlowExtract?.netChangeInCash)
+        }
+      }
+    };
+
+    const meta = {
+      source: {
+        hasNormalized: !!normalized,
+        hasNormalizedPrev: !!normalizedPrev,
+        tablesPreviewCount: tablesPreview.length
+      },
+      pagesMeta,
+      extractionStatus: {
+        incomeStatementLite: hasCurrent(incomeExtract?.revenue),
+        balanceSheetLite: hasCurrent(balanceExtract?.totalAssets),
+        cashFlowLite: hasCurrent(cashFlowExtract?.endingCash)
+      },
+      summary: {
+        currentYearDetected: true,
+        previousYearDetected: true
+      }
+    };
+
     return send(200, {
       ok: true,
       financial: {
         pagesMeta,
         incomeStatementLite: incomeExtract,
         balanceSheetLite: balanceExtract,
-        cashFlowLite: cashFlowExtract
+        cashFlowLite: cashFlowExtract,
+
+        statements,
+        checks,
+        meta,
+        derived
       }
     });
 
