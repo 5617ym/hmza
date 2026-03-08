@@ -1,15 +1,17 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 3B Completed (Income Statement + Balance Sheet + Cash Flow Lite Stable)
+CURRENT_PHASE: 4C Completed (Core Financial Extraction + Ratios + Initial Insights Stable)
 
 CURRENT_TASK:
-إغلاق مرحلة 3B بعد تثبيت استخراج:
-- incomeStatementLite
-- balanceSheetLite
-- cashFlowLite
+إغلاق مرحلة البناء الأساسية للنظام بعد تثبيت:
+- استخراج القوائم المالية الأساسية
+- الفحوصات المحاسبية
+- النسب المالية الأساسية
+- طبقة insights الأولية
 
-مع الحفاظ على الاستقرار على ملف PDF الحقيقي،
-ثم الانتقال إلى المرحلة التالية الخاصة بتحسين التنظيم والتوسعة التدريجية للاستخراج.
+ثم تحديد المسار التالي:
+إما تحسين التحليل المالي واللغة،
+أو توسيع دعم صيغ الملفات الأخرى.
 
 المسار الحالي للنظام:
 
@@ -39,10 +41,37 @@ LAST_RESULT:
 - extract-financial يستخرج incomeStatementLite بنجاح
 - extract-financial يستخرج balanceSheetLite بنجاح
 - extract-financial يستخرج cashFlowLite بنجاح
-- تم تثبيت منطق قائمة الدخل بدون كسر
-- تم تثبيت منطق الميزانية بنتائج محاسبية متماسكة
-- تم تثبيت منطق التدفقات النقدية عبر اكتشاف الجدول بشكل robust
-- تم استخراج القيم التالية بنجاح:
+- تم التحقق من المعادلات المحاسبية الأساسية بنجاح:
+  - accountingEquation.current = true
+  - accountingEquation.previous = true
+  - cashFlowEquation.current = true
+  - cashFlowEquation.previous = true
+- تم تثبيت completeness checks بنجاح لكل من:
+  - incomeStatementLite
+  - balanceSheetLite
+  - cashFlowLite
+- تم إضافة ratios أساسية بنجاح:
+  - grossMarginPct
+  - operatingMarginPct
+  - currentRatio
+  - cashToCurrentLiabilities
+  - debtToAssets
+  - equityRatio
+  - debtToEquity
+  - revenueGrowthPct
+  - grossProfitGrowthPct
+  - operatingProfitGrowthPct
+  - totalAssetsGrowthPct
+  - totalEquityGrowthPct
+  - endingCashGrowthPct
+- تم إضافة insights أولية بنجاح داخل:
+  - profitability
+  - liquidity
+  - leverage
+  - growth
+  - summary
+
+القيم الأساسية المستقرة على الملف الاختباري:
 
 incomeStatementLite:
 - revenue = 2,218,662,735
@@ -64,23 +93,34 @@ cashFlowLite:
 - beginningCash = 1,109,059,521
 - netChangeInCash = -54,978,684
 
-كما تم التحقق من الاتساق المحاسبي:
-- totalAssets = totalLiabilities + totalEquity
-- endingCash - beginningCash = netChangeInCash
+ratios (current):
+- grossMarginPct = 24.39
+- operatingMarginPct = 7.61
+- currentRatio = 2.66
+- cashToCurrentLiabilities = 2.30
+- debtToAssets = 0.29
+- equityRatio = 0.71
+- debtToEquity = 0.42
 
 ACTIVE_PROBLEM:
 لا يوجد خطأ تقني حاليًا في extract-financial على الملف الاختباري الحالي.
 
 IMPORTANT_NOTE:
-تم الوصول إلى نسخة مستقرة من مرحلة 3B.
+تم إنهاء البناء الأساسي للنظام عمليًا على مسار PDF.
 الأولوية القادمة ليست إعادة العبث بالمنطق المستقر،
-بل الانتقال تدريجيًا إلى توسيع الاستخراج أو تحسين تنظيم المخرجات بدون كسر ما تم تثبيته.
+بل اختيار أحد المسارين التاليين بشكل منظم:
+
+1) تحسين جودة التحليل المالي واللغة وصياغة insights
+2) توسيع دعم المدخلات إلى:
+   - Excel / XLSX
+   - CSV
+   - Word / DOCX
 
 NEXT_STEP:
-الانتقال إلى المرحلة التالية بعد 3B، مثل:
-1) تحسين هيكلة output
-2) إضافة cash flow sections لاحقًا عند الحاجة
-3) بدء مرحلة أوسع لاستخراج قوائم إضافية أو ratios من البيانات المستقرة
+اختيار المرحلة التالية من بين:
+1) Phase 5A: تحسين طبقة التحليل المالي واللغة
+أو
+2) Phase X: دعم صيغ ملفات إضافية مع الحفاظ على نفس normalized output contract
 
 STATUS:
 STABLE
