@@ -455,7 +455,7 @@ module.exports = async function (context, req) {
       return hitCount >= 2;
     };
 
-    const earlyPageBoost = (pageNumber, bucket = "default") => {
+      const earlyPageBoost = (pageNumber, bucket = "default") => {
       const p = Number(pageNumber) || 9999;
       let score = 0;
 
@@ -473,7 +473,6 @@ module.exports = async function (context, req) {
 
       return score;
     };
-
         const OPERATING_INCOME_NAMES = {
       revenue: { label: "الإيرادات", names: ["الإيرادات", "الايرادات", "المبيعات", "revenue", "sales"] },
       costOfRevenue: { label: "تكلفة الإيرادات", names: ["تكلفة الإيرادات", "تكلفة الايرادات", "تكلفة المبيعات", "cost of revenue", "cost of sales"] },
@@ -1076,203 +1075,249 @@ module.exports = async function (context, req) {
       }
     };
 
-          totalAssets: {
-        label: "إجمالي الموجودات",
-        names: [
-          "إجمالي الموجودات",
-          "اجمالي الموجودات",
-          "إجمالي الأصول",
-          "مجموع الموجودات",
-          "total assets"
-        ],
-        exactOnly: true
-      },
+        const detectStatementProfile = (tables) => {
+      let bankScore = 0;
+      let operatingScore = 0;
 
-      balancesDueToCentralBankAndBanks: {
-        label: "أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى",
-        names: [
-          "أرصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الأخرى",
-          "ارصدة للبنك المركزي السعودي والبنوك والمؤسسات المالية الاخرى",
-          "أرصدة للبنوك، والبنك المركزي والمؤسسات المالية الأخرى",
-          "أرصدة للبنوك والبنك المركزي والمؤسسات المالية الأخرى",
-          "مطلوبات للبنوك، والبنك المركزي السعودي والمؤسسات المالية الأخرى",
-          "مطلوبات للبنوك والبنك المركزي السعودي والمؤسسات المالية الأخرى",
-          "مطالبات للبنوك والبنك المركزي السعودي والمؤسسات المالية الأخرى",
-          "balances due to central bank and banks",
-          "due to banks and central bank",
-          "amounts due to banks and central bank"
-        ]
-      },
+      for (const t of tables) {
+        const text = tableTextBlob(t);
 
-      customerDeposits: {
-        label: "ودائع العملاء",
-        names: [
-          "ودائع العملاء",
-          "إيداعات العملاء",
-          "deposits from customers",
-          "customer deposits"
-        ],
-        exactOnly: true
-      },
+        if (
+          text.includes("مصرف") ||
+          text.includes("بنك") ||
+          text.includes("البنك المركزي") ||
+          text.includes("ودائع العملاء") ||
+          text.includes("الدخل من الاستثمارات والتمويل") ||
+          text.includes("دخل رسوم خدمات مصرفية") ||
+          text.includes("إجمالي دخل العمليات") ||
+          text.includes("صكوك") ||
+          text.includes("شهادات إيداع") ||
+          text.includes("تمويل، صافي") ||
+          text.includes("تمويل صافي") ||
+          text.includes("تمويل وسلف") ||
+          text.includes("استثمارات بالصافي")
+        ) {
+          bankScore += 8;
+        }
 
-      debtSecuritiesIssued: {
-        label: "صكوك وشهادات إيداع مصدرة",
-        names: [
-          "صكوك وشهادات إيداع مصدرة",
-          "صكوك مصدرة",
-          "شهادات إيداع مصدرة",
-          "أدوات الدين والتمويلات لأجل",
-          "أدوات الدين والتمويلات لاجل",
-          "أدوات الدين لأجل",
-          "تمويلات لأجل",
-          "صكوك وسندات دين مصدرة وقروض لأجل",
-          "صكوك وسندات دين مصدرة",
-          "قروض لأجل",
-          "صكوك حقوق ملكية",
-          "debt securities in issue",
-          "sukuk issued",
-          "certificates of deposit issued",
-          "debt instruments and term financing",
-          "term financing",
-          "equity sukuk"
-        ]
-      },
-
-      derivativeLiabilities: {
-        label: "القيمة العادلة السالبة للمشتقات",
-        names: [
-          "القيمة العادلة السالبة للمشتقات",
-          "مطلوبات مشتقات",
-          "القيمة العادلة السالبة للأدوات المالية المشتقة",
-          "negative fair value of derivatives",
-          "derivative liabilities"
-        ]
-      },
-
-      leaseLiabilities: {
-        label: "التزامات إيجار",
-        names: [
-          "التزامات إيجار",
-          "التزامات الايجار",
-          "مطلوبات إيجار",
-          "lease liabilities"
-        ]
-      },
-
-      otherLiabilities: {
-        label: "مطلوبات أخرى",
-        names: [
-          "مطلوبات أخرى",
-          "التزامات أخرى",
-          "مطلوبات اخرى",
-          "other liabilities"
-        ]
-      },
-
-      totalLiabilities: {
-        label: "إجمالي المطلوبات",
-        names: [
-          "إجمالي المطلوبات",
-          "اجمالي المطلوبات",
-          "إجمالي الالتزامات",
-          "مجموع المطلوبات",
-          "total liabilities"
-        ],
-        exactOnly: true
-      },
-
-      shareCapital: {
-        label: "رأس المال",
-        names: [
-          "رأس المال",
-          "راس المال",
-          "رأس مال",
-          "share capital",
-          "capital"
-        ]
-      },
-
-      treasuryShares: {
-        label: "أسهم خزينة",
-        names: [
-          "أسهم خزينة",
-          "اسهم خزينة",
-          "أسهم الخزينة",
-          "treasury shares"
-        ]
-      },
-
-      statutoryReserve: {
-        label: "احتياطي نظامي",
-        names: [
-          "احتياطي نظامي",
-          "الاحتياطي النظامي",
-          "statutory reserve"
-        ]
-      },
-
-      otherReserves: {
-        label: "احتياطيات أخرى",
-        names: [
-          "احتياطيات أخرى",
-          "احتياطات أخرى",
-          "احتياطيات اخرى",
-          "other reserves"
-        ]
-      },
-
-      retainedEarnings: {
-        label: "أرباح مبقاة",
-        names: [
-          "أرباح مبقاة",
-          "ارباح مبقاة",
-          "الأرباح المبقاة",
-          "retained earnings"
-        ]
-      },
-
-      equityAttributableToShareholders: {
-        label: "حقوق الملكية العائدة لمساهمي المصرف",
-        names: [
-          "حقوق الملكية العائدة لمساهمي المصرف",
-          "حقوق الملكية العائدة للمساهمين",
-          "حقوق الملكية العائدة إلى المساهمين في المصرف",
-          "حقوق الملكية العائدة إلى الملاك في المصرف",
-          "حقوق الملكية العائدة إلى المساهمين",
-          "حقوق الملكية العائدة إلى الملاك",
-          "حقوق المساهمين العائدة لمساهمي البنك",
-          "حقوق المساهمين العائدة إلى مساهمي البنك",
-          "حقوق المساهمين العائدة للمساهمين في البنك",
-          "حقوق المساهمين العائدة لمساهمي المصرف",
-          "equity attributable to shareholders",
-          "equity attributable to owners"
-        ]
-      },
-
-      tier1Sukuk: {
-        label: "صكوك الشريحة الأولى",
-        names: [
-          "صكوك الشريحة الأولى",
-          "صكوك الشريحة الاولى",
-          "صكوك حقوق ملكية",
-          "صكوك ملكية",
-          "additional tier 1 sukuk",
-          "tier 1 sukuk",
-          "equity sukuk"
-        ]
-      },
-
-      totalEquity: {
-        label: "إجمالي حقوق الملكية",
-        names: [
-          "إجمالي حقوق الملكية",
-          "اجمالي حقوق الملكية",
-          "إجمالي حقوق المساهمين",
-          "إجمالي حقوق الملكية العائدة إلى الملاك",
-          "total equity"
-        ],
-        exactOnly: true
+        if (
+          text.includes("الإيرادات") ||
+          text.includes("الايرادات") ||
+          text.includes("تكلفة الإيرادات") ||
+          text.includes("تكلفة الايرادات") ||
+          text.includes("مجمل الربح") ||
+          text.includes("الربح التشغيلي")
+        ) {
+          operatingScore += 6;
+        }
       }
+
+      return bankScore >= operatingScore ? "bank" : "operating_company";
+    };
+
+
+    /* =========================
+       Table scoring
+       ========================= */
+
+
+    const scoreIncomeTable = (table, statementProfile) => {
+      const text = tableTextBlob(table);
+      const numericRows = countRowsWithAtLeastTwoNumericCells(table);
+      const numericCells = countNumericCellsInTable(table);
+
+      if (isLikelyNotesTable(table)) return -100;
+      if (isLikelyIndexTable(table)) return -150;
+
+      let score = 0;
+
+      if (statementProfile === "bank") {
+
+        if (text.includes("قائمة الدخل")) score += 12;
+        if (text.includes("قائمة الدخل الموحدة")) score += 16;
+
+        if (text.includes("الدخل من الاستثمارات والتمويل")) score += 20;
+        if (text.includes("صافي الدخل من الاستثمارات والتمويل")) score += 18;
+
+        if (text.includes("استثمار، صافي") || text.includes("استثمارات بالصافي")) score += 18;
+
+        if (text.includes("دخل رسوم خدمات مصرفية")) score += 14;
+
+        if (text.includes("إجمالي دخل العمليات")) score += 22;
+
+        if (text.includes("مصاريف العمليات قبل مخصصات الانخفاض")) score += 18;
+
+        if (text.includes("مخصص الانخفاض في قيمة التمويل")) score += 18;
+
+        if (text.includes("مخصص خسائر الائتمان")) score += 18;
+
+        if (text.includes("صافي دخل العمليات")) score += 18;
+
+        if (text.includes("دخل السنة قبل الزكاة")) score += 20;
+
+        if (text.includes("صافي دخل السنة بعد الزكاة")) score += 22;
+
+        if (text.includes("مصرف") || text.includes("بنك")) score += 4;
+
+        if (text.includes("التدفقات النقدية")) score -= 10;
+        if (text.includes("المركز المالي")) score -= 10;
+
+      } else {
+
+        if (text.includes("الإيرادات") || text.includes("الايرادات")) score += 8;
+        if (text.includes("تكلفة الإيرادات") || text.includes("تكلفة الايرادات")) score += 6;
+        if (text.includes("مجمل الربح")) score += 6;
+        if (text.includes("الربح التشغيلي")) score += 6;
+
+        if (text.includes("قائمة الدخل")) score += 4;
+
+        if (text.includes("الربح")) score += 2;
+
+        if (text.includes("الموجودات") || text.includes("الأصول")) score -= 4;
+        if (text.includes("التدفقات النقدية")) score -= 4;
+      }
+
+      score += earlyPageBoost(table?.pageNumber, "income");
+
+      if (Number(table?.rowCount) >= 10) score += 2;
+      if (Number(table?.columnCount) >= 3) score += 2;
+
+      if (numericRows >= 6) score += 12;
+      if (numericCells >= 20) score += 8;
+
+      if (numericRows <= 2) score -= 40;
+      if (numericCells <= 10) score -= 25;
+
+      return score;
+    };
+
+
+    const scoreBalanceTable = (table, statementProfile) => {
+
+      const text = tableTextBlob(table);
+      const numericRows = countRowsWithAtLeastTwoNumericCells(table);
+      const numericCells = countNumericCellsInTable(table);
+
+      if (isLikelyNotesTable(table)) return -100;
+      if (isLikelyIndexTable(table)) return -150;
+
+      let score = 0;
+
+      if (statementProfile === "bank") {
+
+        if (text.includes("قائمة المركز المالي")) score += 16;
+        if (text.includes("قائمة المركز المالي الموحدة")) score += 20;
+
+        if (text.includes("الموجودات")) score += 8;
+        if (text.includes("المطلوبات وحقوق الملكية")) score += 14;
+
+        if (text.includes("نقد وأرصدة لدى البنك المركزي السعودي")) score += 18;
+        if (text.includes("نقد وأرصدة لدى البنوك المركزية")) score += 18;
+
+        if (text.includes("أرصدة لدى البنوك والمؤسسات المالية الأخرى")) score += 14;
+
+        if (text.includes("تمويل، صافي") || text.includes("تمويل صافي") || text.includes("تمويل وسلف")) score += 20;
+
+        if (text.includes("ودائع العملاء")) score += 22;
+
+        if (text.includes("صكوك وشهادات إيداع مصدرة")) score += 18;
+
+        if (text.includes("إجمالي الموجودات")) score += 18;
+        if (text.includes("إجمالي المطلوبات")) score += 18;
+        if (text.includes("إجمالي حقوق الملكية")) score += 18;
+
+        if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 8;
+        if (text.includes("التدفقات النقدية")) score -= 10;
+
+      } else {
+
+        if (text.includes("الموجودات")) score += 7;
+        if (text.includes("الأصول")) score += 7;
+
+        if (text.includes("المطلوبات")) score += 7;
+        if (text.includes("حقوق الملكية")) score += 7;
+
+        if (text.includes("إجمالي الموجودات") || text.includes("إجمالي الأصول")) score += 8;
+        if (text.includes("إجمالي المطلوبات")) score += 8;
+        if (text.includes("إجمالي حقوق الملكية")) score += 8;
+
+        if (text.includes("قائمة المركز المالي") || text.includes("المركز المالي")) score += 5;
+
+        if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 6;
+        if (text.includes("التدفقات النقدية")) score -= 6;
+      }
+
+      score += earlyPageBoost(table?.pageNumber, "balance");
+
+      if (Number(table?.rowCount) >= 10) score += 2;
+      if (Number(table?.columnCount) >= 3) score += 2;
+
+      if (numericRows >= 6) score += 12;
+      if (numericCells >= 20) score += 8;
+
+      if (numericRows <= 2) score -= 40;
+      if (numericCells <= 10) score -= 25;
+
+      return score;
+    };
+
+
+    const scoreCashFlowTable = (table) => {
+
+      const text = tableTextBlob(table);
+      const numericRows = countRowsWithAtLeastTwoNumericCells(table);
+      const numericCells = countNumericCellsInTable(table);
+
+      if (isLikelyNotesTable(table)) return -100;
+      if (isLikelyIndexTable(table)) return -150;
+
+      let score = 0;
+
+      if (text.includes("التدفقات النقدية")) score += 16;
+      if (text.includes("قائمة التدفقات النقدية")) score += 20;
+
+      if (text.includes("cash flow")) score += 12;
+
+      if (text.includes("النقد وما في حكمه")) score += 12;
+      if (text.includes("النقد والنقد المعادل")) score += 12;
+
+      if (text.includes("صافي التغير")) score += 10;
+      if (text.includes("net change")) score += 8;
+
+      if (Number(table?.columnCount) >= 2 && Number(table?.columnCount) <= 5) score += 3;
+      if (Number(table?.rowCount) >= 12) score += 4;
+
+      score += earlyPageBoost(table?.pageNumber, "cash");
+
+      if (text.includes("الإيرادات") || text.includes("مجمل الربح")) score -= 5;
+      if (text.includes("الموجودات") || text.includes("حقوق الملكية")) score -= 5;
+
+      if (numericRows >= 6) score += 12;
+      if (numericCells >= 20) score += 8;
+
+      if (numericRows <= 2) score -= 40;
+      if (numericCells <= 10) score -= 25;
+
+      return score;
+    };
+
+
+    const pickBestTable = (tables, scorer) => {
+
+      let best = null;
+      let bestScore = -Infinity;
+
+      for (const t of tables) {
+
+        const score = scorer(t);
+
+        if (score > bestScore) {
+          best = t;
+          bestScore = score;
+        }
+      }
+
+      return bestScore > 0 ? best : null;
     };
 
         /* =========================
@@ -2246,24 +2291,6 @@ module.exports = async function (context, req) {
     });
   }
 };
-  
-
-      
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
