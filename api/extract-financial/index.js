@@ -472,9 +472,24 @@ module.exports = async function (context, req) {
         names: ["القيمة العادلة الموجبة للمشتقات", "موجودات مشتقات", "derivative assets"]
       },
       financingNet: {
-        label: "تمويل، صافي",
-        names: ["تمويل، صافي", "تمويل صافي", "صافي التمويل", "financing net", "net financing"]
-      },
+  label: "تمويل، صافي",
+  names: [
+    "تمويل، صافي",
+    "تمويل , صافي",
+    "تمويل،صافي",
+    "تمويل صافي",
+    "التمويل، صافي",
+    "التمويل , صافي",
+    "التمويل صافي",
+    "صافي التمويل",
+    "تمويلات، صافي",
+    "تمويلات صافي",
+    "financing net",
+    "net financing",
+    "financings net",
+    "net financings"
+  ]
+},
       propertyAndEquipment: {
         label: "ممتلكات ومعدات وموجودات حق استخدام، صافي",
         names: ["ممتلكات ومعدات وموجودات حق استخدام، صافي", "ممتلكات ومعدات صافي", "property and equipment", "right of use assets"]
