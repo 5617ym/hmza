@@ -1574,6 +1574,111 @@ module.exports = async function (context, req) {
       );
     }
 
+    /* =========================
+       5B: Strategic evaluation
+       ========================= */
+
+    const evaluation = {
+      strengths: [],
+      watchPoints: [],
+      opportunities: [],
+      risks: []
+    };
+
+    if (signals.liquidity === "strong") {
+      evaluation.strengths.push(
+        "السيولة القوية تمنح الشركة مرونة جيدة في مواجهة الالتزامات قصيرة الأجل."
+      );
+    }
+
+    if (signals.leverage === "low") {
+      evaluation.strengths.push(
+        "مستوى الاعتماد على المطلوبات منخفض نسبيًا، مما يدعم استقرار الهيكل المالي."
+      );
+    }
+
+    if (signals.growth === "strong") {
+      evaluation.strengths.push(
+        "نمو الإيرادات القوي يشير إلى توسع النشاط أو تحسن الطلب."
+      );
+    }
+
+    if (
+      ratios?.profitability?.grossMarginPct?.current !== null &&
+      ratios?.profitability?.grossMarginPct?.current > 20
+    ) {
+      evaluation.strengths.push(
+        "الهامش الإجمالي الجيد يعكس قدرة الشركة على تحقيق قيمة من الإيرادات."
+      );
+    }
+
+    if (signals.profitability === "moderate") {
+      evaluation.watchPoints.push(
+        "الربحية التشغيلية مقبولة لكنها ليست مرتفعة بما يكفي لتعطي هامش أمان كبير."
+      );
+    }
+
+    if (
+      ratios?.liquidity?.currentRatio?.current !== null &&
+      ratios?.liquidity?.currentRatio?.current < 1.5
+    ) {
+      evaluation.watchPoints.push(
+        "السيولة الجارية ليست مرتفعة بشكل كبير وقد تحتاج متابعة في الفترات القادمة."
+      );
+    }
+
+    if (
+      endingCashGrowth !== null &&
+      endingCashGrowth < 0
+    ) {
+      evaluation.watchPoints.push(
+        "تراجع الرصيد النقدي النهائي يستدعي فهم استخدامات النقد خلال الفترة."
+      );
+    }
+
+    if (
+      revenueGrowth !== null &&
+      revenueGrowth > 10 &&
+      signals.profitability !== "strong"
+    ) {
+      evaluation.opportunities.push(
+        "في حال تحسن الكفاءة التشغيلية يمكن تحويل نمو الإيرادات إلى نمو أقوى في الأرباح."
+      );
+    }
+
+    if (
+      signals.leverage === "low" &&
+      signals.growth === "strong"
+    ) {
+      evaluation.opportunities.push(
+        "انخفاض مستوى المديونية يتيح مجالًا للتوسع أو التمويل المستقبلي إذا لزم الأمر."
+      );
+    }
+
+    if (signals.profitability === "weak") {
+      evaluation.risks.push(
+        "ضعف الربحية التشغيلية قد يؤثر على قدرة الشركة على تمويل النمو مستقبلاً."
+      );
+    }
+
+    if (
+      endingCashGrowth !== null &&
+      endingCashGrowth < -20
+    ) {
+      evaluation.risks.push(
+        "الانخفاض الكبير في الرصيد النقدي قد يشير إلى استنزاف نقدي يحتاج تحليلًا أعمق."
+      );
+    }
+
+    if (
+      ratios?.leverage?.debtToAssets?.current !== null &&
+      ratios?.leverage?.debtToAssets?.current > 0.65
+    ) {
+      evaluation.risks.push(
+        "الاعتماد المرتفع على المطلوبات قد يزيد حساسية الشركة للمخاطر المالية."
+      );
+    }
+
     const meta = {
       source: {
         hasNormalized: !!normalized,
@@ -1612,7 +1717,8 @@ module.exports = async function (context, req) {
         ratios,
         signals,
         insights,
-        executiveSummary
+        executiveSummary,
+        evaluation
       }
     });
 
