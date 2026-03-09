@@ -45,7 +45,7 @@ module.exports = async function (context, req) {
       let s = String(value || "");
       s = toEnglishDigits(s);
       s = s
-        .replace(/[\u064B-\u065F\u0670]/g, "") // remove arabic diacritics
+        .replace(/[\u064B-\u065F\u0670]/g, "")
         .replace(/[إأآا]/g, "ا")
         .replace(/ى/g, "ي")
         .replace(/ة/g, "ه")
@@ -82,12 +82,10 @@ module.exports = async function (context, req) {
       if (s.includes("(") && s.includes(")")) negative = true;
       s = s.replace(/[()]/g, "");
 
-      // handle common Arabic/financial formatting
       const hasDot = s.includes(".");
       const hasComma = s.includes(",");
 
       if (hasDot && hasComma) {
-        // choose last separator as decimal separator if decimal-like
         const lastDot = s.lastIndexOf(".");
         const lastComma = s.lastIndexOf(",");
         if (lastDot > lastComma) {
@@ -164,6 +162,13 @@ module.exports = async function (context, req) {
       );
     }
 
+    function flattenTableValue(v) {
+      if (v == null) return "";
+      if (Array.isArray(v)) return v.map(flattenTableValue).join("\n");
+      if (typeof v === "object") return Object.values(v).map(flattenTableValue).join("\n");
+      return String(v);
+    }
+
     function tableText(table) {
       return [
         table?.sample,
@@ -177,6 +182,7 @@ module.exports = async function (context, req) {
         table?.rawText
       ]
         .filter(Boolean)
+        .map(flattenTableValue)
         .join("\n");
     }
 
@@ -184,33 +190,126 @@ module.exports = async function (context, req) {
       return tablesPreview.filter((t) => pageNumFromObj(t) === pageNumber);
     }
 
+    function getTableRowCount(table) {
+      return safeNumber(table?.rowCount ?? table?.rows ?? table?.nRows ?? 0, 0);
+    }
+
+    function getTableColumnCount(table) {
+      return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
+    }
+
+    function extractTableRows(table) {
+      const rows = [];
+      const candidates = [];
+
+      if (Array.isArray(table?.sample)) candidates.push(...table.sample);
+      if (Array.isArray(table?.sampleHead)) candidates.push(...table.sampleHead);
+      if (Array.isArray(table?.sampleTail)) candidates.push(...table.sampleTail);
+
+      for (const row of candidates) {
+        if (Array.isArray(row)) {
+          rows.push(row.map((x) => String(x == null ? "" : x).trim()));
+        } else if (row != null) {
+          rows.push([String(row).trim()]);
+        }
+      }
+
+      return rows.filter((r) => r.some((c) => String(c || "").trim() !== ""));
+    }
+
+    function getPageMainTable(pageTables) {
+      const tables = Array.isArray(pageTables) ? pageTables : [];
+      if (!tables.length) return null;
+
+      return tables
+        .slice()
+        .sort((a, b) => {
+          const aScore = (getTableRowCount(a) * 10) + getTableColumnCount(a);
+          const bScore = (getTableRowCount(b) * 10) + getTableColumnCount(b);
+          return bScore - aScore;
+        })[0];
+    }
+
     function buildPageContext(pageNumber) {
       const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
       const pageTables = getTablesForPage(pageNumber);
-
       const mergedTableText = pageTables.map(tableText).join("\n\n");
       const mergedText = mergedTableText;
 
       const numbersCount = countNumbers(mergedText);
       const years = extractYears(mergedText);
 
-      const rowCount = pageTables.reduce((sum, t) => {
-        return sum + safeNumber(
-          t?.rowCount ??
-          t?.rows ??
-          t?.nRows ??
-          0
-        );
-      }, 0);
+      const rowCount = pageTables.reduce((sum, t) => sum + getTableRowCount(t), 0);
+      const columnCount = pageTables.reduce((sum, t) => sum + getTableColumnCount(t), 0);
+      const mainTable = getPageMainTable(pageTables);
+      const mainRows = extractTableRows(mainTable);
+      const mainColumnCount = getTableColumnCount(mainTable);
+      const mainRowCount = getTableRowCount(mainTable);
 
-      const columnCount = pageTables.reduce((sum, t) => {
-        return sum + safeNumber(
-          t?.columnCount ??
-          t?.columns ??
-          t?.nCols ??
-          0
-        );
-      }, 0);
+      const headerText = [
+        mainRows[0] || [],
+        mainRows[1] || [],
+        mainTable?.sampleHead || []
+      ].map(flattenTableValue).join("\n");
+
+      const structuralHintsText = `${headerText}\n${mergedText}`;
+
+      const isLikelyNoteTable =
+        mainColumnCount >= 5 ||
+        textContainsAny(structuralHintsText, [
+          "خلال 3 اشهر",
+          "خلال ٣ اشهر",
+          "3-12 شهر",
+          "12-3 شهر",
+          "1-5 سنوات",
+          "5-1 سنوات",
+          "اكثر من 5 سنوات",
+          "اكثر من ٥ سنوات",
+          "non-commission",
+          "interest rate risk",
+          "repricing",
+          "gap",
+          "الفجوه",
+          "الفجوة",
+          "التراكميه",
+          "التراكمية",
+          "مخاطر اسعار العمولات",
+          "maturity",
+          "liquidity risk",
+          "credit risk"
+        ]);
+
+      const hasStatementHeader =
+        textContainsAny(structuralHintsText, [
+          "قائمة المركز المالي",
+          "قائمة الدخل",
+          "قائمة الدخل الموحدة",
+          "قائمة التدفقات النقدية",
+          "statement of financial position",
+          "income statement",
+          "statement of income",
+          "statement of cash flows",
+          "cash flow statement"
+        ]);
+
+      const hasYearHeaderLikeStatement =
+        mainRows.some((r) => {
+          const joined = normalizeText(r.join(" | "));
+          const yearCount = extractYears(joined).length;
+          return (
+            yearCount >= 1 &&
+            (
+              joined.includes("ايضاح") ||
+              joined.includes("notes") ||
+              joined === "2024 | 2025" ||
+              joined === "2025 | 2024" ||
+              joined.includes("2024 | 2025 | ايضاح") ||
+              joined.includes("2025 | 2024 | ايضاح") ||
+              joined.includes("2024 2025") ||
+              joined.includes("2025 2024")
+            )
+          );
+        });
 
       return {
         pageNumber,
@@ -222,7 +321,16 @@ module.exports = async function (context, req) {
         years,
         rowCount,
         columnCount,
-        tableCount: pageTables.length
+        tableCount: pageTables.length,
+        mainTable,
+        mainRows,
+        mainColumnCount,
+        mainRowCount,
+        headerText,
+        structuralHintsText,
+        isLikelyNoteTable,
+        hasStatementHeader,
+        hasYearHeaderLikeStatement
       };
     }
 
@@ -263,6 +371,7 @@ module.exports = async function (context, req) {
           "اجمالي الموجودات",
           "اجمالي الالتزامات",
           "اجمالي المطلوبات",
+          "اجمالي حقوق الملكية",
           "current assets",
           "non-current assets",
           "total assets",
@@ -278,7 +387,11 @@ module.exports = async function (context, req) {
           "statement of income",
           "comprehensive income",
           "cash flow",
-          "changes in equity"
+          "changes in equity",
+          "خلال 3 اشهر",
+          "5-1 سنوات",
+          "اكثر من 5 سنوات",
+          "الفجوة الخاضعة لمخاطر اسعار العمولات"
         ],
         preferredOrderIndex: 0
       },
@@ -288,6 +401,7 @@ module.exports = async function (context, req) {
         title: "incomeStatement",
         positiveTitles: [
           "قائمة الدخل",
+          "قائمة الدخل الموحدة",
           "قائمة الارباح والخسائر",
           "قائمة الربح والخسارة",
           "بيان الارباح",
@@ -305,10 +419,13 @@ module.exports = async function (context, req) {
           "الربح التشغيلي",
           "دخل العمليات",
           "صافي الربح",
+          "صافي دخل السنة",
+          "ربحية السهم",
           "ربح السهم",
           "revenue",
           "sales",
           "gross profit",
+          "operating income",
           "operating profit",
           "net profit",
           "earnings per share"
@@ -349,11 +466,12 @@ module.exports = async function (context, req) {
         ],
         positiveKeywords: [
           "صافي النقد",
-          "النقد الناتج من الانشطة التشغيلية",
-          "النقد المستخدم في الانشطة الاستثمارية",
-          "النقد الناتج من الانشطة التمويلية",
-          "رصيد النقد",
+          "صافي النقد الناتج من الانشطة التشغيلية",
+          "صافي النقد المستخدم في الانشطة الاستثمارية",
+          "صافي النقد الناتج من الانشطة التمويلية",
           "النقد وما في حكمه",
+          "النقد وشبه النقد",
+          "رصيد النقد",
           "operating activities",
           "investing activities",
           "financing activities",
@@ -380,33 +498,30 @@ module.exports = async function (context, req) {
 
     function statementBaseScore(pageCtx, cfg) {
       const text = pageCtx.text || "";
+      const structuralText = pageCtx.structuralHintsText || "";
       const normalizedText = pageCtx.normalizedText || "";
 
       let score = 0;
       const reasons = [];
 
-      // 1) exact/near title score
-      const titleHits = countKeywordHits(text, cfg.positiveTitles);
+      const titleHits = countKeywordHits(structuralText, cfg.positiveTitles);
       if (titleHits > 0) {
         score += titleHits * 40;
         reasons.push(`titleHits:${titleHits}`);
       }
 
-      // 2) content keywords score
       const keywordHits = countKeywordHits(text, cfg.positiveKeywords);
       if (keywordHits > 0) {
         score += Math.min(keywordHits, 8) * 7;
         reasons.push(`keywordHits:${keywordHits}`);
       }
 
-      // 3) negative keywords
       const negativeHits = countKeywordHits(text, cfg.negativeKeywords);
       if (negativeHits > 0) {
-        score -= Math.min(negativeHits, 8) * 10;
+        score -= Math.min(negativeHits, 10) * 10;
         reasons.push(`negativeHits:-${negativeHits}`);
       }
 
-      // 4) strong negative regex for income confusion
       if (cfg.strongNegativeRegex && cfg.strongNegativeRegex.length) {
         const strongNeg = regexCount(text, cfg.strongNegativeRegex);
         if (strongNeg > 0) {
@@ -415,14 +530,12 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 5) numeric density
       const numCount = pageCtx.numbersCount || 0;
       if (numCount >= 10) {
         score += Math.min(numCount, 40) * 0.7;
         reasons.push(`numbers:+${Math.round(Math.min(numCount, 40) * 0.7)}`);
       }
 
-      // 6) table size / structure
       if (pageCtx.tableCount > 0) {
         score += Math.min(pageCtx.tableCount, 3) * 5;
         reasons.push(`tableCount:+${Math.min(pageCtx.tableCount, 3) * 5}`);
@@ -433,12 +546,19 @@ module.exports = async function (context, req) {
         reasons.push(`rows:+${Math.round(Math.min(pageCtx.rowCount, 30) * 0.4)}`);
       }
 
-      if (pageCtx.columnCount >= 3) {
+      if (pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4) {
+        score += 18;
+        reasons.push("statementLikeCols:+18");
+      }
+
+      if (pageCtx.mainColumnCount > 4) {
+        score -= Math.min(pageCtx.mainColumnCount - 4, 6) * 16;
+        reasons.push(`wideTablePenalty:-${Math.min(pageCtx.mainColumnCount - 4, 6) * 16}`);
+      } else if (pageCtx.columnCount >= 3) {
         score += Math.min(pageCtx.columnCount, 8) * 1.2;
         reasons.push(`cols:+${Math.round(Math.min(pageCtx.columnCount, 8) * 1.2)}`);
       }
 
-      // 7) years present is a good sign
       if (pageCtx.years.length >= 1) {
         score += 4;
         reasons.push("years:+4");
@@ -448,27 +568,70 @@ module.exports = async function (context, req) {
         reasons.push("years2:+3");
       }
 
-      // 8) phrase density around common headers
+      if (pageCtx.hasStatementHeader) {
+        score += 45;
+        reasons.push("statementHeader:+45");
+      }
+
+      if (pageCtx.hasYearHeaderLikeStatement) {
+        score += 25;
+        reasons.push("yearHeaderLikeStatement:+25");
+      }
+
+      if (pageCtx.isLikelyNoteTable) {
+        score -= 70;
+        reasons.push("noteTablePenalty:-70");
+      }
+
       if (cfg.key === "balance") {
-        if (textContainsAny(normalizedText, ["الاصول المتداولة", "الاصول غير المتداولة", "حقوق الملكية", "current assets", "non-current assets"])) {
+        if (textContainsAny(normalizedText, [
+          "الاصول المتداولة",
+          "الاصول غير المتداولة",
+          "الموجودات",
+          "المطلوبات",
+          "حقوق الملكية",
+          "current assets",
+          "non-current assets",
+          "total liabilities and equity",
+          "اجمالي المطلوبات وحقوق الملكية"
+        ])) {
           score += 18;
           reasons.push("balanceStructure:+18");
         }
       }
 
       if (cfg.key === "income") {
-        if (textContainsAny(normalizedText, ["الايرادات", "اجمالي الربح", "صافي الربح", "revenue", "gross profit", "net profit"])) {
+        if (textContainsAny(normalizedText, [
+          "الايرادات",
+          "اجمالي الربح",
+          "صافي الربح",
+          "صافي دخل السنة",
+          "revenue",
+          "gross profit",
+          "net profit"
+        ])) {
           score += 18;
           reasons.push("incomeStructure:+18");
         }
-        if (textContainsAny(normalizedText, ["الدخل الشامل الاخر", "بنود الدخل الشامل", "other comprehensive income"])) {
+        if (textContainsAny(normalizedText, [
+          "الدخل الشامل الاخر",
+          "بنود الدخل الشامل",
+          "other comprehensive income"
+        ])) {
           score -= 25;
           reasons.push("comprehensivePenalty:-25");
         }
       }
 
       if (cfg.key === "cashflow") {
-        if (textContainsAny(normalizedText, ["الانشطة التشغيلية", "الانشطة الاستثمارية", "الانشطة التمويلية", "operating activities", "investing activities", "financing activities"])) {
+        if (textContainsAny(normalizedText, [
+          "الانشطة التشغيلية",
+          "الانشطة الاستثمارية",
+          "الانشطة التمويلية",
+          "operating activities",
+          "investing activities",
+          "financing activities"
+        ])) {
           score += 22;
           reasons.push("cashflowStructure:+22");
         }
@@ -488,7 +651,10 @@ module.exports = async function (context, req) {
             years: pageCtx.years,
             numbersCount: pageCtx.numbersCount,
             rowCount: pageCtx.rowCount,
-            tableCount: pageCtx.tableCount
+            tableCount: pageCtx.tableCount,
+            mainColumnCount: pageCtx.mainColumnCount,
+            isLikelyNoteTable: pageCtx.isLikelyNoteTable,
+            hasStatementHeader: pageCtx.hasStatementHeader
           };
         })
         .sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
@@ -508,21 +674,14 @@ module.exports = async function (context, req) {
     const incomeBaseMap = getScoreMap(rankedIncomeBase);
     const cashBaseMap = getScoreMap(rankedCashBase);
 
-    // =========================
-    // Order-aware final selection
-    // =========================
-    // التقرير غالباً:
-    // المركز المالي -> الدخل -> الدخل الشامل/التغيرات -> التدفقات النقدية
-    // لذلك نعطي مكافأة ترتيب لكن بدون أن نجبره بشكل يكسّر الحالات المختلفة.
-
     function orderAdjustedScore(pageNumber, baseScore, statementKey, chosen) {
       let score = baseScore;
 
       if (statementKey === "income") {
         if (chosen.balancePage) {
           const diff = pageNumber - chosen.balancePage;
-          if (diff >= 1 && diff <= 8) score += 18;
-          else if (diff >= -1 && diff <= 12) score += 8;
+          if (diff >= 1 && diff <= 6) score += 18;
+          else if (diff >= -1 && diff <= 10) score += 8;
           else if (diff < -1) score -= 14;
         }
       }
@@ -530,8 +689,8 @@ module.exports = async function (context, req) {
       if (statementKey === "cashflow") {
         if (chosen.incomePage) {
           const diff = pageNumber - chosen.incomePage;
-          if (diff >= 1 && diff <= 12) score += 24;
-          else if (diff >= -1 && diff <= 16) score += 8;
+          if (diff >= 1 && diff <= 8) score += 24;
+          else if (diff >= -1 && diff <= 14) score += 8;
           else if (diff < -1) score -= 18;
         }
         if (chosen.balancePage) {
@@ -541,7 +700,6 @@ module.exports = async function (context, req) {
       }
 
       if (statementKey === "balance") {
-        // balance غالباً الأسبق
         if (chosen.incomePage && pageNumber > chosen.incomePage) score -= 10;
         if (chosen.cashFlowPage && pageNumber > chosen.cashFlowPage) score -= 16;
       }
@@ -573,13 +731,8 @@ module.exports = async function (context, req) {
     chosen.cashFlowPage = bestCash?.pageNumber || null;
 
     // =========================
-    // Generic row extraction from preview text
+    // Lite Extraction (preserve existing behavior)
     // =========================
-    // الهدف هنا المحافظة على البناء الحالي قدر الإمكان:
-    // - نقرأ الجداول من الصفحة المختارة
-    // - نستخرج أعمدة السنوات
-    // - نبني items = [{label,current,previous}]
-    // هذا المحرك متسامح مع اختلاف شكل preview.
 
     function splitLinesFromTables(tables) {
       const text = (tables || []).map(tableText).join("\n");
@@ -701,7 +854,6 @@ module.exports = async function (context, req) {
         });
       }
 
-      // إزالة التكرارات
       const dedupMap = new Map();
       for (const row of items) {
         const key = normalizeText(row.label);
@@ -732,7 +884,329 @@ module.exports = async function (context, req) {
     const cashFlowLite = extractStatementLite(chosen.cashFlowPage, "cashflow");
 
     // =========================
-    // Selection debug / transparency
+    // Structured Extraction Layer (new, no breaking change)
+    // =========================
+
+    const FIELD_DICTIONARIES = {
+      balance: {
+        cashAndBalancesWithCentralBanks: [
+          "نقد وارصده لدي البنوك المركزيه",
+          "نقد وارصدة لدى البنوك المركزية",
+          "cash and balances with central banks",
+          "cash and balances with s ama",
+          "cash and balances with central bank"
+        ],
+        dueFromBanksAndFinancialInstitutions: [
+          "ارصده لدي البنوك والمؤسسات الماليه الاخري بالصافي",
+          "ارصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي",
+          "due from banks and other financial institutions",
+          "balances with banks and other financial institutions"
+        ],
+        investments: [
+          "استثمارات بالصافي",
+          "investments net",
+          "investments"
+        ],
+        financingAndAdvances: [
+          "تمويل وسلف بالصافي",
+          "financing and advances net",
+          "loans and advances net"
+        ],
+        positiveFairValueDerivatives: [
+          "القيمه العادله الموجبه للمشتقات",
+          "القيمة العادلة الموجبة للمشتقات",
+          "positive fair value of derivatives"
+        ],
+        propertyAndEquipment: [
+          "ممتلكات ومعدات وبرامج بالصافي",
+          "property and equipment net",
+          "property and equipment"
+        ],
+        rightOfUseAssets: [
+          "حق استخدام الموجودات بالصافي",
+          "right of use assets",
+          "right-of-use assets"
+        ],
+        otherAssets: [
+          "موجودات اخري",
+          "other assets"
+        ],
+        totalAssets: [
+          "اجمالي الموجودات",
+          "اجمالي الاصول",
+          "total assets"
+        ],
+        dueToBanks: [
+          "ارصده للبنوك والبنوك المركزيه والمؤسسات الماليه الاخري",
+          "أرصدة للبنوك والبنوك المركزية والمؤسسات المالية الأخرى",
+          "due to banks and central banks and other financial institutions",
+          "due to banks"
+        ],
+        customerDeposits: [
+          "ودايع العملاء",
+          "ودائع العملاء",
+          "customer deposits"
+        ],
+        debtSecuritiesIssuedAndBorrowings: [
+          "صكوك وسندات دين مصدره وقروض لاجل",
+          "صكوك وسندات دين مصدرة وقروض لأجل",
+          "debt securities in issue and borrowings",
+          "debt securities issued and term loans"
+        ],
+        negativeFairValueDerivatives: [
+          "القيمه العادله السالبه للمشتقات",
+          "القيمة العادلة السالبة للمشتقات",
+          "negative fair value of derivatives"
+        ],
+        otherLiabilities: [
+          "مطلوبات اخري",
+          "other liabilities"
+        ],
+        totalLiabilities: [
+          "اجمالي المطلوبات",
+          "total liabilities"
+        ],
+        totalEquityAttributedToShareholders: [
+          "حقوق الملكيه العائده لمساهمي البنك",
+          "حقوق الملكية العائدة لمساهمي البنك",
+          "equity attributable to shareholders of the bank"
+        ],
+        totalEquity: [
+          "اجمالي حقوق الملكيه",
+          "إجمالي حقوق الملكية",
+          "total equity"
+        ],
+        totalLiabilitiesAndEquity: [
+          "اجمالي المطلوبات وحقوق الملكيه",
+          "إجمالي المطلوبات وحقوق الملكية",
+          "total liabilities and equity"
+        ]
+      },
+
+      income: {
+        specialCommissionIncome: [
+          "الدخل من التمويل والاستثمارات",
+          "special commission income",
+          "income from financing and investments"
+        ],
+        specialCommissionExpense: [
+          "المصاريف علي ودائع العملاء لاجل والبنوك والمؤسسات الماليه الاخري",
+          "المصاريف على ودائع العملاء لأجل والبنوك والمؤسسات المالية الأخرى",
+          "special commission expense"
+        ],
+        netSpecialCommissionIncome: [
+          "الدخل من التمويل والاستثمارات بالصافي",
+          "صافي دخل العمولات الخاصه",
+          "net special commission income"
+        ],
+        feeAndCommissionIncomeNet: [
+          "الدخل من رسوم الخدمات المصرفيه بالصافي",
+          "fee and commission income net",
+          "net fee and commission income"
+        ],
+        totalOperatingIncome: [
+          "اجمالي دخل العمليات التشغيليه",
+          "إجمالي دخل العمليات التشغيلية",
+          "total operating income"
+        ],
+        employeeSalariesAndBenefits: [
+          "رواتب ومصاريف الموظفين",
+          "salaries and employee related expenses"
+        ],
+        depreciationAndAmortization: [
+          "اهلاك اطفاء ممتلكات ومعدات وبرامج وحق استخدام الموجودات",
+          "depreciation and amortization"
+        ],
+        impairmentChargeForExpectedCreditLosses: [
+          "مخصص الانخفاض الاسترداد لخساير الائتمان المتوقعه بالصافي",
+          "مخصص الانخفاض/(الاسترداد) لخسائر الائتمان المتوقعة بالصافي",
+          "impairment charge for expected credit losses",
+          "expected credit losses"
+        ],
+        totalOperatingExpenses: [
+          "اجمالي مصاريف العمليات التشغيليه",
+          "إجمالي مصاريف العمليات التشغيلية",
+          "total operating expenses"
+        ],
+        operatingIncomeNet: [
+          "دخل من العمليات التشغيليه بالصافي",
+          "دخل من العمليات التشغيلية بالصافي",
+          "operating income net",
+          "income from operations net"
+        ],
+        netIncomeBeforeZakatAndIncomeTax: [
+          "دخل السنه قبل الزكاه وضريبه الدخل",
+          "دخل السنة قبل الزكاة وضريبة الدخل",
+          "income before zakat and income tax"
+        ],
+        zakatAndIncomeTax: [
+          "مصروف الزكاه وضريبه الدخل",
+          "مصروف الزكاة وضريبة الدخل",
+          "zakat and income tax"
+        ],
+        netIncome: [
+          "صافي دخل السنه",
+          "صافي الدخل",
+          "net income",
+          "profit for the year"
+        ],
+        basicEps: [
+          "ربحيه السهم الاساسيه",
+          "ربحية السهم الأساسية",
+          "basic earnings per share"
+        ],
+        dilutedEps: [
+          "ربحيه السهم المخفضه",
+          "ربحية السهم المخفضة",
+          "diluted earnings per share"
+        ]
+      },
+
+      cashflow: {
+        netIncomeBeforeZakatAndIncomeTax: [
+          "دخل السنه قبل الزكاه وضريبه الدخل",
+          "دخل السنة قبل الزكاة وضريبة الدخل",
+          "income before zakat and income tax"
+        ],
+        netCashFromOperatingActivities: [
+          "صافي النقد الناتج من المستخدم في الانشطه التشغيليه",
+          "صافي النقد الناتج من الانشطة التشغيلية",
+          "net cash from operating activities"
+        ],
+        netCashFromInvestingActivities: [
+          "صافي النقد الناتج من المستخدم في الانشطه الاستثماريه",
+          "صافي النقد المستخدم في الانشطة الاستثمارية",
+          "net cash from investing activities",
+          "net cash used in investing activities"
+        ],
+        netCashFromFinancingActivities: [
+          "صافي النقد الناتج من المستخدم في الانشطه التمويليه",
+          "صافي النقد الناتج من الانشطة التمويلية",
+          "net cash from financing activities"
+        ],
+        netChangeInCashAndCashEquivalents: [
+          "صافي الزياده النقص في النقد وشبه النقد",
+          "صافي الزيادة/(النقص) في النقد وشبه النقد",
+          "net change in cash and cash equivalents"
+        ],
+        cashAndCashEquivalentsAtBeginningOfYear: [
+          "النقد وشبه النقد في بدايه السنه",
+          "cash and cash equivalents at beginning of the year"
+        ],
+        cashAndCashEquivalentsAtEndOfYear: [
+          "النقد وشبه النقد في نهايه السنه",
+          "cash and cash equivalents at end of the year"
+        ]
+      }
+    };
+
+    function scoreLabelMatch(label, synonym) {
+      const a = normalizeText(label);
+      const b = normalizeText(synonym);
+      if (!a || !b) return 0;
+      if (a === b) return 1.0;
+      if (a.includes(b) || b.includes(a)) return 0.92;
+
+      const aTokens = unique(a.split(/\s+/).filter(Boolean));
+      const bTokens = unique(b.split(/\s+/).filter(Boolean));
+      if (!aTokens.length || !bTokens.length) return 0;
+
+      let hits = 0;
+      for (const token of bTokens) {
+        if (token.length < 2) continue;
+        if (a.includes(token)) hits += 1;
+      }
+      return hits / bTokens.length;
+    }
+
+    function bestSynonymScore(label, synonyms) {
+      let best = 0;
+      let matched = null;
+      for (const syn of (synonyms || [])) {
+        const s = scoreLabelMatch(label, syn);
+        if (s > best) {
+          best = s;
+          matched = syn;
+        }
+      }
+      return { score: best, matchedSynonym: matched };
+    }
+
+    function buildStructuredFieldsFromLite(lite, dictionary) {
+      const fields = {};
+      const items = Array.isArray(lite?.items) ? lite.items : [];
+
+      for (const [fieldKey, synonyms] of Object.entries(dictionary || {})) {
+        let bestRow = null;
+        let bestScore = 0;
+        let matchedSynonym = null;
+
+        for (const row of items) {
+          const result = bestSynonymScore(row.label, synonyms);
+          if (result.score > bestScore) {
+            bestScore = result.score;
+            bestRow = row;
+            matchedSynonym = result.matchedSynonym;
+          }
+        }
+
+        if (bestRow && bestScore >= 0.55) {
+          fields[fieldKey] = {
+            label: bestRow.label,
+            matchedSynonym,
+            current: bestRow.current ?? null,
+            previous: bestRow.previous ?? null,
+            confidence: Math.round(bestScore * 1000) / 1000,
+            sourcePage: lite.pageNumber || null
+          };
+        } else {
+          fields[fieldKey] = {
+            label: null,
+            matchedSynonym: null,
+            current: null,
+            previous: null,
+            confidence: 0,
+            sourcePage: lite.pageNumber || null
+          };
+        }
+      }
+
+      return fields;
+    }
+
+    function buildStructuredStatement(pageNumber, statementKey, lite, dictionary) {
+      return {
+        pageNumber: pageNumber || null,
+        latest: lite?.latest ?? null,
+        previous: lite?.previous ?? null,
+        years: Array.isArray(lite?.years) ? lite.years : [],
+        fields: buildStructuredFieldsFromLite(lite, dictionary)
+      };
+    }
+
+    const balanceSheetStructured = buildStructuredStatement(
+      chosen.balancePage,
+      "balance",
+      balanceSheetLite,
+      FIELD_DICTIONARIES.balance
+    );
+
+    const incomeStatementStructured = buildStructuredStatement(
+      chosen.incomePage,
+      "income",
+      incomeStatementLite,
+      FIELD_DICTIONARIES.income
+    );
+
+    const cashFlowStructured = buildStructuredStatement(
+      chosen.cashFlowPage,
+      "cashflow",
+      cashFlowLite,
+      FIELD_DICTIONARIES.cashflow
+    );
+
+    // =========================
+    // Debug
     // =========================
 
     function topN(rankings, n = 5) {
@@ -743,13 +1217,16 @@ module.exports = async function (context, req) {
         years: r.years,
         numbersCount: r.numbersCount,
         rowCount: r.rowCount,
-        tableCount: r.tableCount
+        tableCount: r.tableCount,
+        mainColumnCount: r.mainColumnCount,
+        isLikelyNoteTable: r.isLikelyNoteTable,
+        hasStatementHeader: r.hasStatementHeader
       }));
     }
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v2",
+      engine: "extract-financial-v3",
       phase: "3B",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
@@ -767,6 +1244,10 @@ module.exports = async function (context, req) {
       balanceSheetLite,
       cashFlowLite,
 
+      incomeStatementStructured,
+      balanceSheetStructured,
+      cashFlowStructured,
+
       debug: {
         totalPagesWithTables: pageContexts.length,
         ranking: {
@@ -777,9 +1258,13 @@ module.exports = async function (context, req) {
         chosen,
         notes: [
           "selection logic uses title + keywords + numeric density + report order",
+          "statement-like tables are preferred when main columns are 2-4",
+          "wide note tables are penalized heavily",
+          "explicit statement headers get a strong boost",
           "income statement penalizes comprehensive income and changes in equity pages",
           "cash flow prefers pages after income statement",
-          "balance sheet prefers earlier statement pages"
+          "balance sheet prefers earlier statement pages",
+          "structured extraction is added without removing lite extraction"
         ]
       },
 
