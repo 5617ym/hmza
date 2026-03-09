@@ -3,10 +3,10 @@
 CURRENT_PHASE: 4A (Multi-Sector Validation)
 
 CURRENT_TASK:
-بدء مرحلة اختبار النظام على قطاعات متعددة للتأكد من استقرار
+اختبار النظام على قطاعات متعددة للتأكد من استقرار
 محرك استخراج القوائم المالية مع اختلاف أشكال التقارير المالية.
 
-الهدف من هذه المرحلة ليس تعديل الكود،
+هدف هذه المرحلة ليس تعديل الكود،
 بل اختبار النظام على ملفات حقيقية من قطاعات مختلفة
 واكتشاف الحالات التي تحتاج منطق استخراج خاص.
 
@@ -17,20 +17,26 @@ upload-url
 → analyze (Azure Document Intelligence - prebuilt-layout)
 → extract-financial
 
+SYSTEM_ARCHITECTURE:
+
 طبقات التحليل الحالية داخل extract-financial:
 
 financial:
-- incomeStatementLite
-- balanceSheetLite
-- cashFlowLite
-- checks
-- ratios
-- insights
-- signals
-- summary
-- executiveSummary
-- evaluation
-- investmentView
+
+* incomeStatementLite
+* balanceSheetLite
+* cashFlowLite
+* balanceSheetStructured
+* incomeStatementStructured
+* cashFlowStructured
+* checks
+* ratios
+* insights
+* signals
+* summary
+* executiveSummary
+* evaluation
+* investmentView
 
 LAST_TEST:
 
@@ -39,83 +45,108 @@ LAST_TEST:
 
 RESULT:
 
-- cashFlowLite نجح في استخراج:
-  - endingCash
-  - beginningCash
-  - netChangeInCash
+تم استخراج القوائم الثلاث بنجاح:
 
-- cashFlowEquation = true
+selectedPages:
 
-لكن:
+incomePage = 9
+balancePage = 8
+cashFlowPage = 12
 
-incomeStatementLite = null  
-balanceSheetLite = null  
-ratios = null  
-investmentView = null
+وهذا يطابق القوائم الحقيقية داخل التقرير.
 
-REASON:
+كما نجح النظام في:
 
-تم اكتشاف أن القوائم المالية للبنوك تختلف
-عن الشركات التشغيلية التقليدية.
+incomeStatementLite
+balanceSheetLite
+cashFlowLite
+
+استخراج القيم الرقمية بشكل صحيح.
+
+مثال:
+
+incomeStatementLite:
+
+الدخل من التمويل والاستثمارات
+2025 → 60,961,683
+2024 → 57,835,422
+
+cashFlowLite:
+
+دخل السنة قبل الزكاة وضريبة الدخل
+2025 → 27,896,733
+2024 → 23,614,771
+
+TECHNICAL_CONFIRMATION:
+
+تم التأكد أن محرك extract-financial أصبح قادراً على:
+
+1. اكتشاف الصفحات المالية تلقائياً
+2. استبعاد الصفحات غير المالية مثل:
+
+   * الفهرس
+   * صفحات المعايير
+   * الجداول التحليلية
+   * قائمة التغيرات في حقوق الملكية
+3. تحديد أعمدة السنوات تلقائياً
+4. تحويل الأرقام العربية إلى أرقام رقمية صحيحة
+
+ENGINE_VERSION:
+
+extract-financial-v3.3
+
+IMPORTANT_DISCOVERY:
+
+القوائم المالية للبنوك تختلف عن الشركات التشغيلية التقليدية.
 
 أمثلة من ملف البنك:
 
 قائمة الدخل تحتوي على:
-- الدخل من الاستثمارات والتمويل
-- دخل رسوم خدمات مصرفية
-- إجمالي دخل العمليات
-- صافي دخل السنة
+
+* الدخل من الاستثمارات والتمويل
+* دخل رسوم خدمات مصرفية
+* إجمالي دخل العمليات
+* صافي دخل السنة
 
 بدلاً من:
 
-- الإيرادات
-- تكلفة الإيرادات
-- مجمل الربح
-- الربح التشغيلي
+* الإيرادات
+* تكلفة الإيرادات
+* مجمل الربح
+* الربح التشغيلي
 
 وكذلك قائمة المركز المالي للبنوك تختلف في التصنيف.
 
-IMPORTANT_DISCOVERY:
-
-النظام الحالي يعمل بشكل جيد مع
-Operating Companies
-لكن يحتاج منطق خاص لقطاعات أخرى مثل:
-
-- Banks
-- Insurance
-- REIT
-- Investment Companies
-
-لذلك سيتم استخدام مرحلة الاختبار
-لتحديد الأنماط المختلفة للقوائم المالية.
+لذلك لا يمكن استخدام نموذج واحد لجميع القطاعات.
 
 TESTING_PLAN:
 
 سيتم اختبار شركتين من كل قطاع في السوق السعودي.
 
-القطاعات المستهدفة للاختبار:
+القطاعات المستهدفة:
 
-- Banks
-- Insurance
-- Petrochemicals
-- Telecom
-- Retail
-- Industrial
-- Real Estate Development
-- REIT
-- Transportation
-- Energy
+* Banks
+* Insurance
+* Petrochemicals
+* Telecom
+* Retail
+* Industrial
+* Real Estate Development
+* REIT
+* Transportation
+* Energy
 
 EXPECTED_TEST_SIZE:
 
 تقريباً:
+
 20 شركة
 
 الهدف من الاختبارات:
 
-1) اكتشاف اختلافات القوائم المالية بين القطاعات
-2) تحديد الحالات التي يفشل فيها الاستخراج
-3) تحديد الحاجة إلى Financial Statement Profiles
+1. اكتشاف اختلافات القوائم المالية بين القطاعات
+2. تحديد الحالات التي يفشل فيها الاستخراج
+3. تحديد الحاجة إلى Financial Statement Profiles
 
 NO_CODE_CHANGE_RULE:
 
@@ -127,21 +158,19 @@ Test
 → Observe
 → Record
 
-وسيتم جمع النتائج أولاً
-ثم تحسين منطق الاستخراج لاحقاً.
-
 NEXT_PHASE:
 
 4B (Financial Statement Profiles)
 
 وسيتم فيها إضافة:
 
-- OperatingCompanyProfile
-- BankProfile
-- InsuranceProfile
-- REITProfile
+* OperatingCompanyProfile
+* BankProfile
+* InsuranceProfile
+* REITProfile
 
-بحيث يستطيع النظام
+بحيث يستطيع النظام:
+
 تحديد نوع القوائم المالية تلقائياً
 واستخدام منطق الاستخراج المناسب.
 
