@@ -1,14 +1,23 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 4A (Multi-Sector Validation)
+CURRENT_PHASE: 4A (Multi-Sector Validation Completed)
 
 CURRENT_TASK:
-اختبار النظام على قطاعات متعددة للتأكد من استقرار
+الانتهاء من اختبار النظام على قطاعات متعددة للتأكد من استقرار
 محرك استخراج القوائم المالية مع اختلاف أشكال التقارير المالية.
 
-هدف هذه المرحلة ليس تعديل الكود،
-بل اختبار النظام على ملفات حقيقية من قطاعات مختلفة
-واكتشاف الحالات التي تحتاج منطق استخراج خاص.
+القطاعات التي تم اختبارها:
+
+1. شركة تشغيلية عربية
+2. شركة تشغيلية إنجليزية
+3. بنك عربي
+4. بنك إنجليزي
+5. شركة تأمين
+6. صندوق REIT
+7. شركة صناعية
+
+تم اختبار النظام باستخدام تقارير مالية حقيقية بصيغة PDF
+من شركات مدرجة في السوق السعودي.
 
 المسار الحالي للنظام:
 
@@ -17,162 +26,61 @@ upload-url
 → analyze (Azure Document Intelligence - prebuilt-layout)
 → extract-financial
 
-SYSTEM_ARCHITECTURE:
-
-طبقات التحليل الحالية داخل extract-financial:
-
-financial:
-
-* incomeStatementLite
-* balanceSheetLite
-* cashFlowLite
-* balanceSheetStructured
-* incomeStatementStructured
-* cashFlowStructured
-* checks
-* ratios
-* insights
-* signals
-* summary
-* executiveSummary
-* evaluation
-* investmentView
+جميع المراحل تعمل بنجاح.
 
 LAST_TEST:
 
-تم اختبار النظام على ملف حقيقي لقطاع البنوك
-(مصرف الإنماء – القوائم المالية السنوية).
+اختبار ملفات متعددة لسبعة قطاعات مختلفة:
 
-RESULT:
+* جاهز (تشغيلية عربية)
+* المراعي (تشغيلية إنجليزية)
+* مصرف الإنماء (بنك عربي)
+* مصرف الراجحي (بنك إنجليزي)
+* التعاونية للتأمين
+* صندوق جدوى ريت
+* شركة المتقدمة للبتروكيماويات
 
-تم استخراج القوائم الثلاث بنجاح:
+LAST_RESULT:
 
-selectedPages:
+النتائج العامة للنظام:
 
-incomePage = 9
-balancePage = 8
-cashFlowPage = 12
+* اكتشاف صفحات القوائم المالية يعمل بشكل ممتاز
 
-وهذا يطابق القوائم الحقيقية داخل التقرير.
+* النظام ينجح في تحديد:
 
-كما نجح النظام في:
+  * Balance Sheet
+  * Income Statement
+  * Cash Flow Statement
 
-incomeStatementLite
-balanceSheetLite
-cashFlowLite
+* النظام يعمل مع:
 
-استخراج القيم الرقمية بشكل صحيح.
+  * العربية
+  * الإنجليزية
+  * تقارير IFRS
+  * تقارير السوق السعودي
 
-مثال:
+ACTIVE_PROBLEM:
 
-incomeStatementLite:
+في بعض الملفات تظهر مشاكل طفيفة في مرحلة استخراج القيم من الصف،
+وأسبابها المحتملة:
 
-الدخل من التمويل والاستثمارات
-2025 → 60,961,683
-2024 → 57,835,422
+* الخلط بين رقم الإيضاح والقيمة المالية
+* قراءة العمود الخطأ عند اختلاف ترتيب الأعمدة
+* ضعف اكتشاف Header في بعض الجداول
+* اختلاف هيكل القوائم بين القطاعات (Bank / Insurance / REIT)
 
-cashFlowLite:
+NEXT_STEP:
 
-دخل السنة قبل الزكاة وضريبة الدخل
-2025 → 27,896,733
-2024 → 23,614,771
+تحسين محرك extract-financial بدون تغيير المعمارية الحالية.
 
-TECHNICAL_CONFIRMATION:
+التحسينات المطلوبة:
 
-تم التأكد أن محرك extract-financial أصبح قادراً على:
-
-1. اكتشاف الصفحات المالية تلقائياً
-2. استبعاد الصفحات غير المالية مثل:
-
-   * الفهرس
-   * صفحات المعايير
-   * الجداول التحليلية
-   * قائمة التغيرات في حقوق الملكية
-3. تحديد أعمدة السنوات تلقائياً
-4. تحويل الأرقام العربية إلى أرقام رقمية صحيحة
-
-ENGINE_VERSION:
-
-extract-financial-v3.3
-
-IMPORTANT_DISCOVERY:
-
-القوائم المالية للبنوك تختلف عن الشركات التشغيلية التقليدية.
-
-أمثلة من ملف البنك:
-
-قائمة الدخل تحتوي على:
-
-* الدخل من الاستثمارات والتمويل
-* دخل رسوم خدمات مصرفية
-* إجمالي دخل العمليات
-* صافي دخل السنة
-
-بدلاً من:
-
-* الإيرادات
-* تكلفة الإيرادات
-* مجمل الربح
-* الربح التشغيلي
-
-وكذلك قائمة المركز المالي للبنوك تختلف في التصنيف.
-
-لذلك لا يمكن استخدام نموذج واحد لجميع القطاعات.
-
-TESTING_PLAN:
-
-سيتم اختبار شركتين من كل قطاع في السوق السعودي.
-
-القطاعات المستهدفة:
-
-* Banks
-* Insurance
-* Petrochemicals
-* Telecom
-* Retail
-* Industrial
-* Real Estate Development
-* REIT
-* Transportation
-* Energy
-
-EXPECTED_TEST_SIZE:
-
-تقريباً:
-
-20 شركة
-
-الهدف من الاختبارات:
-
-1. اكتشاف اختلافات القوائم المالية بين القطاعات
-2. تحديد الحالات التي يفشل فيها الاستخراج
-3. تحديد الحاجة إلى Financial Statement Profiles
-
-NO_CODE_CHANGE_RULE:
-
-خلال هذه المرحلة لا يتم تعديل الكود.
-
-يتم فقط:
-
-Test
-→ Observe
-→ Record
-
-NEXT_PHASE:
-
-4B (Financial Statement Profiles)
-
-وسيتم فيها إضافة:
-
-* OperatingCompanyProfile
-* BankProfile
-* InsuranceProfile
-* REITProfile
-
-بحيث يستطيع النظام:
-
-تحديد نوع القوائم المالية تلقائياً
-واستخدام منطق الاستخراج المناسب.
+1. Header Resolver أقوى لاكتشاف ترتيب الأعمدة
+2. منع قراءة رقم الإيضاح كقيمة مالية
+3. تحسين تحليل الصفوف داخل الجدول
+4. إضافة Row Validation Layer
+5. دعم Multi-table Statement
+6. تحسين اكتشاف نوع القطاع عبر statementProfile
 
 STATUS:
-TESTING
+STABLE – READY FOR EXTRACTION ENGINE HARDENING
