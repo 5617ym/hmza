@@ -134,6 +134,23 @@ module.exports = async function (context, req) {
       return /^(19|20)\d{2}$/.test(toEnglishDigits(String(cell || "").trim()));
     }
 
+    function getYearFromCell(cell) {
+      const raw = toEnglishDigits(String(cell || "").trim());
+      if (!raw) return null;
+
+      if (/^(19|20)\d{2}$/.test(raw)) {
+        return Number(raw);
+      }
+
+      const years = raw.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+      if (years.length === 1) {
+        const n = Number(years[0]);
+        if (Number.isFinite(n)) return n;
+      }
+
+      return null;
+    }
+
     function isNoteHeaderCell(cell) {
       const s = normalizeText(cell);
       return s === "ايضاح" || s === "الايضاح" || s === "notes" || s === "note";
@@ -147,11 +164,15 @@ module.exports = async function (context, req) {
         s.includes("3 اشهر") ||
         s.includes("for the year ended") ||
         s.includes("for the period ended") ||
+        s.includes("for the year") ||
+        s.includes("for the period") ||
         s.includes("3 months") ||
         s.includes("12 months") ||
         s.includes("السنه المنتهيه") ||
         s.includes("الفتره المنتهيه") ||
-        s.includes("as of")
+        s.includes("as of") ||
+        s.includes("كما في") ||
+        s.includes("المنتهيه في")
       );
     }
 
@@ -281,6 +302,23 @@ module.exports = async function (context, req) {
         s.includes("1 january 2026") ||
         s.includes("1 january 2027") ||
         s.includes("1 january 2028") ||
+        s.includes("31 december 2025") ||
+        s.includes("31 december 2024") ||
+        s.includes("31 december 2023") ||
+        s.includes("31 december") ||
+        s.includes("1 january") ||
+        s.includes("2 january") ||
+        s.includes("3 january") ||
+        s.includes("ديسمبر 2025") ||
+        s.includes("ديسمبر 2024") ||
+        s.includes("ديسمبر 2023") ||
+        s.includes("31 ديسمبر 2025") ||
+        s.includes("31 ديسمبر 2024") ||
+        s.includes("31 ديسمبر 2023") ||
+        s.includes("31 ديسمبر") ||
+        s.includes("1 يناير 2026") ||
+        s.includes("1 يناير 2027") ||
+        s.includes("1 يناير") ||
         s.includes("لم يتم تحديد تاريخ سريان") ||
         s.includes("تم تاجيل تاريخ سريان") ||
         s.includes("تاريخ سريان") ||
@@ -289,7 +327,11 @@ module.exports = async function (context, req) {
         s.includes("الفترات التقريريه") ||
         s.includes("المجلس الدولي للمعايير المحاسبيه") ||
         s.includes("المجلس الدولي للمعايير المحاسبية") ||
-        s.includes("ifrs amendments")
+        s.includes("ifrs amendments") ||
+        s.includes("as of") ||
+        s.includes("for the year ended") ||
+        s.includes("for the period ended") ||
+        s.includes("كما في")
       );
     }
 
@@ -373,7 +415,7 @@ module.exports = async function (context, req) {
         const yearCells = row
           .map((cell, idx) => ({
             idx,
-            year: isYearCell(cell) ? Number(toEnglishDigits(String(cell).trim())) : null
+            year: getYearFromCell(cell)
           }))
           .filter((x) => Number.isFinite(x.year));
 
@@ -399,7 +441,8 @@ module.exports = async function (context, req) {
             if (c === currentCol || c === previousCol || c === noteCol) continue;
             const text = String(row[c] || "").trim();
             if (!text) continue;
-            if (isYearCell(text) || isLikelyReferenceValue(text)) continue;
+            if (getYearFromCell(text) != null || isLikelyReferenceValue(text)) continue;
+            if (isQuarterOrPeriodCell(text) || isLikelyDateOrEffectiveDateText(text)) continue;
             candidates.push(c);
           }
 
@@ -411,32 +454,27 @@ module.exports = async function (context, req) {
       // 2) merged header row support
       if ((currentCol == null || previousCol == null) && headerRows.length >= 2) {
         for (let i = 0; i < headerRows.length - 1; i += 1) {
-          const merged = [...headerRows[i], ...headerRows[i + 1]];
-          const yearCells = merged
-            .map((cell, idx) => ({
-              idx,
-              year: isYearCell(cell) ? Number(toEnglishDigits(String(cell).trim())) : null
-            }))
-            .filter((x) => Number.isFinite(x.year));
+          const row1 = headerRows[i] || [];
+          const row2 = headerRows[i + 1] || [];
 
-          if (yearCells.length >= 2) {
-            const sortedYears = yearCells.slice().sort((a, b) => b.year - a.year || a.idx - b.idx);
+          const mergedCandidates = [];
+          const maxLen = Math.max(row1.length, row2.length);
+          for (let c = 0; c < maxLen; c += 1) {
+            const y1 = getYearFromCell(row1[c]);
+            const y2 = getYearFromCell(row2[c]);
+            const finalYear = Number.isFinite(y2) ? y2 : Number.isFinite(y1) ? y1 : null;
+            if (Number.isFinite(finalYear)) {
+              mergedCandidates.push({ idx: c, year: finalYear });
+            }
+          }
+
+          if (mergedCandidates.length >= 2) {
+            const sortedYears = mergedCandidates.slice().sort((a, b) => b.year - a.year || a.idx - b.idx);
             latest = sortedYears[0]?.year ?? latest ?? null;
             previous = sortedYears[1]?.year ?? previous ?? null;
             mode = "merged_year_header";
-
-            const row1 = headerRows[i];
-            const row2 = headerRows[i + 1];
-            const yearCellsRow1 = row1
-              .map((cell, idx) => ({ idx, year: isYearCell(cell) ? Number(toEnglishDigits(String(cell).trim())) : null }))
-              .filter((x) => Number.isFinite(x.year));
-            const yearCellsRow2 = row2
-              .map((cell, idx) => ({ idx, year: isYearCell(cell) ? Number(toEnglishDigits(String(cell).trim())) : null }))
-              .filter((x) => Number.isFinite(x.year));
-
-            const combinedYearCells = [...yearCellsRow1, ...yearCellsRow2];
-            currentCol = combinedYearCells.find((x) => x.year === latest)?.idx ?? currentCol;
-            previousCol = combinedYearCells.find((x) => x.year === previous)?.idx ?? previousCol;
+            currentCol = mergedCandidates.find((x) => x.year === latest)?.idx ?? currentCol;
+            previousCol = mergedCandidates.find((x) => x.year === previous)?.idx ?? previousCol;
             headerRowIndex = i + 1;
 
             if (noteCol == null) {
@@ -458,7 +496,8 @@ module.exports = async function (context, req) {
                 if (c === currentCol || c === previousCol || c === noteCol) continue;
                 const text = String(baseRow[c] || "").trim();
                 if (!text) continue;
-                if (isYearCell(text) || isLikelyReferenceValue(text)) continue;
+                if (getYearFromCell(text) != null || isLikelyReferenceValue(text)) continue;
+                if (isQuarterOrPeriodCell(text) || isLikelyDateOrEffectiveDateText(text)) continue;
                 candidates.push(c);
               }
               labelCol = candidates.length ? Math.min(...candidates) : 0;
@@ -482,7 +521,61 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 4) numeric density fallback
+      // 4) header row by notes / periods even if years are not isolated
+      if (headerRowIndex == null) {
+        for (let i = 0; i < headerRows.length; i += 1) {
+          const row = headerRows[i] || [];
+          if (!row.length) continue;
+
+          const hasNoteHeader = row.some((cell) => isNoteHeaderCell(cell));
+          const hasPeriodHeader = row.some((cell) => isQuarterOrPeriodCell(cell));
+          const hasDateLikeYear = row.some((cell) => Number.isFinite(getYearFromCell(cell)));
+
+          if (hasNoteHeader && (hasPeriodHeader || hasDateLikeYear || row.length >= 3)) {
+            headerRowIndex = i;
+            mode = "note_header";
+            break;
+          }
+
+          if (hasPeriodHeader && hasDateLikeYear) {
+            headerRowIndex = i;
+            mode = "period_header";
+            break;
+          }
+        }
+      }
+
+      // 5) infer cols from header row neighborhood
+      if ((currentCol == null || previousCol == null) && headerRowIndex != null) {
+        const neighborhood = [
+          headerRows[headerRowIndex - 1] || [],
+          headerRows[headerRowIndex] || [],
+          headerRows[headerRowIndex + 1] || []
+        ];
+
+        const yearByCol = {};
+        for (const row of neighborhood) {
+          for (let c = 0; c < row.length; c += 1) {
+            const year = getYearFromCell(row[c]);
+            if (Number.isFinite(year)) {
+              yearByCol[c] = Math.max(yearByCol[c] || 0, year);
+            }
+          }
+        }
+
+        const yearCols = Object.keys(yearByCol)
+          .map((k) => ({ idx: Number(k), year: yearByCol[k] }))
+          .sort((a, b) => b.year - a.year || a.idx - b.idx);
+
+        if (yearCols.length >= 2) {
+          latest = latest ?? yearCols[0].year;
+          previous = previous ?? yearCols[1].year;
+          currentCol = currentCol ?? yearCols.find((x) => x.year === latest)?.idx ?? yearCols[0].idx;
+          previousCol = previousCol ?? yearCols.find((x) => x.year === previous)?.idx ?? yearCols[1].idx;
+        }
+      }
+
+      // 6) numeric density fallback
       if (currentCol == null || previousCol == null) {
         const numericCols = getNumericColumnDensity(rows, 24)
           .filter((x) => x.idx !== noteCol);
@@ -496,14 +589,14 @@ module.exports = async function (context, req) {
 
           previousCol = candidates[0] ?? previousCol;
           currentCol = candidates[1] ?? currentCol;
-          mode = "numeric_density";
+          mode = mode === "fallback" ? "numeric_density" : mode;
         } else if (numericCols.length === 1) {
           currentCol = numericCols[0].idx;
-          mode = "single_numeric_column";
+          mode = mode === "fallback" ? "single_numeric_column" : mode;
         }
       }
 
-      // 5) label column fallback
+      // 7) label column fallback
       if (labelCol == null) {
         const scoreByCol = {};
         for (const row of (rows || []).slice(0, 24)) {
@@ -512,9 +605,10 @@ module.exports = async function (context, req) {
             const raw = String(cell || "").trim();
             if (!raw) return;
             if (idx === currentCol || idx === previousCol || idx === noteCol) return;
-            if (isYearCell(raw)) return;
+            if (getYearFromCell(raw) != null) return;
             if (isLikelyReferenceValue(raw)) return;
             if (isLikelyDateOrEffectiveDateText(raw)) return;
+            if (isQuarterOrPeriodCell(raw)) return;
             const n = parseNumberSmart(raw);
             if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return;
             scoreByCol[idx] = Math.max(scoreByCol[idx] || 0, raw.length);
@@ -1043,8 +1137,7 @@ module.exports = async function (context, req) {
           ],
           structure: [
             "عقارات استثمارية",
-            "موجودات ماليه بالقيمه العادله",
-            "موجودات مالية بالقيمة العادلة",
+            "موجودات مالية بالقيمة العادلة من خلال الربح أو الخسارة",
             "وحدات الصندوق",
             "investment properties",
             "fund units"
@@ -1218,7 +1311,6 @@ module.exports = async function (context, req) {
       const reasons = [];
       const signals = {};
 
-      // 1) title
       const titleHitsHeader = keywordHits(pageCtx.headerText, cfg.titles);
       const titleHitsAll = keywordHits(pageCtx.structuralText, cfg.titles);
       signals.titleHitsHeader = titleHitsHeader;
@@ -1234,7 +1326,6 @@ module.exports = async function (context, req) {
         reasons.push(`titleAll:+${s}`);
       }
 
-      // 2) header
       if (pageCtx.hasYearLikeHeader) {
         score += 30;
         reasons.push("yearHeader:+30");
@@ -1248,7 +1339,6 @@ module.exports = async function (context, req) {
         reasons.push("usableColumns:+12");
       }
 
-      // 3) structure
       const structureHits = keywordHits(pageCtx.structuralText, cfg.structure);
       signals.structureHits = structureHits;
       if (structureHits > 0) {
@@ -1265,14 +1355,12 @@ module.exports = async function (context, req) {
         reasons.push(`negative:-${s}`);
       }
 
-      // 4) numbers
       if (pageCtx.numbersCount >= 8) {
         const s = Math.round(Math.min(pageCtx.numbersCount, 90) * 0.5);
         score += s;
         reasons.push(`numbers:+${s}`);
       }
 
-      // 5) position
       if (pageCtx.positionRatio <= 0.35) {
         score += 6;
         reasons.push("earlySoft:+6");
@@ -1281,7 +1369,6 @@ module.exports = async function (context, req) {
         reasons.push("lateSoft:-6");
       }
 
-      // hard guardrails
       if (pageCtx.isLikelyIndexPage) {
         score -= 220;
         reasons.push("index:-220");
@@ -1682,7 +1769,7 @@ module.exports = async function (context, req) {
       const nonEmpty = (cells || []).filter((c) => !isBlank(c));
       if (!nonEmpty.length) return false;
 
-      const yearCount = nonEmpty.filter(isYearCell).length;
+      const yearCount = nonEmpty.filter((c) => Number.isFinite(getYearFromCell(c))).length;
       const noteCount = nonEmpty.filter(isNoteHeaderCell).length;
       const periodCount = nonEmpty.filter(isQuarterOrPeriodCell).length;
       const numericCount = nonEmpty.filter((c) => parseNumberSmart(c) != null).length;
@@ -1704,11 +1791,12 @@ module.exports = async function (context, req) {
         const raw = String(cells[header.labelCol] || "").trim();
         if (
           raw &&
-          !isYearCell(raw) &&
+          getYearFromCell(raw) == null &&
           !isLikelyReferenceValue(raw) &&
           parseNumberSmart(raw) == null &&
           !isLikelyDateOrEffectiveDateText(raw) &&
-          !isLikelyNarrativeLine(raw)
+          !isLikelyNarrativeLine(raw) &&
+          !isQuarterOrPeriodCell(raw)
         ) {
           pieces.push(raw);
         }
@@ -1719,10 +1807,11 @@ module.exports = async function (context, req) {
 
         const raw = String(cells[i] || "").trim();
         if (!raw) continue;
-        if (isYearCell(raw)) continue;
+        if (getYearFromCell(raw) != null) continue;
         if (isLikelyReferenceValue(raw)) continue;
         if (isLikelyDateOrEffectiveDateText(raw)) continue;
         if (isLikelyNarrativeLine(raw)) continue;
+        if (isQuarterOrPeriodCell(raw)) continue;
 
         const n = parseNumberSmart(raw);
         if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) continue;
@@ -1734,9 +1823,10 @@ module.exports = async function (context, req) {
       if (!finalLabel) return "";
 
       if (isNumericOnlyText(finalLabel)) return "";
-      if (isYearCell(finalLabel)) return "";
+      if (getYearFromCell(finalLabel) != null) return "";
       if (isLikelyDateOrEffectiveDateText(finalLabel)) return "";
       if (isLikelyNarrativeLine(finalLabel)) return "";
+      if (isQuarterOrPeriodCell(finalLabel)) return "";
 
       return finalLabel;
     }
@@ -1759,8 +1849,9 @@ module.exports = async function (context, req) {
           }))
           .filter((x) => x.raw !== "")
           .filter((x) => x.num != null)
-          .filter((x) => !isYearCell(x.raw))
+          .filter((x) => getYearFromCell(x.raw) == null)
           .filter((x) => !isLikelyReferenceValue(x.raw))
+          .filter((x) => !isLikelyDateOrEffectiveDateText(x.raw))
           .filter((x) => x.idx !== header?.noteCol)
           .filter((x) => x.idx !== header?.labelCol)
           .sort((a, b) => a.idx - b.idx);
@@ -1814,8 +1905,22 @@ module.exports = async function (context, req) {
         return { ok: false, reason: "numeric_label" };
       }
 
-      if (isLikelyDateOrEffectiveDateText(label) || isLikelyNarrativeLine(label)) {
+      if (getYearFromCell(label) != null) {
+        return { ok: false, reason: "date_header_row" };
+      }
+
+      if (isLikelyDateOrEffectiveDateText(label) || isLikelyNarrativeLine(label) || isQuarterOrPeriodCell(label)) {
         return { ok: false, reason: "narrative_label" };
+      }
+
+      if (
+        labelNorm.includes("ديسمبر") ||
+        labelNorm.includes("يناير") ||
+        labelNorm.includes("december") ||
+        labelNorm.includes("january") ||
+        labelNorm.includes("as of")
+      ) {
+        return { ok: false, reason: "date_header_row" };
       }
 
       if (statementKey === "cashflow") {
@@ -1846,7 +1951,7 @@ module.exports = async function (context, req) {
     function dedupeItems(items) {
       const map = new Map();
 
-      for (const item of (items || [])) {
+      for (const item of (items || []) ) {
         const key = normalizeText(item.label);
         if (!key) continue;
 
@@ -2010,12 +2115,12 @@ module.exports = async function (context, req) {
           previousCol: primaryHeader.previousCol != null ? primaryHeader.previousCol : localHeader.previousCol,
           noteCol: primaryHeader.noteCol != null ? primaryHeader.noteCol : localHeader.noteCol,
           labelCol: primaryHeader.labelCol != null ? primaryHeader.labelCol : localHeader.labelCol,
-          headerRowIndex: localHeader.headerRowIndex,
+          headerRowIndex: localHeader.headerRowIndex != null ? localHeader.headerRowIndex : primaryHeader.headerRowIndex,
           resolutionMode: primaryHeader.resolutionMode || localHeader.resolutionMode
         };
 
-        const startRowIndex = localHeader.headerRowIndex != null
-          ? localHeader.headerRowIndex + 1
+        const startRowIndex = header.headerRowIndex != null
+          ? header.headerRowIndex + 1
           : (t === 0 ? 1 : 0);
 
         for (let i = startRowIndex; i < metaRows.length; i += 1) {
@@ -2289,8 +2394,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.1",
-      phase: "4B_rewrite_plus",
+      engine: "extract-financial-v5.2",
+      phase: "4B_rewrite_plus_headerfix",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2338,10 +2443,11 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v5.1 adds stronger page guardrails against standards, narrative, effective-date and comprehensive-income confusion",
+          "v5.2 improves headerRowIndex detection when notes/date headers are present without isolated year cells",
+          "date-like headers such as 31 December 2025 / 31 ديسمبر 2025 are now blocked from row extraction",
           "supported profiles now include bank, operating_company, insurance and reit",
           "page selection priority remains: statement title -> header structure -> structural keywords -> numbers density -> soft order",
-          "header detection now checks deeper header rows and supports merged year headers",
+          "header detection now checks deeper header rows and supports merged year/date headers",
           "row extraction blocks numeric-only, date/effective-date and narrative labels",
           "multi-page extraction now needs stronger compatibility signals before extending",
           "response shape remains compatible with the existing architecture"
