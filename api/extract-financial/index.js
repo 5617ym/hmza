@@ -66,10 +66,6 @@ module.exports = async function (context, req) {
       return Number.isFinite(n) ? n : fallback;
     }
 
-    function clamp(n, min, max) {
-      return Math.max(min, Math.min(max, n));
-    }
-
     function parseNumberSmart(value) {
       if (value == null) return null;
       let s = String(value).trim();
@@ -252,10 +248,6 @@ module.exports = async function (context, req) {
       return [r0, r1, r2];
     }
 
-    function countYearCellsInRow(row) {
-      return (row || []).filter((x) => isYearCell(x)).length;
-    }
-
     function detectHeaderColumns(rows) {
       const headerCandidates = getHeaderCandidates(rows);
 
@@ -393,7 +385,9 @@ module.exports = async function (context, req) {
           "income statement",
           "statement of income",
           "statement of cash flows",
-          "cash flow statement"
+          "cash flow statement",
+          "statement of profit or loss",
+          "statement of comprehensive income"
         ]);
 
       const hasYearHeaderLikeStatement =
@@ -418,7 +412,9 @@ module.exports = async function (context, req) {
           "موافقه مجلس الاداره",
           "موافقة مجلس الإدارة",
           "الفهرس",
-          "جدول المحتويات"
+          "جدول المحتويات",
+          "independent auditor",
+          "table of contents"
         ]) &&
         textContainsAny(normalizedAllText, [
           "قائمه المركز المالي الموحده",
@@ -426,7 +422,10 @@ module.exports = async function (context, req) {
           "قائمه الدخل الموحده",
           "قائمة الدخل الموحدة",
           "قائمه التدفقات النقديه الموحده",
-          "قائمة التدفقات النقدية الموحدة"
+          "قائمة التدفقات النقدية الموحدة",
+          "statement of financial position",
+          "statement of profit or loss",
+          "statement of cash flows"
         ]);
 
       const isLikelyStandardsPage =
@@ -442,7 +441,10 @@ module.exports = async function (context, req) {
           "إفصاح",
           "السياسات المحاسبية",
           "السياسة المحاسبية",
-          "السياسات المحاسبيه"
+          "السياسات المحاسبيه",
+          "accounting policies",
+          "financial instruments",
+          "risk management"
         ]) &&
         !hasYearHeaderLikeStatement;
 
@@ -459,7 +461,10 @@ module.exports = async function (context, req) {
           "حقوق الأقلية",
           "قائمة التغيرات في حقوق الملكية",
           "قائمة التغيرات في حقوق المساهمين",
-          "statement of changes in equity"
+          "statement of changes in equity",
+          "retained earnings",
+          "treasury shares",
+          "non-controlling interests"
         ]);
 
       return {
@@ -502,162 +507,639 @@ module.exports = async function (context, req) {
     const pageContexts = allPageNumbers.map((p) => buildPageContext(p, allPageNumbers));
 
     // =========================
-    // Statement Config
+    // Sector Detection Engine
     // =========================
 
-    const STATEMENTS = {
-      balance: {
-        key: "balance",
-        positiveTitles: [
-          "قائمة المركز المالي",
-          "المركز المالي",
-          "قائمة الوضع المالي",
-          "الميزانية",
-          "الميزانية العمومية",
-          "statement of financial position",
-          "financial position",
-          "balance sheet"
-        ],
-        positiveKeywords: [
-          "الاصول",
-          "الموجودات",
-          "الالتزامات",
-          "المطلوبات",
-          "حقوق الملكية",
-          "حقوق المساهمين",
-          "اجمالي الاصول",
-          "اجمالي الموجودات",
-          "اجمالي الالتزامات",
-          "اجمالي المطلوبات",
-          "اجمالي حقوق الملكية",
-          "current assets",
-          "non-current assets",
-          "total assets",
-          "equity",
-          "liabilities",
-          "total liabilities",
-          "نقد وارصده لدى البنوك المركزيه",
-          "نقد وارصدة لدى البنوك المركزية",
-          "ودائع العملاء",
-          "تمويل وسلف",
-          "استثمارات بصافي"
-        ],
-        strongStructureKeywords: [
-          "اجمالي الموجودات",
-          "اجمالي المطلوبات",
-          "اجمالي المطلوبات وحقوق الملكيه",
-          "الموجودات",
-          "المطلوبات",
-          "حقوق الملكيه",
-          "ودائع العملاء",
-          "ارصده لدى البنوك والمؤسسات الماليه الاخرى",
-          "نقد وارصده لدى البنوك المركزيه"
-        ],
-        negativeKeywords: [
-          "قائمة الدخل",
-          "الدخل الشامل",
-          "قائمة التدفقات النقدية",
-          "التغيرات في حقوق الملكية",
-          "statement of income",
-          "comprehensive income",
-          "cash flow",
-          "changes in equity",
-          "الانشطة التشغيلية",
-          "الانشطة الاستثمارية",
-          "الانشطة التمويلية"
-        ]
-      },
-
-      income: {
-        key: "income",
-        positiveTitles: [
-          "قائمة الدخل",
-          "قائمة الدخل الموحدة",
-          "قائمة الارباح والخسائر",
-          "قائمة الربح والخسارة",
-          "بيان الارباح",
-          "statement of income",
-          "income statement",
-          "profit and loss",
-          "profit or loss"
-        ],
+    const PROFILES = {
+      bank: {
+        key: "bank",
         positiveKeywords: [
           "الدخل من التمويل",
+          "التمويل والاستثمارات",
           "رسوم الخدمات المصرفية",
           "اجمالي دخل العمليات",
-          "اجمالي مصاريف العمليات",
-          "دخل السنة قبل الزكاة",
-          "صافي دخل السنة",
-          "ربحية السهم",
-          "operating income",
-          "net income",
-          "earnings per share"
-        ],
-        strongStructureKeywords: [
-          "اجمالي دخل العمليات",
-          "اجمالي مصاريف العمليات",
-          "دخل السنة قبل الزكاه",
-          "صافي دخل السنه",
-          "ربحيه السهم",
-          "الدخل من التمويل والاستثمارات",
-          "المصاريف على ودائع العملاء لاجل والبنوك والمؤسسات الماليه الاخرى"
+          "ودائع العملاء",
+          "البنوك المركزية",
+          "المؤسسات المالية الاخرى",
+          "تمويل وسلف",
+          "صكوك",
+          "special commission",
+          "customer deposits",
+          "central banks",
+          "due from banks",
+          "due to banks",
+          "financing and advances",
+          "commission income"
         ],
         negativeKeywords: [
-          "الدخل الشامل",
-          "قائمة الدخل الشامل",
-          "قائمة التغيرات في حقوق الملكية",
-          "التغيرات في حقوق الملكية",
-          "قائمة المركز المالي",
-          "قائمة التدفقات النقدية",
-          "other comprehensive income",
-          "comprehensive income",
-          "changes in equity",
-          "statement of financial position",
-          "cash flow"
+          "revenue",
+          "cost of sales",
+          "gross profit",
+          "inventories",
+          "selling and distribution expenses",
+          "statement of profit or loss",
+          "profit or loss"
+        ]
+      },
+      operating_company: {
+        key: "operating_company",
+        positiveKeywords: [
+          "الايرادات",
+          "المبيعات",
+          "تكلفة المبيعات",
+          "تكلفة الايرادات",
+          "مجمل الربح",
+          "الربح التشغيلي",
+          "المخزون",
+          "المدينون التجاريون",
+          "الموردون",
+          "revenue",
+          "sales",
+          "cost of sales",
+          "cost of revenue",
+          "gross profit",
+          "operating profit",
+          "inventories",
+          "trade receivables",
+          "trade payables",
+          "selling and distribution expenses",
+          "general and administrative expenses",
+          "statement of profit or loss"
+        ],
+        negativeKeywords: [
+          "ودائع العملاء",
+          "البنوك المركزية",
+          "المؤسسات المالية الاخرى",
+          "special commission",
+          "customer deposits",
+          "central banks",
+          "due from banks",
+          "due to banks"
+        ]
+      }
+    };
+
+    function detectStatementProfile() {
+      const fullText = pageContexts.map((p) => p.structuralHintsText || "").join("\n\n");
+      const profileScores = {};
+
+      for (const key of Object.keys(PROFILES)) {
+        const cfg = PROFILES[key];
+        const positive = countKeywordHits(fullText, cfg.positiveKeywords);
+        const negative = countKeywordHits(fullText, cfg.negativeKeywords);
+        profileScores[key] = (positive * 8) - (negative * 5);
+      }
+
+      const bankScore = safeNumber(profileScores.bank, 0);
+      const operatingScore = safeNumber(profileScores.operating_company, 0);
+
+      const statementProfile = bankScore > operatingScore
+        ? "bank"
+        : "operating_company";
+
+      return {
+        statementProfile,
+        scores: profileScores,
+        reason: statementProfile === "bank"
+          ? "bank keywords stronger than operating-company keywords"
+          : "operating-company keywords stronger than bank keywords"
+      };
+    }
+
+    const profileDetection = detectStatementProfile();
+    const statementProfile = profileDetection.statementProfile;
+
+    // =========================
+    // Statement Config by Profile
+    // =========================
+
+    const PROFILE_STATEMENTS = {
+      bank: {
+        balance: {
+          key: "balance",
+          positiveTitles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "قائمة الوضع المالي",
+            "الميزانية",
+            "الميزانية العمومية",
+            "statement of financial position",
+            "financial position",
+            "balance sheet"
+          ],
+          positiveKeywords: [
+            "الاصول",
+            "الموجودات",
+            "الالتزامات",
+            "المطلوبات",
+            "حقوق الملكية",
+            "حقوق المساهمين",
+            "اجمالي الاصول",
+            "اجمالي الموجودات",
+            "اجمالي الالتزامات",
+            "اجمالي المطلوبات",
+            "اجمالي حقوق الملكية",
+            "current assets",
+            "non-current assets",
+            "total assets",
+            "equity",
+            "liabilities",
+            "total liabilities",
+            "نقد وارصده لدى البنوك المركزيه",
+            "نقد وارصدة لدى البنوك المركزية",
+            "ودائع العملاء",
+            "تمويل وسلف",
+            "استثمارات بصافي"
+          ],
+          strongStructureKeywords: [
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات",
+            "اجمالي المطلوبات وحقوق الملكيه",
+            "الموجودات",
+            "المطلوبات",
+            "حقوق الملكيه",
+            "ودائع العملاء",
+            "ارصده لدى البنوك والمؤسسات الماليه الاخرى",
+            "نقد وارصده لدى البنوك المركزيه"
+          ],
+          negativeKeywords: [
+            "قائمة الدخل",
+            "الدخل الشامل",
+            "قائمة التدفقات النقدية",
+            "التغيرات في حقوق الملكية",
+            "statement of income",
+            "comprehensive income",
+            "cash flow",
+            "changes in equity",
+            "الانشطة التشغيلية",
+            "الانشطة الاستثمارية",
+            "الانشطة التمويلية"
+          ]
+        },
+
+        income: {
+          key: "income",
+          positiveTitles: [
+            "قائمة الدخل",
+            "قائمة الدخل الموحدة",
+            "قائمة الارباح والخسائر",
+            "قائمة الربح والخسارة",
+            "بيان الارباح",
+            "statement of income",
+            "income statement",
+            "profit and loss",
+            "profit or loss"
+          ],
+          positiveKeywords: [
+            "الدخل من التمويل",
+            "رسوم الخدمات المصرفية",
+            "اجمالي دخل العمليات",
+            "اجمالي مصاريف العمليات",
+            "دخل السنة قبل الزكاة",
+            "صافي دخل السنة",
+            "ربحية السهم",
+            "operating income",
+            "net income",
+            "earnings per share"
+          ],
+          strongStructureKeywords: [
+            "اجمالي دخل العمليات",
+            "اجمالي مصاريف العمليات",
+            "دخل السنة قبل الزكاه",
+            "صافي دخل السنه",
+            "ربحيه السهم",
+            "الدخل من التمويل والاستثمارات",
+            "المصاريف على ودائع العملاء لاجل والبنوك والمؤسسات الماليه الاخرى"
+          ],
+          negativeKeywords: [
+            "الدخل الشامل",
+            "قائمة الدخل الشامل",
+            "قائمة التغيرات في حقوق الملكية",
+            "التغيرات في حقوق الملكية",
+            "قائمة المركز المالي",
+            "قائمة التدفقات النقدية",
+            "other comprehensive income",
+            "comprehensive income",
+            "changes in equity",
+            "statement of financial position",
+            "cash flow"
+          ]
+        },
+
+        cashflow: {
+          key: "cashflow",
+          positiveTitles: [
+            "قائمة التدفقات النقدية",
+            "بيان التدفقات النقدية",
+            "التدفقات النقدية",
+            "cash flow statement",
+            "statement of cash flows",
+            "cash flows"
+          ],
+          positiveKeywords: [
+            "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد المستخدم في الانشطة الاستثمارية",
+            "صافي النقد الناتج من الانشطة التمويلية",
+            "النقد وشبه النقد",
+            "operating activities",
+            "investing activities",
+            "financing activities",
+            "cash and cash equivalents"
+          ],
+          strongStructureKeywords: [
+            "صافي النقد الناتج من الانشطه التشغيليه",
+            "صافي النقد المستخدم في الانشطه الاستثماريه",
+            "صافي النقد الناتج من الانشطه التمويليه",
+            "النقد وشبه النقد في بدايه السنه",
+            "النقد وشبه النقد في نهايه السنه",
+            "الانشطه التشغيليه",
+            "الانشطه الاستثماريه",
+            "الانشطه التمويليه"
+          ],
+          negativeKeywords: [
+            "قائمة الدخل",
+            "الدخل الشامل",
+            "قائمة المركز المالي",
+            "قائمة التغيرات في حقوق الملكية",
+            "income statement",
+            "comprehensive income",
+            "financial position",
+            "changes in equity",
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات"
+          ]
+        }
+      },
+
+      operating_company: {
+        balance: {
+          key: "balance",
+          positiveTitles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "قائمة الوضع المالي",
+            "الميزانية",
+            "الميزانية العمومية",
+            "statement of financial position",
+            "financial position",
+            "balance sheet"
+          ],
+          positiveKeywords: [
+            "assets",
+            "liabilities",
+            "equity",
+            "total assets",
+            "total liabilities",
+            "total equity",
+            "inventories",
+            "trade receivables",
+            "trade payables",
+            "cash and cash equivalents",
+            "property plant and equipment",
+            "right-of-use assets",
+            "deferred tax",
+            "current assets",
+            "non-current assets",
+            "current liabilities",
+            "non-current liabilities",
+            "الاصول",
+            "الموجودات",
+            "المطلوبات",
+            "حقوق الملكية",
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات",
+            "المخزون",
+            "النقد وما في حكمه",
+            "المدينون التجاريون",
+            "الدائنون التجاريون"
+          ],
+          strongStructureKeywords: [
+            "total assets",
+            "total liabilities",
+            "total equity",
+            "total liabilities and equity",
+            "current assets",
+            "non-current assets",
+            "current liabilities",
+            "non-current liabilities",
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات",
+            "اجمالي حقوق الملكيه",
+            "اجمالي المطلوبات وحقوق الملكيه"
+          ],
+          negativeKeywords: [
+            "special commission",
+            "customer deposits",
+            "central banks",
+            "due from banks",
+            "due to banks",
+            "statement of cash flows",
+            "statement of profit or loss"
+          ]
+        },
+
+        income: {
+          key: "income",
+          positiveTitles: [
+            "قائمة الدخل",
+            "قائمة الارباح والخسائر",
+            "قائمة الربح والخسارة",
+            "statement of profit or loss",
+            "statement of income",
+            "income statement",
+            "profit and loss",
+            "profit or loss"
+          ],
+          positiveKeywords: [
+            "revenue",
+            "sales",
+            "cost of sales",
+            "cost of revenue",
+            "gross profit",
+            "operating profit",
+            "profit before zakat and income tax",
+            "profit before income tax",
+            "profit for the year",
+            "earnings per share",
+            "selling and distribution expenses",
+            "general and administrative expenses",
+            "finance cost",
+            "الايرادات",
+            "تكلفة المبيعات",
+            "مجمل الربح",
+            "الربح التشغيلي",
+            "صافي الربح",
+            "ربحية السهم"
+          ],
+          strongStructureKeywords: [
+            "revenue",
+            "cost of sales",
+            "gross profit",
+            "operating profit",
+            "profit before zakat and income tax",
+            "profit for the year",
+            "earnings per share",
+            "selling and distribution expenses",
+            "general and administrative expenses",
+            "الايرادات",
+            "تكلفه المبيعات",
+            "مجمل الربح",
+            "الربح التشغيلي"
+          ],
+          negativeKeywords: [
+            "customer deposits",
+            "central banks",
+            "due from banks",
+            "due to banks",
+            "statement of financial position",
+            "statement of cash flows",
+            "statement of changes in equity"
+          ]
+        },
+
+        cashflow: {
+          key: "cashflow",
+          positiveTitles: [
+            "قائمة التدفقات النقدية",
+            "بيان التدفقات النقدية",
+            "cash flow statement",
+            "statement of cash flows",
+            "cash flows",
+            "consolidated statement of cash flows"
+          ],
+          positiveKeywords: [
+            "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities",
+            "net cash from operating activities",
+            "cash and cash equivalents",
+            "operating activities",
+            "investing activities",
+            "financing activities",
+            "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد المستخدم في الانشطة الاستثمارية",
+            "صافي النقد الناتج من الانشطة التمويلية"
+          ],
+          strongStructureKeywords: [
+            "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities",
+            "cash and cash equivalents at 31 december",
+            "cash and cash equivalents at 1 january",
+            "net cash from operating activities",
+            "net cash used in investing activities",
+            "net cash from financing activities",
+            "صافي النقد الناتج من الانشطه التشغيليه",
+            "صافي النقد المستخدم في الانشطه الاستثماريه",
+            "صافي النقد الناتج من الانشطه التمويليه"
+          ],
+          negativeKeywords: [
+            "statement of financial position",
+            "statement of profit or loss",
+            "gross profit",
+            "total assets",
+            "total liabilities"
+          ]
+        }
+      }
+    };
+
+    const STATEMENTS = PROFILE_STATEMENTS[statementProfile] || PROFILE_STATEMENTS.bank;
+
+    // =========================
+    // Synthetic Labels by Profile
+    // =========================
+
+    const SYNTHETIC_LABELS = {
+      bank: {
+        balance: [
+          "نقد وأرصدة لدى البنوك المركزية",
+          "أرصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي",
+          "استثمارات بالصافي",
+          "تمويل وسلف بالصافي",
+          "القيمة العادلة الموجبة للمشتقات",
+          "ممتلكات ومعدات وبرامج بالصافي",
+          "الشهرة",
+          "موجودات غير ملموسة بالصافي",
+          "حق استخدام الموجودات بالصافي",
+          "موجودات أخرى",
+          "إجمالي الموجودات",
+          "أرصدة للبنوك والبنوك المركزية والمؤسسات المالية الأخرى",
+          "ودائع العملاء",
+          "صكوك وسندات دين مصدرة وقروض لأجل",
+          "القيمة العادلة السالبة للمشتقات",
+          "مطلوبات أخرى",
+          "إجمالي المطلوبات",
+          "رأس المال",
+          "علاوة رأس المال",
+          "أسهم خزينة",
+          "احتياطي نظامي",
+          "احتياطيات أخرى",
+          "أرباح مبقاة",
+          "حقوق الملكية العائدة لمساهمي البنك",
+          "صكوك الشريحة الأولى",
+          "إجمالي حقوق الملكية بدون حقوق الأقلية",
+          "حقوق الأقلية",
+          "إجمالي حقوق الملكية",
+          "إجمالي المطلوبات وحقوق الملكية"
+        ],
+        income: [
+          "الدخل من التمويل والاستثمارات",
+          "المصاريف على ودائع العملاء لأجل والبنوك والمؤسسات المالية الأخرى",
+          "الدخل من التمويل والاستثمارات بالصافي",
+          "الدخل من رسوم الخدمات المصرفية",
+          "المصاريف من رسوم الخدمات المصرفية",
+          "الدخل من رسوم الخدمات المصرفية بالصافي",
+          "دخل تحويل عملات أجنبية بالصافي",
+          "مكاسب الأدوات المالية المدرجة بقيمتها العادلة في قائمة الدخل بالصافي",
+          "دخل متاجرة بالصافي",
+          "دخل توزيعات أرباح",
+          "مكاسب من الأدوات المالية غير المدرجة بقيمتها العادلة في قائمة الدخل بالصافي",
+          "مصاريف عمليات أخرى بالصافي",
+          "إجمالي دخل العمليات التشغيلية",
+          "رواتب ومصاريف الموظفين",
+          "إيجارات ومصاريف المباني",
+          "إهلاك/إطفاء ممتلكات ومعدات وبرامج وحق استخدام الموجودات",
+          "إطفاء موجودات غير ملموسة",
+          "مصاريف عمومية وإدارية أخرى",
+          "إجمالي مصاريف العمليات التشغيلية قبل خسائر الائتمان المتوقعة",
+          "مخصص الانخفاض/(الاسترداد) لخسائر الائتمان المتوقعة بالصافي",
+          "إجمالي مصاريف العمليات التشغيلية",
+          "دخل من العمليات التشغيلية بالصافي",
+          "دخل/(مصاريف) العمليات غير التشغيلية الأخرى بالصافي",
+          "دخل السنة قبل الزكاة وضريبة الدخل",
+          "مصروف الزكاة وضريبة الدخل",
+          "صافي دخل السنة",
+          "صافي دخل السنة العائد إلى مساهمي البنك",
+          "حقوق الأقلية",
+          "صافي دخل السنة",
+          "ربحية السهم الأساسية",
+          "ربحية السهم المخفضة"
+        ],
+        cashflow: [
+          "دخل السنة قبل الزكاة وضريبة الدخل",
+          "تعديلات لمطابقة دخل السنة قبل الزكاة وضريبة الدخل إلى صافي النقد الناتج من/(المستخدم في) الأنشطة التشغيلية",
+          "استهلاك/إطفاء وإهلاك",
+          "خسائر/مكاسب أخرى",
+          "حصة من نتائج شركات زميلة",
+          "مصاريف أخرى غير نقدية",
+          "إهلاك/إطفاء ممتلكات ومعدات وبرامج وحق استخدام الموجودات",
+          "مخصص الانخفاض/(الاسترداد) لخسائر الائتمان المتوقعة بالصافي",
+          "إطفاء موجودات غير ملموسة",
+          "مصروف برنامج أسهم الموظفين",
+          "صافي الخسارة/(المكاسب) النقدية من تطبيق معيار المحاسبة الدولي 29",
+          "صافي الزيادة/(النقص) في الموجودات التشغيلية",
+          "صافي الزيادة/(النقص) في المطلوبات التشغيلية",
+          "صافي النقد الناتج من/(المستخدم في) الأنشطة التشغيلية",
+          "الأنشطة الاستثمارية",
+          "صافي النقد الناتج من/(المستخدم في) الأنشطة الاستثمارية",
+          "الأنشطة التمويلية",
+          "صافي النقد الناتج من/(المستخدم في) الأنشطة التمويلية",
+          "صافي الزيادة/(النقص) في النقد وشبه النقد",
+          "احتياطي فرق العملة الأجنبية - صافي الحركة للنقد وشبه النقد في بداية السنة",
+          "النقد وشبه النقد في بداية السنة",
+          "النقد وشبه النقد في نهاية السنة"
         ]
       },
 
-      cashflow: {
-        key: "cashflow",
-        positiveTitles: [
-          "قائمة التدفقات النقدية",
-          "بيان التدفقات النقدية",
-          "التدفقات النقدية",
-          "cash flow statement",
-          "statement of cash flows",
-          "cash flows"
+      operating_company: {
+        balance: [
+          "الممتلكات والمعدات والآلات",
+          "الدفعات المقدمة طويلة الأجل",
+          "أصول حق الاستخدام",
+          "موجودات غير ملموسة وشهرة",
+          "الأصول الحيوية",
+          "الاستثمارات",
+          "المشتقات المالية",
+          "الضريبة المؤجلة",
+          "إجمالي الأصول غير المتداولة",
+          "المخزون",
+          "الأصول الحيوية المتداولة",
+          "المدينون التجاريون والدفعات المقدمة والذمم الأخرى",
+          "المشتقات المالية المتداولة",
+          "النقد وما في حكمه",
+          "إجمالي الأصول المتداولة",
+          "إجمالي الموجودات",
+          "رأس المال",
+          "الاحتياطي النظامي",
+          "أسهم خزينة",
+          "احتياطيات أخرى",
+          "أرباح مبقاة",
+          "حقوق الملكية العائدة للمساهمين",
+          "حقوق أقلية",
+          "إجمالي حقوق الملكية",
+          "قروض والتزامات طويلة الأجل",
+          "التزامات عقود الإيجار",
+          "مكافآت نهاية الخدمة",
+          "مشتقات مالية غير متداولة",
+          "ضرائب مؤجلة",
+          "إجمالي المطلوبات غير المتداولة",
+          "السحب على المكشوف والقروض قصيرة الأجل",
+          "الجزء المتداول من القروض",
+          "الجزء المتداول من التزامات الإيجار",
+          "الزكاة والضرائب",
+          "ضريبة دخل مستحقة",
+          "الدائنون التجاريون والذمم الأخرى",
+          "مشتقات مالية متداولة",
+          "إجمالي المطلوبات المتداولة",
+          "إجمالي المطلوبات",
+          "إجمالي المطلوبات وحقوق الملكية"
         ],
-        positiveKeywords: [
-          "صافي النقد الناتج من الانشطة التشغيلية",
-          "صافي النقد المستخدم في الانشطة الاستثمارية",
-          "صافي النقد الناتج من الانشطة التمويلية",
-          "النقد وشبه النقد",
-          "operating activities",
-          "investing activities",
-          "financing activities",
-          "cash and cash equivalents"
+        income: [
+          "الإيرادات",
+          "تكلفة المبيعات",
+          "مجمل الربح",
+          "مصاريف البيع والتوزيع",
+          "المصاريف العمومية والإدارية",
+          "مصاريف تشغيلية أخرى",
+          "خسائر انخفاض في الأصول المالية",
+          "الربح التشغيلي",
+          "تكلفة التمويل",
+          "حصة من نتائج شركات زميلة",
+          "الربح قبل الزكاة وضريبة الدخل",
+          "الزكاة",
+          "ضريبة الدخل",
+          "ربح السنة",
+          "ربح السنة العائد إلى مساهمي الشركة",
+          "حقوق الأقلية",
+          "ربح السنة",
+          "ربحية السهم الأساسية",
+          "ربحية السهم المخفضة"
         ],
-        strongStructureKeywords: [
-          "صافي النقد الناتج من الانشطه التشغيليه",
-          "صافي النقد المستخدم في الانشطه الاستثماريه",
-          "صافي النقد الناتج من الانشطه التمويليه",
-          "النقد وشبه النقد في بدايه السنه",
-          "النقد وشبه النقد في نهايه السنه",
-          "الانشطه التشغيليه",
-          "الانشطه الاستثماريه",
-          "الانشطه التمويليه"
-        ],
-        negativeKeywords: [
-          "قائمة الدخل",
-          "الدخل الشامل",
-          "قائمة المركز المالي",
-          "قائمة التغيرات في حقوق الملكية",
-          "income statement",
-          "comprehensive income",
-          "financial position",
-          "changes in equity",
-          "اجمالي الموجودات",
-          "اجمالي المطلوبات"
+        cashflow: [
+          "ربح السنة",
+          "تعديلات لبنود غير نقدية",
+          "استهلاك ممتلكات ومعدات",
+          "إطفاء موجودات غير ملموسة",
+          "إهلاك أصول حق الاستخدام",
+          "حصة من نتائج شركات زميلة",
+          "تكلفة التمويل",
+          "الزكاة",
+          "ضريبة الدخل",
+          "التغيرات في رأس المال العامل",
+          "المخزون",
+          "الأصول الحيوية",
+          "المدينون التجاريون والدفعات المقدمة والذمم الأخرى",
+          "الدائنون التجاريون والذمم الأخرى",
+          "النقد الناتج من العمليات",
+          "مكافآت نهاية الخدمة المدفوعة",
+          "الزكاة وضريبة الدخل المدفوعة",
+          "صافي النقد الناتج من الأنشطة التشغيلية",
+          "اقتناء شركات تابعة",
+          "إضافات إلى الممتلكات والمعدات",
+          "إضافات إلى الموجودات غير الملموسة",
+          "إضافات إلى الأصول الحيوية",
+          "المتحصلات من بيع أصول",
+          "صافي النقد المستخدم في الأنشطة الاستثمارية",
+          "المتحصلات من القروض",
+          "سداد القروض",
+          "تكلفة التمويل المدفوعة",
+          "توزيعات أرباح مدفوعة",
+          "مدفوعات التزامات الإيجار",
+          "صافي النقد الناتج من الأنشطة التمويلية",
+          "صافي التغير في النقد وما في حكمه",
+          "النقد وما في حكمه في بداية السنة",
+          "النقد وما في حكمه في نهاية السنة"
         ]
       }
     };
@@ -695,7 +1177,7 @@ module.exports = async function (context, req) {
 
       const strongStructureHits = countKeywordHits(structuralText, cfg.strongStructureKeywords || []);
       if (strongStructureHits > 0) {
-        const bonus = Math.min(strongStructureHits, 6) * 14;
+        const bonus = Math.min(strongStructureHits, 8) * 14;
         score += bonus;
         reasons.push(`strongStructureHits:+${bonus}`);
       }
@@ -731,7 +1213,7 @@ module.exports = async function (context, req) {
         reasons.push("tooManyCols:-18");
       }
 
-      if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 40) {
+      if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 50) {
         score += 14;
         reasons.push("goodRowRange:+14");
       }
@@ -756,7 +1238,6 @@ module.exports = async function (context, req) {
         reasons.push("years2:+10");
       }
 
-      // Soft position only: no exclusion, only weak bias
       const pos = pageCtx.positionRatio;
       if (pos <= 0.30) {
         score += 8;
@@ -793,7 +1274,11 @@ module.exports = async function (context, req) {
           "اجمالي المطلوبات وحقوق الملكيه",
           "الموجودات",
           "المطلوبات",
-          "حقوق الملكيه"
+          "حقوق الملكيه",
+          "total assets",
+          "total liabilities",
+          "total equity",
+          "total liabilities and equity"
         ])) {
           score += 34;
           reasons.push("balanceStructure:+34");
@@ -806,7 +1291,13 @@ module.exports = async function (context, req) {
           "اجمالي مصاريف العمليات",
           "دخل السنه قبل الزكاه",
           "صافي دخل السنه",
-          "ربحيه السهم"
+          "ربحيه السهم",
+          "revenue",
+          "cost of sales",
+          "gross profit",
+          "operating profit",
+          "earnings per share",
+          "profit for the year"
         ])) {
           score += 34;
           reasons.push("incomeStructure:+34");
@@ -819,7 +1310,11 @@ module.exports = async function (context, req) {
           "صافي النقد المستخدم في الانشطه الاستثماريه",
           "صافي النقد الناتج من الانشطه التمويليه",
           "النقد وشبه النقد في بدايه السنه",
-          "النقد وشبه النقد في نهايه السنه"
+          "النقد وشبه النقد في نهايه السنه",
+          "cash flows from operating activities",
+          "cash flows from investing activities",
+          "cash flows from financing activities",
+          "cash and cash equivalents at 31 december"
         ])) {
           score += 38;
           reasons.push("cashflowStructure:+38");
@@ -898,22 +1393,22 @@ module.exports = async function (context, req) {
       else if (incomePage === cashFlowPage) score += 2;
       else score -= 30;
 
-      if (bi >= 1 && bi <= 4) score += 18;
-      else if (bi > 6) score -= Math.min((bi - 6) * 2, 20);
+      if (bi >= 1 && bi <= 5) score += 18;
+      else if (bi > 7) score -= Math.min((bi - 7) * 2, 20);
 
-      if (ic >= 1 && ic <= 6) score += 18;
-      else if (ic > 8) score -= Math.min((ic - 8) * 2, 24);
+      if (ic >= 1 && ic <= 7) score += 18;
+      else if (ic > 9) score -= Math.min((ic - 9) * 2, 24);
 
-      if (bc >= 2 && bc <= 10) score += 12;
-      else if (bc > 12) score -= Math.min((bc - 12) * 1.5, 24);
+      if (bc >= 2 && bc <= 12) score += 12;
+      else if (bc > 14) score -= Math.min((bc - 14) * 1.5, 24);
 
       return score;
     }
 
     function comboNeighborScore(balancePage, incomePage, cashFlowPage) {
       let score = 0;
-      const pages = [balancePage, incomePage, cashFlowPage];
-      const uniqCount = new Set(pages).size;
+      const pages3 = [balancePage, incomePage, cashFlowPage];
+      const uniqCount = new Set(pages3).size;
 
       if (uniqCount === 3) score += 18;
       if (uniqCount === 2) score -= 18;
@@ -923,7 +1418,7 @@ module.exports = async function (context, req) {
       if (incomePage === cashFlowPage) score -= 26;
       if (balancePage === cashFlowPage) score -= 34;
 
-      const spread = Math.max(...pages) - Math.min(...pages);
+      const spread = Math.max(...pages3) - Math.min(...pages3);
       if (spread <= 8) score += 16;
       else if (spread > 20) score -= Math.min(spread - 20, 30);
 
@@ -1035,103 +1530,9 @@ module.exports = async function (context, req) {
     }
 
     function getSyntheticLabel(statementKey, rowIndex) {
-      if (statementKey === "balance") {
-        const balanceLabels = [
-          "نقد وأرصدة لدى البنوك المركزية",
-          "أرصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي",
-          "استثمارات بالصافي",
-          "تمويل وسلف بالصافي",
-          "القيمة العادلة الموجبة للمشتقات",
-          "ممتلكات ومعدات وبرامج بالصافي",
-          "الشهرة",
-          "موجودات غير ملموسة بالصافي",
-          "حق استخدام الموجودات بالصافي",
-          "موجودات أخرى",
-          "إجمالي الموجودات",
-          "أرصدة للبنوك والبنوك المركزية والمؤسسات المالية الأخرى",
-          "ودائع العملاء",
-          "صكوك وسندات دين مصدرة وقروض لأجل",
-          "القيمة العادلة السالبة للمشتقات",
-          "مطلوبات أخرى",
-          "إجمالي المطلوبات",
-          "رأس المال",
-          "علاوة رأس المال",
-          "أسهم خزينة",
-          "احتياطي نظامي",
-          "احتياطيات أخرى",
-          "أرباح مبقاة",
-          "حقوق الملكية العائدة لمساهمي البنك",
-          "صكوك الشريحة الأولى",
-          "إجمالي حقوق الملكية بدون حقوق الأقلية",
-          "حقوق الأقلية",
-          "إجمالي حقوق الملكية",
-          "إجمالي المطلوبات وحقوق الملكية"
-        ];
-        return balanceLabels[rowIndex] || `balance_row_${rowIndex + 1}`;
-      }
-
-      if (statementKey === "income") {
-        const incomeLabels = [
-          "الدخل من التمويل والاستثمارات",
-          "المصاريف على ودائع العملاء لأجل والبنوك والمؤسسات المالية الأخرى",
-          "الدخل من التمويل والاستثمارات بالصافي",
-          "الدخل من رسوم الخدمات المصرفية",
-          "المصاريف من رسوم الخدمات المصرفية",
-          "الدخل من رسوم الخدمات المصرفية بالصافي",
-          "دخل تحويل عملات أجنبية بالصافي",
-          "مكاسب الأدوات المالية المدرجة بقيمتها العادلة في قائمة الدخل بالصافي",
-          "دخل متاجرة بالصافي",
-          "دخل توزيعات أرباح",
-          "مكاسب من الأدوات المالية غير المدرجة بقيمتها العادلة في قائمة الدخل بالصافي",
-          "مصاريف عمليات أخرى بالصافي",
-          "إجمالي دخل العمليات التشغيلية",
-          "رواتب ومصاريف الموظفين",
-          "إيجارات ومصاريف المباني",
-          "إهلاك/إطفاء ممتلكات ومعدات وبرامج وحق استخدام الموجودات",
-          "إطفاء موجودات غير ملموسة",
-          "مصاريف عمومية وإدارية أخرى",
-          "إجمالي مصاريف العمليات التشغيلية قبل خسائر الائتمان المتوقعة",
-          "مخصص الانخفاض/(الاسترداد) لخسائر الائتمان المتوقعة بالصافي",
-          "إجمالي مصاريف العمليات التشغيلية",
-          "دخل من العمليات التشغيلية بالصافي",
-          "دخل/(مصاريف) العمليات غير التشغيلية الأخرى بالصافي",
-          "دخل السنة قبل الزكاة وضريبة الدخل",
-          "مصروف الزكاة وضريبة الدخل",
-          "صافي دخل السنة",
-          "صافي دخل السنة العائد إلى مساهمي البنك",
-          "حقوق الأقلية",
-          "صافي دخل السنة",
-          "ربحية السهم الأساسية",
-          "ربحية السهم المخفضة"
-        ];
-        return incomeLabels[rowIndex] || `income_row_${rowIndex + 1}`;
-      }
-
-      const cashLabels = [
-        "دخل السنة قبل الزكاة وضريبة الدخل",
-        "تعديلات لمطابقة دخل السنة قبل الزكاة وضريبة الدخل إلى صافي النقد الناتج من/(المستخدم في) الأنشطة التشغيلية",
-        "استهلاك/إطفاء وإهلاك",
-        "خسائر/مكاسب أخرى",
-        "حصة من نتائج شركات زميلة",
-        "مصاريف أخرى غير نقدية",
-        "إهلاك/إطفاء ممتلكات ومعدات وبرامج وحق استخدام الموجودات",
-        "مخصص الانخفاض/(الاسترداد) لخسائر الائتمان المتوقعة بالصافي",
-        "إطفاء موجودات غير ملموسة",
-        "مصروف برنامج أسهم الموظفين",
-        "صافي الخسارة/(المكاسب) النقدية من تطبيق معيار المحاسبة الدولي 29",
-        "صافي الزيادة/(النقص) في الموجودات التشغيلية",
-        "صافي الزيادة/(النقص) في المطلوبات التشغيلية",
-        "صافي النقد الناتج من/(المستخدم في) الأنشطة التشغيلية",
-        "الأنشطة الاستثمارية",
-        "صافي النقد الناتج من/(المستخدم في) الأنشطة الاستثمارية",
-        "الأنشطة التمويلية",
-        "صافي النقد الناتج من/(المستخدم في) الأنشطة التمويلية",
-        "صافي الزيادة/(النقص) في النقد وشبه النقد",
-        "احتياطي فرق العملة الأجنبية - صافي الحركة للنقد وشبه النقد في بداية السنة",
-        "النقد وشبه النقد في بداية السنة",
-        "النقد وشبه النقد في نهاية السنة"
-      ];
-      return cashLabels[rowIndex] || `cashflow_row_${rowIndex + 1}`;
+      const labelsByProfile = SYNTHETIC_LABELS[statementProfile] || SYNTHETIC_LABELS.bank;
+      const labels = labelsByProfile[statementKey] || [];
+      return labels[rowIndex] || `${statementKey}_row_${rowIndex + 1}`;
     }
 
     function extractStatementLite(pageNumber, statementKey) {
@@ -1179,7 +1580,6 @@ module.exports = async function (context, req) {
       let previousCol = headerDetected.previousCol;
       let noteCol = headerDetected.noteCol;
 
-      // fallback if header row did not resolve
       if (latest == null || previous == null) {
         const pageYears = extractYears(pageCtx?.text || "");
         if (pageYears.length >= 2) {
@@ -1204,9 +1604,7 @@ module.exports = async function (context, req) {
         if (!numericCells.length) continue;
 
         if (currentCol == null || previousCol == null) {
-          const yearLikeTwoCols =
-            numericCells.filter((x) => Number.isFinite(x.num)).slice(0, 2);
-
+          const yearLikeTwoCols = numericCells.slice(0, 2);
           if (yearLikeTwoCols.length >= 2) {
             previousCol = yearLikeTwoCols[0].idx;
             currentCol = yearLikeTwoCols[1].idx;
@@ -1232,7 +1630,6 @@ module.exports = async function (context, req) {
         if (finalCurrent == null && finalPrevious == null) continue;
 
         const label = getSyntheticLabel(statementKey, items.length);
-
         items.push(buildItem(label, finalCurrent, finalPrevious, note));
       }
 
@@ -1279,23 +1676,102 @@ module.exports = async function (context, req) {
       };
     }
 
+    const STRUCTURED_MAPPINGS = {
+      bank: {
+        balance: {
+          cashAndBalancesWithCentralBanks: ["نقد وأرصدة لدى البنوك المركزية"],
+          dueFromBanksAndFinancialInstitutions: ["أرصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي"],
+          investments: ["استثمارات بالصافي"],
+          financingAndAdvances: ["تمويل وسلف بالصافي"],
+          totalAssets: ["إجمالي الموجودات"],
+          dueToBanks: ["أرصدة للبنوك والبنوك المركزية والمؤسسات المالية الأخرى"],
+          customerDeposits: ["ودائع العملاء"],
+          totalLiabilities: ["إجمالي المطلوبات"],
+          totalEquity: ["إجمالي حقوق الملكية"],
+          totalLiabilitiesAndEquity: ["إجمالي المطلوبات وحقوق الملكية"]
+        },
+        income: {
+          specialCommissionIncome: ["الدخل من التمويل والاستثمارات"],
+          specialCommissionExpense: ["المصاريف على ودائع العملاء لأجل والبنوك والمؤسسات المالية الأخرى"],
+          netSpecialCommissionIncome: ["الدخل من التمويل والاستثمارات بالصافي"],
+          feeAndCommissionIncomeNet: ["الدخل من رسوم الخدمات المصرفية بالصافي"],
+          totalOperatingIncome: ["إجمالي دخل العمليات التشغيلية"],
+          totalOperatingExpenses: ["إجمالي مصاريف العمليات التشغيلية"],
+          operatingIncomeNet: ["دخل من العمليات التشغيلية بالصافي"],
+          netIncomeBeforeZakatAndIncomeTax: ["دخل السنة قبل الزكاة وضريبة الدخل"],
+          zakatAndIncomeTax: ["مصروف الزكاة وضريبة الدخل"],
+          netIncome: ["صافي دخل السنة"],
+          basicEps: ["ربحية السهم الأساسية"],
+          dilutedEps: ["ربحية السهم المخفضة"]
+        },
+        cashflow: {
+          netIncomeBeforeZakatAndIncomeTax: ["دخل السنة قبل الزكاة وضريبة الدخل"],
+          netCashFromOperatingActivities: ["صافي النقد الناتج من/(المستخدم في) الأنشطة التشغيلية"],
+          netCashFromInvestingActivities: ["صافي النقد الناتج من/(المستخدم في) الأنشطة الاستثمارية"],
+          netCashFromFinancingActivities: ["صافي النقد الناتج من/(المستخدم في) الأنشطة التمويلية"],
+          netChangeInCashAndCashEquivalents: ["صافي الزيادة/(النقص) في النقد وشبه النقد"],
+          cashAndCashEquivalentsAtBeginningOfYear: ["النقد وشبه النقد في بداية السنة"],
+          cashAndCashEquivalentsAtEndOfYear: ["النقد وشبه النقد في نهاية السنة"]
+        }
+      },
+
+      operating_company: {
+        balance: {
+          cashAndCashEquivalents: ["النقد وما في حكمه"],
+          inventories: ["المخزون"],
+          tradeReceivables: ["المدينون التجاريون والدفعات المقدمة والذمم الأخرى"],
+          propertyPlantAndEquipment: ["الممتلكات والمعدات والآلات"],
+          totalAssets: ["إجمالي الموجودات"],
+          loansAndBorrowings: ["قروض والتزامات طويلة الأجل", "السحب على المكشوف والقروض قصيرة الأجل", "الجزء المتداول من القروض"],
+          tradePayables: ["الدائنون التجاريون والذمم الأخرى"],
+          totalLiabilities: ["إجمالي المطلوبات"],
+          retainedEarnings: ["أرباح مبقاة"],
+          totalEquity: ["إجمالي حقوق الملكية"],
+          totalLiabilitiesAndEquity: ["إجمالي المطلوبات وحقوق الملكية"]
+        },
+        income: {
+          revenue: ["الإيرادات"],
+          costOfSales: ["تكلفة المبيعات"],
+          grossProfit: ["مجمل الربح"],
+          sellingAndDistributionExpenses: ["مصاريف البيع والتوزيع"],
+          generalAndAdministrativeExpenses: ["المصاريف العمومية والإدارية"],
+          operatingProfit: ["الربح التشغيلي"],
+          financeCost: ["تكلفة التمويل"],
+          profitBeforeZakatAndIncomeTax: ["الربح قبل الزكاة وضريبة الدخل"],
+          zakat: ["الزكاة"],
+          incomeTax: ["ضريبة الدخل"],
+          netIncome: ["ربح السنة"],
+          basicEps: ["ربحية السهم الأساسية"],
+          dilutedEps: ["ربحية السهم المخفضة"]
+        },
+        cashflow: {
+          netIncome: ["ربح السنة"],
+          netCashFromOperatingActivities: ["صافي النقد الناتج من الأنشطة التشغيلية"],
+          netCashFromInvestingActivities: ["صافي النقد المستخدم في الأنشطة الاستثمارية"],
+          netCashFromFinancingActivities: ["صافي النقد الناتج من الأنشطة التمويلية"],
+          netChangeInCashAndCashEquivalents: ["صافي التغير في النقد وما في حكمه"],
+          cashAndCashEquivalentsAtBeginningOfYear: ["النقد وما في حكمه في بداية السنة"],
+          cashAndCashEquivalentsAtEndOfYear: ["النقد وما في حكمه في نهاية السنة"]
+        }
+      }
+    };
+
+    function buildStructuredFields(items, pageNumber, mapping) {
+      const out = {};
+      for (const fieldKey of Object.keys(mapping || {})) {
+        out[fieldKey] = buildField(items, mapping[fieldKey], pageNumber);
+      }
+      return out;
+    }
+
+    const mappings = STRUCTURED_MAPPINGS[statementProfile] || STRUCTURED_MAPPINGS.bank;
+
     const balanceSheetStructured = {
       pageNumber: balanceSheetLite.pageNumber,
       latest: balanceSheetLite.latest,
       previous: balanceSheetLite.previous,
       years: balanceSheetLite.years,
-      fields: {
-        cashAndBalancesWithCentralBanks: buildField(balanceSheetLite.items, ["نقد وأرصدة لدى البنوك المركزية"], balanceSheetLite.pageNumber),
-        dueFromBanksAndFinancialInstitutions: buildField(balanceSheetLite.items, ["أرصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي"], balanceSheetLite.pageNumber),
-        investments: buildField(balanceSheetLite.items, ["استثمارات بالصافي"], balanceSheetLite.pageNumber),
-        financingAndAdvances: buildField(balanceSheetLite.items, ["تمويل وسلف بالصافي"], balanceSheetLite.pageNumber),
-        totalAssets: buildField(balanceSheetLite.items, ["إجمالي الموجودات"], balanceSheetLite.pageNumber),
-        dueToBanks: buildField(balanceSheetLite.items, ["أرصدة للبنوك والبنوك المركزية والمؤسسات المالية الأخرى"], balanceSheetLite.pageNumber),
-        customerDeposits: buildField(balanceSheetLite.items, ["ودائع العملاء"], balanceSheetLite.pageNumber),
-        totalLiabilities: buildField(balanceSheetLite.items, ["إجمالي المطلوبات"], balanceSheetLite.pageNumber),
-        totalEquity: buildField(balanceSheetLite.items, ["إجمالي حقوق الملكية"], balanceSheetLite.pageNumber),
-        totalLiabilitiesAndEquity: buildField(balanceSheetLite.items, ["إجمالي المطلوبات وحقوق الملكية"], balanceSheetLite.pageNumber)
-      }
+      fields: buildStructuredFields(balanceSheetLite.items, balanceSheetLite.pageNumber, mappings.balance)
     };
 
     const incomeStatementStructured = {
@@ -1303,20 +1779,7 @@ module.exports = async function (context, req) {
       latest: incomeStatementLite.latest,
       previous: incomeStatementLite.previous,
       years: incomeStatementLite.years,
-      fields: {
-        specialCommissionIncome: buildField(incomeStatementLite.items, ["الدخل من التمويل والاستثمارات"], incomeStatementLite.pageNumber),
-        specialCommissionExpense: buildField(incomeStatementLite.items, ["المصاريف على ودائع العملاء لأجل والبنوك والمؤسسات المالية الأخرى"], incomeStatementLite.pageNumber),
-        netSpecialCommissionIncome: buildField(incomeStatementLite.items, ["الدخل من التمويل والاستثمارات بالصافي"], incomeStatementLite.pageNumber),
-        feeAndCommissionIncomeNet: buildField(incomeStatementLite.items, ["الدخل من رسوم الخدمات المصرفية بالصافي"], incomeStatementLite.pageNumber),
-        totalOperatingIncome: buildField(incomeStatementLite.items, ["إجمالي دخل العمليات التشغيلية"], incomeStatementLite.pageNumber),
-        totalOperatingExpenses: buildField(incomeStatementLite.items, ["إجمالي مصاريف العمليات التشغيلية"], incomeStatementLite.pageNumber),
-        operatingIncomeNet: buildField(incomeStatementLite.items, ["دخل من العمليات التشغيلية بالصافي"], incomeStatementLite.pageNumber),
-        netIncomeBeforeZakatAndIncomeTax: buildField(incomeStatementLite.items, ["دخل السنة قبل الزكاة وضريبة الدخل"], incomeStatementLite.pageNumber),
-        zakatAndIncomeTax: buildField(incomeStatementLite.items, ["مصروف الزكاة وضريبة الدخل"], incomeStatementLite.pageNumber),
-        netIncome: buildField(incomeStatementLite.items, ["صافي دخل السنة"], incomeStatementLite.pageNumber),
-        basicEps: buildField(incomeStatementLite.items, ["ربحية السهم الأساسية"], incomeStatementLite.pageNumber),
-        dilutedEps: buildField(incomeStatementLite.items, ["ربحية السهم المخفضة"], incomeStatementLite.pageNumber)
-      }
+      fields: buildStructuredFields(incomeStatementLite.items, incomeStatementLite.pageNumber, mappings.income)
     };
 
     const cashFlowStructured = {
@@ -1324,15 +1787,7 @@ module.exports = async function (context, req) {
       latest: cashFlowLite.latest,
       previous: cashFlowLite.previous,
       years: cashFlowLite.years,
-      fields: {
-        netIncomeBeforeZakatAndIncomeTax: buildField(cashFlowLite.items, ["دخل السنة قبل الزكاة وضريبة الدخل"], cashFlowLite.pageNumber),
-        netCashFromOperatingActivities: buildField(cashFlowLite.items, ["صافي النقد الناتج من/(المستخدم في) الأنشطة التشغيلية"], cashFlowLite.pageNumber),
-        netCashFromInvestingActivities: buildField(cashFlowLite.items, ["صافي النقد الناتج من/(المستخدم في) الأنشطة الاستثمارية"], cashFlowLite.pageNumber),
-        netCashFromFinancingActivities: buildField(cashFlowLite.items, ["صافي النقد الناتج من/(المستخدم في) الأنشطة التمويلية"], cashFlowLite.pageNumber),
-        netChangeInCashAndCashEquivalents: buildField(cashFlowLite.items, ["صافي الزيادة/(النقص) في النقد وشبه النقد"], cashFlowLite.pageNumber),
-        cashAndCashEquivalentsAtBeginningOfYear: buildField(cashFlowLite.items, ["النقد وشبه النقد في بداية السنة"], cashFlowLite.pageNumber),
-        cashAndCashEquivalentsAtEndOfYear: buildField(cashFlowLite.items, ["النقد وشبه النقد في نهاية السنة"], cashFlowLite.pageNumber)
-      }
+      fields: buildStructuredFields(cashFlowLite.items, cashFlowLite.pageNumber, mappings.cashflow)
     };
 
     function topN(rankings, n = 5) {
@@ -1358,9 +1813,11 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v3.4",
+      engine: "extract-financial-v3.5",
       phase: "4A",
       fileName: body.fileName || normalized?.meta?.fileName || null,
+
+      statementProfile,
 
       selectedPages: {
         incomePage: chosen.incomePage,
@@ -1382,6 +1839,7 @@ module.exports = async function (context, req) {
 
       debug: {
         totalPagesWithTables: pageContexts.length,
+        profileDetection,
         rankingEngine: selected.rankingEngine,
         ranking: {
           balanceTop: topN(rankedBalanceBase, 5),
@@ -1390,13 +1848,13 @@ module.exports = async function (context, req) {
         },
         chosen,
         notes: [
-          "v3.4 adds a multi-signal Financial Page Ranking Engine",
+          "v3.5 adds Sector Detection Engine before statement ranking",
+          "supported profiles: bank, operating_company",
+          "page ranking now uses statement config based on detected profile",
+          "synthetic labels are profile-specific",
+          "structured extraction mapping is profile-specific",
           "all pages remain eligible; no hard page-range exclusion is used",
-          "position inside the file is only a soft signal",
-          "statement trio is selected by combination ranking, not greedy top-1 only",
-          "duplicate-page selection between statements is explicitly penalized",
-          "late narrative/standards/index/equity pages are explicitly penalized",
-          "header-based year detection now checks the first 3 candidate rows"
+          "position inside the file is only a soft signal"
         ]
       },
 
