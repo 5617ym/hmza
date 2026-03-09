@@ -67,58 +67,68 @@ module.exports = async function (context, req) {
     }
 
     function parseNumberSmart(value) {
-      if (value == null) return null;
-      let s = String(value).trim();
-      if (!s) return null;
+  if (value == null) return null;
+  let s = String(value).trim();
+  if (!s) return null;
 
-      s = toEnglishDigits(s)
-        .replace(/\s/g, "")
-        .replace(/[ ريالرسعوديةSARUSD\$]/gi, "")
-        .replace(/[^\d.,()\-]/g, "");
+  s = toEnglishDigits(s)
+    .replace(/\s/g, "")
+    .replace(/[ ريالرسعوديةSARUSD\$]/gi, "")
+    .replace(/[^\d.,()\-]/g, "");
 
-      if (!s) return null;
+  if (!s) return null;
 
-      let negative = false;
-      if (s.includes("(") && s.includes(")")) negative = true;
-      s = s.replace(/[()]/g, "");
+  let negative = false;
+  if (s.includes("(") && s.includes(")")) negative = true;
+  s = s.replace(/[()]/g, "");
 
-      const hasDot = s.includes(".");
-      const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+  const hasComma = s.includes(",");
 
-      if (hasDot && hasComma) {
-        const lastDot = s.lastIndexOf(".");
-        const lastComma = s.lastIndexOf(",");
-        if (lastDot > lastComma) {
-          s = s.replace(/,/g, "");
-        } else {
-          s = s.replace(/\./g, "").replace(",", ".");
-        }
-      } else if (hasComma && !hasDot) {
-        const commaParts = s.split(",");
-        const last = commaParts[commaParts.length - 1];
-        if (last.length === 1 || last.length === 2) {
-          s = commaParts.slice(0, -1).join("") + "." + last;
-        } else {
-          s = s.replace(/,/g, "");
-        }
-      } else if (hasDot && !hasComma) {
-        const dotParts = s.split(".");
-        const last = dotParts[dotParts.length - 1];
-        if (!(last.length === 1 || last.length === 2)) {
-          s = s.replace(/\./g, "");
-        }
-      }
-
-      const n = Number(s);
-      if (!Number.isFinite(n)) return null;
-      return negative ? -n : n;
+  if (hasDot && hasComma) {
+    const lastDot = s.lastIndexOf(".");
+    const lastComma = s.lastIndexOf(",");
+    if (lastDot > lastComma) {
+      s = s.replace(/,/g, "");
+    } else {
+      s = s.replace(/\./g, "").replace(",", ".");
     }
-
-    function countNumbers(text) {
-      const s = toEnglishDigits(String(text || ""));
-      const matches = s.match(/(?:\(?-?\d[\d,]*\.?\d*\)?)/g);
-      return matches ? matches.length : 0;
+  } else if (hasComma && !hasDot) {
+    const commaParts = s.split(",");
+    const last = commaParts[commaParts.length - 1];
+    if (last.length === 1 || last.length === 2) {
+      s = commaParts.slice(0, -1).join("") + "." + last;
+    } else {
+      s = s.replace(/,/g, "");
     }
+  } else if (hasDot && !hasComma) {
+    const dotParts = s.split(".");
+    const last = dotParts[dotParts.length - 1];
+    if (!(last.length === 1 || last.length === 2)) {
+      s = s.replace(/\./g, "");
+    }
+  }
+
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  return negative ? -n : n;
+}
+
+function isYearCell(cell) {
+  const s = toEnglishDigits(String(cell || "").trim());
+  return /^(19|20)\d{2}$/.test(s);
+}
+
+function isNoteCell(cell) {
+  const s = normalizeText(cell);
+  return s === "ايضاح" || s === "notes" || s === "note";
+}
+
+function countNumbers(text) {
+  const s = toEnglishDigits(String(text || ""));
+  const matches = s.match(/(?:\(?-?\d[\d,]*\.?\d*\)?)/g);
+  return matches ? matches.length : 0;
+}
 
     function extractYears(text) {
       const s = toEnglishDigits(String(text || ""));
