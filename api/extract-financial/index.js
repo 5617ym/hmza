@@ -743,13 +743,8 @@ module.exports = async function (context, req) {
     chosen.cashFlowPage = bestCash?.pageNumber || null;
 
     // =========================
-    // Table-aware extraction
+    // Table-aware extraction v3.2
     // =========================
-
-    function isMostlyNumericCell(cell) {
-      const n = parseNumberSmart(cell);
-      return n !== null && Number.isFinite(n);
-    }
 
     function isYearCell(cell) {
       const s = toEnglishDigits(String(cell || "").trim());
@@ -761,93 +756,15 @@ module.exports = async function (context, req) {
       return s === "ايضاح" || s === "notes" || s === "note";
     }
 
-    function detectStatementColumns(mainRowsMeta) {
-      const rows = Array.isArray(mainRowsMeta) ? mainRowsMeta : [];
-      const maxCols = rows.reduce((m, r) => Math.max(m, r.cells.length), 0);
-
-      let best = {
-        currentCol: null,
-        previousCol: null,
-        noteCol: null,
-        labelCol: null,
-        headerRowIndex: null,
-        detectedYears: []
-      };
-
-      for (let i = 0; i < Math.min(rows.length, 6); i += 1) {
-        const row = rows[i];
-        const cells = row.cells || [];
-        const yearPositions = [];
-
-        for (let c = 0; c < cells.length; c += 1) {
-          if (isYearCell(cells[c])) {
-            yearPositions.push({
-              col: c,
-              year: Number(toEnglishDigits(cells[c]))
-            });
-          }
-        }
-
-        if (yearPositions.length >= 1) {
-          const yearsSorted = yearPositions.slice().sort((a, b) => b.year - a.year);
-          best.currentCol = yearsSorted[0]?.col ?? null;
-          best.previousCol = yearsSorted[1]?.col ?? null;
-          best.detectedYears = yearsSorted.map((x) => x.year);
-          best.headerRowIndex = i;
-
-          for (let c = 0; c < cells.length; c += 1) {
-            if (isNoteCell(cells[c])) {
-              best.noteCol = c;
-            }
-          }
-
-          const yearCols = yearPositions.map((x) => x.col);
-          let labelCol = null;
-          for (let c = cells.length - 1; c >= 0; c -= 1) {
-            if (!yearCols.includes(c) && c !== best.noteCol) {
-              labelCol = c;
-              break;
-            }
-          }
-          best.labelCol = labelCol;
-          return best;
-        }
-      }
-
-      // fallback by numeric structure
-      for (let c = 0; c < maxCols; c += 1) {
-        let numericHits = 0;
-        for (let r = 0; r < rows.length; r += 1) {
-          const cell = rows[r].cells[c];
-          if (isMostlyNumericCell(cell)) numericHits += 1;
-        }
-        if (numericHits >= 3 && best.currentCol == null) best.currentCol = c;
-        else if (numericHits >= 3 && best.previousCol == null && c !== best.currentCol) best.previousCol = c;
-      }
-
-      for (let i = 0; i < Math.min(rows.length, 4); i += 1) {
-        const cells = rows[i].cells || [];
-        for (let c = 0; c < cells.length; c += 1) {
-          if (isNoteCell(cells[c])) best.noteCol = c;
-        }
-      }
-
-      let labelCol = null;
-      for (let c = maxCols - 1; c >= 0; c -= 1) {
-        if (c !== best.currentCol && c !== best.previousCol && c !== best.noteCol) {
-          labelCol = c;
-          break;
-        }
-      }
-      best.labelCol = labelCol;
-      return best;
+    function isNumericLikeCell(cell) {
+      const n = parseNumberSmart(cell);
+      return n !== null && Number.isFinite(n);
     }
 
     function looksLikeNarrativeLabel(label) {
       const s = normalizeText(label);
       if (!s) return true;
-
-      if (s.length > 120) return true;
+      if (s.length > 140) return true;
 
       return textContainsAny(s, [
         "كما هو منصوص",
@@ -867,16 +784,37 @@ module.exports = async function (context, req) {
       ]);
     }
 
+    function isStatementTitleLike(label) {
+      const s = normalizeText(label);
+      return textContainsAny(s, [
+        "قائمة المركز المالي",
+        "قائمة الدخل",
+        "قائمة الدخل الموحده",
+        "قائمة الدخل الموحدة",
+        "قائمة التدفقات النقدية",
+        "قائمة التغيرات في حقوق الملكيه",
+        "قائمة التغيرات في حقوق الملكية",
+        "statement of financial position",
+        "income statement",
+        "statement of income",
+        "statement of cash flows",
+        "changes in equity"
+      ]);
+    }
+
     function looksLikeFinancialRowLabel(label, statementKey) {
       const s = normalizeText(label);
       if (!s) return false;
       if (looksLikeNarrativeLabel(s)) return false;
+      if (isStatementTitleLike(s)) return false;
 
       const blacklistCommon = [
         "ايضاح", "الايضاحات", "notes", "note", "ريال", "الف ريال", "مليون ريال",
         "the accompanying notes", "الايضاحات المرفقه", "تابع", "continued",
         "يناير", "فبراير", "مارس", "ابريل", "أبريل", "مايو", "يونيو", "يوليو",
-        "اغسطس", "أغسطس", "سبتمبر", "اكتوبر", "أكتوبر", "نوفمبر", "ديسمبر"
+        "اغسطس", "أغسطس", "سبتمبر", "اكتوبر", "أكتوبر", "نوفمبر", "ديسمبر",
+        "الموجودات", "المطلوبات", "حقوق الملكيه", "حقوق الملكية",
+        "الانشطه التشغيليه", "الانشطه الاستثمارية", "الانشطه التمويلية"
       ];
       if (blacklistCommon.some((x) => s === normalizeText(x))) return false;
 
@@ -884,14 +822,15 @@ module.exports = async function (context, req) {
         return textContainsAny(s, [
           "نقد", "ارصده", "أرصدة", "استثمارات", "تمويل", "سلف", "مشتقات",
           "موجودات", "اصول", "أصول", "مطلوبات", "ودائع", "حقوق الملكيه",
-          "إجمالي الموجودات", "إجمالي المطلوبات", "اجمالي المطلوبات وحقوق الملكيه",
-          "cash", "investments", "financing", "advances", "deposits", "equity", "assets", "liabilities"
+          "اجمالي الموجودات", "اجمالي المطلوبات", "اجمالي حقوق الملكيه",
+          "اجمالي المطلوبات وحقوق الملكيه", "cash", "investments", "financing",
+          "advances", "deposits", "equity", "assets", "liabilities"
         ]);
       }
 
       if (statementKey === "income") {
         return textContainsAny(s, [
-          "الدخل", "صافي", "اجمالي", "إجمالي", "مصاريف", "مصاريف", "رسوم",
+          "الدخل", "صافي", "اجمالي", "إجمالي", "مصاريف", "رسوم",
           "عمولات", "زكاه", "زكاة", "ضريبه", "ضريبة", "ربحيه", "ربحية",
           "التمويل", "الاستثمارات", "التشغيليه", "التشغيلية",
           "income", "expense", "profit", "earnings", "commission", "operating"
@@ -900,13 +839,139 @@ module.exports = async function (context, req) {
 
       if (statementKey === "cashflow") {
         return textContainsAny(s, [
-          "النقد", "شبه النقد", "الانشطه التشغيليه", "الانشطه الاستثماريه",
-          "الانشطه التمويليه", "صافي النقد", "بدايه السنه", "نهايه السنه",
-          "cash", "operating activities", "investing activities", "financing activities"
+          "النقد", "شبه النقد", "صافي النقد", "بدايه السنه", "بداية السنة",
+          "نهايه السنه", "نهاية السنة", "دخل السنه قبل الزكاه",
+          "دخل السنة قبل الزكاة", "cash", "operating activities",
+          "investing activities", "financing activities"
         ]);
       }
 
       return true;
+    }
+
+    function detectStatementColumns(mainRowsMeta) {
+      const rows = Array.isArray(mainRowsMeta) ? mainRowsMeta : [];
+      const maxCols = rows.reduce((m, r) => Math.max(m, r.cells.length), 0);
+
+      const best = {
+        currentCol: null,
+        previousCol: null,
+        noteCol: null,
+        labelCol: null,
+        headerRowIndex: null,
+        detectedYears: [],
+        allYearCols: []
+      };
+
+      // first pass: find explicit year header row
+      for (let i = 0; i < Math.min(rows.length, 8); i += 1) {
+        const row = rows[i];
+        const cells = row.cells || [];
+        const yearPositions = [];
+
+        for (let c = 0; c < cells.length; c += 1) {
+          if (isYearCell(cells[c])) {
+            yearPositions.push({
+              col: c,
+              year: Number(toEnglishDigits(cells[c]))
+            });
+          }
+          if (isNoteCell(cells[c])) {
+            best.noteCol = c;
+          }
+        }
+
+        if (yearPositions.length >= 2) {
+          const yearsSorted = yearPositions.slice().sort((a, b) => b.year - a.year);
+          best.currentCol = yearsSorted[0].col;
+          best.previousCol = yearsSorted[1].col;
+          best.detectedYears = yearsSorted.map((x) => x.year);
+          best.allYearCols = yearPositions.map((x) => x.col);
+          best.headerRowIndex = i;
+          break;
+        }
+
+        if (yearPositions.length === 1) {
+          best.currentCol = yearPositions[0].col;
+          best.detectedYears = [yearPositions[0].year];
+          best.allYearCols = [yearPositions[0].col];
+          best.headerRowIndex = i;
+        }
+      }
+
+      // second pass fallback: locate numeric columns
+      if (best.currentCol == null || best.previousCol == null) {
+        const numericScores = [];
+        for (let c = 0; c < maxCols; c += 1) {
+          let numericHits = 0;
+          for (let r = 0; r < rows.length; r += 1) {
+            const cell = rows[r].cells[c];
+            if (isNumericLikeCell(cell)) numericHits += 1;
+          }
+          numericScores.push({ col: c, numericHits });
+        }
+
+        const topNumericCols = numericScores
+          .filter((x) => x.numericHits >= 3)
+          .sort((a, b) => b.numericHits - a.numericHits)
+          .slice(0, 2);
+
+        if (best.currentCol == null && topNumericCols[0]) best.currentCol = topNumericCols[0].col;
+        if (best.previousCol == null && topNumericCols[1]) best.previousCol = topNumericCols[1].col;
+
+        if (best.currentCol != null && best.previousCol != null && !best.detectedYears.length) {
+          best.allYearCols = [best.currentCol, best.previousCol];
+        }
+      }
+
+      // note col fallback
+      if (best.noteCol == null) {
+        for (let i = 0; i < Math.min(rows.length, 4); i += 1) {
+          const cells = rows[i].cells || [];
+          for (let c = 0; c < cells.length; c += 1) {
+            if (isNoteCell(cells[c])) best.noteCol = c;
+          }
+        }
+      }
+
+      // label column fallback: prefer far-right non-year/non-note col with text
+      let labelCol = null;
+      for (let c = maxCols - 1; c >= 0; c -= 1) {
+        if (c === best.currentCol || c === best.previousCol || c === best.noteCol) continue;
+        let textHits = 0;
+        for (let r = 0; r < rows.length; r += 1) {
+          const cell = String(rows[r].cells[c] || "").trim();
+          if (!cell) continue;
+          if (!isNumericLikeCell(cell) && !isYearCell(cell)) textHits += 1;
+        }
+        if (textHits >= 2) {
+          labelCol = c;
+          break;
+        }
+      }
+      best.labelCol = labelCol != null ? labelCol : Math.max(0, maxCols - 1);
+
+      // ensure current/previous aligned left-to-right visually but latest year stays current
+      if (best.detectedYears.length >= 2) {
+        const yearColPairs = [
+          { year: best.detectedYears[0], col: best.currentCol },
+          { year: best.detectedYears[1], col: best.previousCol }
+        ].filter((x) => x.col != null);
+
+        yearColPairs.sort((a, b) => b.year - a.year);
+        best.currentCol = yearColPairs[0] ? yearColPairs[0].col : best.currentCol;
+        best.previousCol = yearColPairs[1] ? yearColPairs[1].col : best.previousCol;
+      }
+
+      return best;
+    }
+
+    function rowNumericCount(cells) {
+      let c = 0;
+      for (const cell of (cells || [])) {
+        if (isNumericLikeCell(cell)) c += 1;
+      }
+      return c;
     }
 
     function dedupeItems(items) {
@@ -935,13 +1000,15 @@ module.exports = async function (context, req) {
 
       const detected = detectStatementColumns(mainRowsMeta);
       const items = [];
-
       const startRow = detected.headerRowIndex != null ? detected.headerRowIndex + 1 : 0;
 
       for (let i = startRow; i < mainRowsMeta.length; i += 1) {
         const row = mainRowsMeta[i];
         const cells = row.cells || [];
         if (!cells.length) continue;
+
+        const numericCellsInRow = rowNumericCount(cells);
+        if (numericCellsInRow === 0) continue;
 
         const labelCell =
           detected.labelCol != null && cells[detected.labelCol] != null
@@ -985,7 +1052,8 @@ module.exports = async function (context, req) {
         items: deduped,
         latest: detected.detectedYears[0] || pageCtx?.years?.[0] || null,
         previous: detected.detectedYears[1] || pageCtx?.years?.[1] || null,
-        years: detected.detectedYears.length ? detected.detectedYears : (pageCtx?.years || [])
+        years: detected.detectedYears.length ? detected.detectedYears : (pageCtx?.years || []),
+        detectedColumns: detected
       };
     }
 
@@ -1010,7 +1078,14 @@ module.exports = async function (context, req) {
         previous: tableBased.previous,
         years: tableBased.years,
         items: tableBased.items,
-        rawLinesCount: Array.isArray(pageCtx?.mainRowsMeta) ? pageCtx.mainRowsMeta.length : 0
+        rawLinesCount: Array.isArray(pageCtx?.mainRowsMeta) ? pageCtx.mainRowsMeta.length : 0,
+        extractionMeta: {
+          currentCol: tableBased.detectedColumns?.currentCol ?? null,
+          previousCol: tableBased.detectedColumns?.previousCol ?? null,
+          noteCol: tableBased.detectedColumns?.noteCol ?? null,
+          labelCol: tableBased.detectedColumns?.labelCol ?? null,
+          headerRowIndex: tableBased.detectedColumns?.headerRowIndex ?? null
+        }
       };
     }
 
@@ -1175,15 +1250,18 @@ module.exports = async function (context, req) {
         ],
         netCashFromOperatingActivities: [
           "صافي النقد الناتج من المستخدم في الانشطه التشغيليه",
-          "صافي النقد الناتج من الانشطة التشغيلية"
+          "صافي النقد الناتج من الانشطة التشغيلية",
+          "صافي النقد الناتج من الانشطة التشغيليه"
         ],
         netCashFromInvestingActivities: [
           "صافي النقد الناتج من المستخدم في الانشطه الاستثماريه",
-          "صافي النقد المستخدم في الانشطة الاستثمارية"
+          "صافي النقد المستخدم في الانشطة الاستثمارية",
+          "صافي النقد المستخدم في الانشطة الاستثماريه"
         ],
         netCashFromFinancingActivities: [
           "صافي النقد الناتج من المستخدم في الانشطه التمويليه",
-          "صافي النقد الناتج من الانشطة التمويلية"
+          "صافي النقد الناتج من الانشطة التمويلية",
+          "صافي النقد الناتج من الانشطة التمويليه"
         ],
         netChangeInCashAndCashEquivalents: [
           "صافي الزياده النقص في النقد وشبه النقد",
@@ -1325,7 +1403,7 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v3.1",
+      engine: "extract-financial-v3.2",
       phase: "3B",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
@@ -1360,8 +1438,8 @@ module.exports = async function (context, req) {
           "statement-like tables are preferred when main columns are 2-4",
           "wide note tables are penalized heavily",
           "explicit statement headers get a strong boost",
-          "lite extraction now prefers table rows over free-text lines",
-          "structured extraction is built from table-aware lite rows"
+          "lite extraction uses table rows instead of free-text lines",
+          "v3.2 improves year-column detection and skips title-only rows"
         ]
       },
 
