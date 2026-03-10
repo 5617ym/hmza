@@ -1,0 +1,106 @@
+y
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>وصلة المالية</title>
+
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+
+<body>
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="hero-inner container">
+      <img class="hero-logo" src="assets/images/logo.png" alt="Wasla Logo" />
+      <h1 class="hero-title">وصلة المالية</h1>
+      <p class="hero-subtitle">تتحدث مع الأرقام وتخبرنا عن الأداء</p>
+
+      <div class="hero-badges">
+        <span class="badge">نسخة تجريبية</span>
+        <span class="badge badge-muted">RTL</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENT -->
+  <main class="container content">
+
+    <section class="panel">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2>ابدأ برفع الملفات</h2>
+        </div>
+        <span class="pill">الخطوة 1</span>
+      </div>
+
+      <div class="panel-body">
+
+        <div class="grid-2">
+          <div>
+            <label class="label" for="period">الفترة</label>
+            <select id="period" class="select">
+              <option value="yearly" selected>سنوي</option>
+              <option value="quarterly">ربعي</option>
+              <option value="ttm">آخر 12 شهر</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="label" for="compare">المقارنة</label>
+            <select id="compare" class="select">
+              <option value="none" selected>بدون مقارنة</option>
+              <option value="prev">مقارنة بفترة سابقة</option>
+              <option value="industry">مقارنة بمتوسط القطاع (لاحقًا)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="uploader">
+          <div class="uploader-row">
+            <!-- ✅ يقبل كل الأنواع -->
+            <input
+              id="fileInput"
+              class="file"
+              type="file"
+              multiple
+              accept="*/*"
+            />
+            <div class="uploader-hint">
+              يقبل جميع الملفات: PDF / Excel / CSV / Word / صور / أي نوع آخر
+            </div>
+          </div>
+
+          <div id="fileList" class="file-list"></div>
+        </div>
+
+        <div class="actions">
+          <button id="btnClear" class="btn btn-ghost" type="button">مسح</button>
+          <button id="btnShow" class="btn" type="button" disabled>عرض النتائج</button>
+        </div>
+
+        <div id="status" class="status"></div>
+      </div>
+    </section>
+
+    <!-- النتائج (مخفية مؤقتًا إلى أن نرفع ملفات) -->
+    <section id="results" class="results hidden">
+      <div class="results-head">
+        <h3>النتائج</h3>
+        <p class="muted">حالياً: نعرض الملفات المرفوعة ونجهز خطوة استخراج البيانات.</p>
+      </div>
+
+      <div class="cards" id="cards"></div>
+    </section>
+
+    <footer class="footer">
+      <p class="muted small">© وصلة المالية — بناء تدريجي خطوة بخطوة.</p>
+    </footer>
+
+  </main>
+
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
