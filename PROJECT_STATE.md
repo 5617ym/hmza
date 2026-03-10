@@ -1,10 +1,28 @@
 # PROJECT_STATE.md
 
-CURRENT_PHASE: 4A (Multi-Sector Validation Completed)
+PROJECT:
+Financial Statement Extraction Engine
 
-CURRENT_TASK:
-الانتهاء من اختبار النظام على قطاعات متعددة للتأكد من استقرار
-محرك استخراج القوائم المالية مع اختلاف أشكال التقارير المالية.
+LAST_UPDATE:
+2026-03-10
+
+CURRENT_ENGINE_VERSION:
+extract-financial-v5.3
+
+CURRENT_PHASE:
+4B – Extraction Engine Hardening
+
+
+------------------------------------------------------------
+PHASE HISTORY
+------------------------------------------------------------
+
+PHASE 4A
+Multi-Sector Validation Completed
+
+تم اختبار النظام بنجاح على قطاعات متعددة للتأكد من قدرة
+محرك استخراج القوائم المالية على التعامل مع اختلاف
+هياكل التقارير المالية.
 
 القطاعات التي تم اختبارها:
 
@@ -16,71 +34,267 @@ CURRENT_TASK:
 6. صندوق REIT
 7. شركة صناعية
 
-تم اختبار النظام باستخدام تقارير مالية حقيقية بصيغة PDF
-من شركات مدرجة في السوق السعودي.
+الشركات المستخدمة في الاختبار:
 
-المسار الحالي للنظام:
+- جاهز (تشغيلية عربية)
+- المراعي (تشغيلية إنجليزية)
+- مصرف الإنماء (بنك عربي)
+- مصرف الراجحي (بنك إنجليزي)
+- التعاونية للتأمين
+- صندوق جدوى ريت
+- شركة المتقدمة للبتروكيماويات
 
-upload-url
-→ ingest
-→ analyze (Azure Document Intelligence - prebuilt-layout)
-→ extract-financial
+النتيجة:
 
-جميع المراحل تعمل بنجاح.
+النظام نجح في اكتشاف صفحات:
 
-LAST_TEST:
+Balance Sheet  
+Income Statement  
+Cash Flow Statement
 
-اختبار ملفات متعددة لسبعة قطاعات مختلفة:
+ودعم:
 
-* جاهز (تشغيلية عربية)
-* المراعي (تشغيلية إنجليزية)
-* مصرف الإنماء (بنك عربي)
-* مصرف الراجحي (بنك إنجليزي)
-* التعاونية للتأمين
-* صندوق جدوى ريت
-* شركة المتقدمة للبتروكيماويات
-
-LAST_RESULT:
-
-النتائج العامة للنظام:
-
-* اكتشاف صفحات القوائم المالية يعمل بشكل ممتاز
-
-* النظام ينجح في تحديد:
-
-  * Balance Sheet
-  * Income Statement
-  * Cash Flow Statement
-
-* النظام يعمل مع:
-
-  * العربية
-  * الإنجليزية
-  * تقارير IFRS
-  * تقارير السوق السعودي
-
-ACTIVE_PROBLEM:
-
-في بعض الملفات تظهر مشاكل طفيفة في مرحلة استخراج القيم من الصف،
-وأسبابها المحتملة:
-
-* الخلط بين رقم الإيضاح والقيمة المالية
-* قراءة العمود الخطأ عند اختلاف ترتيب الأعمدة
-* ضعف اكتشاف Header في بعض الجداول
-* اختلاف هيكل القوائم بين القطاعات (Bank / Insurance / REIT)
-
-NEXT_STEP:
-
-تحسين محرك extract-financial بدون تغيير المعمارية الحالية.
-
-التحسينات المطلوبة:
-
-1. Header Resolver أقوى لاكتشاف ترتيب الأعمدة
-2. منع قراءة رقم الإيضاح كقيمة مالية
-3. تحسين تحليل الصفوف داخل الجدول
-4. إضافة Row Validation Layer
-5. دعم Multi-table Statement
-6. تحسين اكتشاف نوع القطاع عبر statementProfile
+العربية  
+الإنجليزية  
+تقارير IFRS  
+تقارير السوق السعودي
 
 STATUS:
-STABLE – READY FOR EXTRACTION ENGINE HARDENING
+Stable
+
+
+------------------------------------------------------------
+CURRENT PHASE
+------------------------------------------------------------
+
+PHASE 4B
+Extraction Engine Hardening
+
+هدف هذه المرحلة:
+
+إعادة بناء وتحسين محرك extract-financial
+ليكون أكثر استقرارًا مع اختلاف هياكل الجداول
+في التقارير المالية الواقعية.
+
+تم تنفيذ عدة تحسينات على المحرك في الإصدارات:
+
+v5.2  
+v5.3
+
+
+------------------------------------------------------------
+SYSTEM PIPELINE
+------------------------------------------------------------
+
+المسار الكامل للنظام:
+
+upload-url  
+→ ingest  
+→ analyze (Azure Document Intelligence - prebuilt-layout)  
+→ extract-financial
+
+جميع المراحل تعمل بشكل مستقر.
+
+
+------------------------------------------------------------
+ENGINE CAPABILITIES
+------------------------------------------------------------
+
+المحرك الحالي يقوم بالمهام التالية:
+
+1) Statement Profile Detection
+
+تحديد نوع الشركة باستخدام تحليل الكلمات المفتاحية.
+
+الأنواع المدعومة:
+
+bank  
+insurance  
+reit  
+operating_company
+
+
+2) Statement Page Detection
+
+اكتشاف صفحات القوائم المالية باستخدام نظام Ranking
+يعتمد على:
+
+statement titles  
+structure keywords  
+numeric density  
+header detection  
+page order
+
+
+3) Table Structure Detection
+
+تحليل الجداول لاكتشاف:
+
+currentCol  
+previousCol  
+noteCol  
+labelCol  
+headerRowIndex  
+
+
+4) Row Extraction
+
+استخراج الصفوف من الجداول مع تطبيق
+طبقة تحقق (Row Validation) لمنع استخراج:
+
+header rows  
+separator rows  
+narrative rows  
+date rows  
+
+
+5) Data Output
+
+يتم إنشاء نوعين من المخرجات:
+
+Lite Structure
+
+incomeStatementLite  
+balanceSheetLite  
+cashFlowLite  
+
+
+Structured Fields
+
+incomeStatementStructured  
+balanceSheetStructured  
+cashFlowStructured  
+
+
+------------------------------------------------------------
+LATEST TEST
+------------------------------------------------------------
+
+تم اختبار الإصدار v5.3 باستخدام:
+
+Saudi National Bank (SNB)
+
+نتيجة اختيار الصفحات:
+
+balancePage = 8  
+incomePage = 9  
+cashFlowPage = 12  
+
+اكتشاف الصفحات يعمل بشكل صحيح.
+
+
+------------------------------------------------------------
+CURRENT PROBLEM
+------------------------------------------------------------
+
+Row Extraction Failure
+
+نتيجة الاستخراج:
+
+acceptedRowsCount = 0  
+rejectedRowsCount = 61  
+
+أغلب الصفوف تم رفضها بسبب:
+
+reason = "no_label"
+
+
+مثال صف مرفوض:
+
+42,119,698 | 44,923,237 | 4
+
+
+------------------------------------------------------------
+ROOT CAUSE
+------------------------------------------------------------
+
+السبب الرئيسي هو ترتيب الأعمدة في الجداول العربية.
+
+في التقارير العربية غالبًا يكون ترتيب الأعمدة:
+
+2024 | 2025 | Note | Label
+
+أو
+
+Value | Value | Note | Label
+
+
+بينما المحرك يفترض غالبًا:
+
+Label | Note | Value | Value
+
+
+لذلك يفشل المحرك في اكتشاف عمود الوصف (label)
+ويتم رفض الصف بسبب عدم وجود label.
+
+
+------------------------------------------------------------
+SECONDARY ISSUE
+------------------------------------------------------------
+
+Multi-page Table Extension
+
+في بعض الحالات يقوم المحرك بدمج الصفحة التالية
+كجزء من نفس الجدول بدون تحقق كافٍ.
+
+مثال:
+
+tablesUsed = 2  
+sourcePages = [8,9]
+
+وقد تكون الصفحة الثانية قائمة مختلفة.
+
+
+------------------------------------------------------------
+NEXT STEP
+------------------------------------------------------------
+
+الإصدار القادم:
+
+extract-financial-v5.4
+
+التحسينات المخطط لها:
+
+1) RTL Label Detection
+
+تفضيل العمود النصي الأخير كـ label
+في الجداول العربية.
+
+
+2) Row-Level Label Fallback
+
+عند فشل اكتشاف label من header
+يتم البحث داخل الصف من اليمين إلى اليسار
+عن أول خلية نصية صالحة.
+
+
+3) Stronger Multi-Page Guard
+
+منع تمديد الجدول إلى صفحة أخرى
+إلا إذا كانت بنية الجدول متطابقة.
+
+
+4) Improved Row Validation
+
+تحسين قواعد منع الصفوف غير المالية.
+
+
+------------------------------------------------------------
+CURRENT STATUS
+------------------------------------------------------------
+
+Page Detection: Stable  
+Statement Profile Detection: Stable  
+Ranking Engine: Stable  
+Structured Mapping: Stable  
+
+Row Extraction:
+Needs RTL Fix
+
+
+------------------------------------------------------------
+PROJECT STATUS
+------------------------------------------------------------
+
+STABLE ARCHITECTURE  
+EXTRACTION ENGINE HARDENING IN PROGRESS
