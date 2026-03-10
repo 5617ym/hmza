@@ -3,62 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>وصلة المالية</title>
+    <title>وصلة المالية - التصميم الجديد</title>
     <link rel="stylesheet" href="assets/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="wasla-theme">
 
-    <header class="top-navbar">
-        <div class="nav-content">
-            <a href="#" class="signin-button">Sign in</a>
-            <span class="nav-item">وصلة</span>
-            <span class="nav-item">وصلة المالية</span>
+    <header class="navbar">
+        <div class="nav-left">
+            <a href="#" class="signin-btn">Sign in</a>
+            <span class="nav-text">وصلة</span>
+            <span class="nav-text">وصلة المالية</span>
         </div>
-        <img src="assets/images/logo.png" class="mini-logo-nav">
+        <img src="assets/images/logo.png" class="nav-logo-icon">
     </header>
 
-    <main class="hero-section">
-        <div class="main-logo-container">
-            <img src="assets/images/logo.png" alt="Wasla Logo" class="brand-logo-large">
-        </div>
+    <main class="content-wrapper">
+        <img src="assets/images/logo.png" alt="Wasla Logo" class="main-hero-logo">
         
-        <h1 class="brand-title">وصلة المالية</h1>
-        <p class="brand-subtitle">نتحدث مع الأرقام وتحدثنا عن الأداء</p>
+        <h1 class="brand-name">وصلة المالية</h1>
+        <p class="brand-tagline">نتحدث مع الأرقام وتحدثنا عن الأداء</p>
 
-        <div class="glass-card-panel">
-            <h2 class="card-internal-title">ارفع ملفات واترك الباقي علينا</h2>
+        <div class="glass-container">
+            <h2 class="glass-title">ارفع ملفات واترك الباقي علينا</h2>
             
-            <div class="inputs-row-container">
-                <div class="form-group">
+            <div class="form-grid">
+                <div class="input-group">
                     <label>ارفع ملفاتك</label>
-                    <div class="upload-drop-zone">
-                        <span>اسحب الملفات هنا</span>
-                    </div>
+                    <div class="drop-box">اسحب الملفات هنا</div>
                 </div>
 
-                <div class="form-group">
+                <div class="input-group">
                     <label>الفترة</label>
-                    <select class="custom-dark-select">
-                        <option selected>سنوي</option>
+                    <select class="dark-dropdown">
+                        <option>Select</option>
+                        <option>سنوي</option>
                         <option>ربعي</option>
                         <option>آخر 12 شهر</option>
                     </select>
                 </div>
 
-                <div class="form-group">
+                <div class="input-group">
                     <label>للمقارنة</label>
-                    <select class="custom-dark-select">
-                        <option selected>بدون مقارنة</option>
+                    <select class="dark-dropdown">
+                        <option>Select select</option>
+                        <option>بدون مقارنة</option>
                         <option>مقارنة بفترة سابقة</option>
-                        <option>مقارنة بمتوسط القطاع</option>
                     </select>
                 </div>
             </div>
 
-            <div class="card-action-footer">
-                <span class="btn-reset-text">مسح</span>
-                <button class="btn-submit-results">عرض النتائج</button>
+            <div class="button-footer">
+                <button class="clear-btn-text">مسح</button>
+                <button class="submit-btn-green">عرض النتائج</button>
             </div>
         </div>
     </main>
