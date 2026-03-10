@@ -394,6 +394,95 @@ module.exports = async function (context, req) {
       return /[A-Za-z]/.test(String(text || ""));
     }
 
+    function isLikelyOwnershipPercentValue(value) {
+      const raw = toEnglishDigits(String(value || "").trim());
+      if (!raw) return false;
+      if (isYearCell(raw)) return false;
+      if (isLikelyReferenceValue(raw)) return false;
+
+      const n = parseNumberSmart(raw);
+      if (n == null) return false;
+
+      return n >= 0 && n <= 100 && raw.length <= 8;
+    }
+
+    function isLikelySubsidiaryNarrativeText(text) {
+      const s = normalizeText(text);
+      if (!s) return false;
+
+      const ownershipKeywords = [
+        "شركة تابعة",
+        "شركه تابعه",
+        "شركة زميلة",
+        "شركه زميله",
+        "شركة مساهمة",
+        "شركة مساهمه",
+        "شركة ذات مسؤولية محدودة",
+        "شركه ذات مسؤوليه محدوده",
+        "ذات غرض خاص",
+        "غرض خاص",
+        "special purpose entity",
+        "special purpose vehicle",
+        "spv",
+        "subsidiar",
+        "associate",
+        "ownership",
+        "percentage of ownership",
+        "country of incorporation",
+        "principal activity",
+        "incorporated",
+        "registered in",
+        "cayman",
+        "jزر كايمان",
+        "جزر كايمان",
+        "تركيا",
+        "باكستان",
+        "saudi arabia",
+        "المملكه العربيه السعوديه",
+        "المملكة العربية السعودية",
+        "النشاط الرئيسي",
+        "نسبة الملكية",
+        "نسبه الملكيه"
+      ];
+
+      const wordCount = s.split(/\s+/).filter(Boolean).length;
+      const hitCount = ownershipKeywords.filter((k) => s.includes(normalizeText(k))).length;
+
+      return hitCount >= 2 || (hitCount >= 1 && wordCount >= 10);
+    }
+
+    function isLikelyOwnershipHeaderText(text) {
+      const s = normalizeText(text);
+      return (
+        s.includes("نسبة الملكية") ||
+        s.includes("نسبه الملكيه") ||
+        s.includes("principal activity") ||
+        s.includes("country of incorporation") ||
+        s.includes("ownership") ||
+        s.includes("subsidiar")
+      );
+    }
+
+    function isLikelyOwnershipRow(cells) {
+      const arr = Array.isArray(cells) ? cells : [];
+      if (!arr.length) return false;
+
+      const joined = arr.join(" | ");
+      const textCells = arr.filter((x) => isLikelyTextLabelCell(x));
+      const percentLikeCount = arr.filter((x) => isLikelyOwnershipPercentValue(x)).length;
+      const longNarrative = textCells.some((x) => {
+        const clean = cleanupLabel(x);
+        const wordCount = normalizeText(clean).split(/\s+/).filter(Boolean).length;
+        return clean.length >= 35 || wordCount >= 6;
+      });
+
+      return (
+        isLikelyOwnershipHeaderText(joined) ||
+        (isLikelySubsidiaryNarrativeText(joined) && percentLikeCount >= 1) ||
+        (longNarrative && percentLikeCount >= 1)
+      );
+    }
+
     function isLikelyTextLabelCell(cell) {
       const raw = String(cell || "").trim();
       if (!raw) return false;
@@ -898,12 +987,33 @@ module.exports = async function (context, req) {
         isLikelyNarrativeLine(normalizedText) ||
         isLikelyStandardEffectiveDateText(normalizedText);
 
+      const ownershipLikeRowCount = (mainRows || []).slice(0, 24).filter((r) => isLikelyOwnershipRow(r)).length;
+      const isLikelyOwnershipPage =
+        (
+          containsAny(normalizedText, [
+            "نسبة الملكية",
+            "نسبه الملكيه",
+            "principal activity",
+            "country of incorporation",
+            "ownership",
+            "subsidiar",
+            "شركة تابعة",
+            "شركة ذات مسؤولية محدودة",
+            "ذات غرض خاص",
+            "special purpose entity",
+            "special purpose vehicle"
+          ]) &&
+          ownershipLikeRowCount >= 2
+        ) ||
+        ownershipLikeRowCount >= 4;
+
       const pageGuardrails = {
         rejectAsIndex: isLikelyIndexPage,
         rejectAsStandards: isLikelyStandardsPage,
         rejectAsNarrative: isLikelyNarrativePage,
         rejectAsEquity: isLikelyEquityStatement,
-        rejectAsComprehensive: isLikelyComprehensiveIncome
+        rejectAsComprehensive: isLikelyComprehensiveIncome,
+        rejectAsOwnership: isLikelyOwnershipPage
       };
 
       return {
@@ -933,6 +1043,8 @@ module.exports = async function (context, req) {
         isLikelyEquityStatement,
         isLikelyComprehensiveIncome,
         isLikelyNarrativePage,
+        isLikelyOwnershipPage,
+        ownershipLikeRowCount,
         pageGuardrails
       };
     }
@@ -1637,6 +1749,8 @@ module.exports = async function (context, req) {
       signals.hasStrongOwnTitle = hasStrongOwnTitle;
       signals.lateNoteDetail = lateNoteDetail;
       signals.earlyCoreShape = earlyCoreShape;
+      signals.isLikelyOwnershipPage = !!pageCtx.isLikelyOwnershipPage;
+      signals.ownershipLikeRowCount = pageCtx.ownershipLikeRowCount || 0;
 
       if (titleHitsHeader > 0) {
         const s = titleHitsHeader * 110;
@@ -1733,6 +1847,11 @@ module.exports = async function (context, req) {
       if (pageCtx.isLikelyNarrativePage) {
         score -= 180;
         reasons.push("narrative:-180");
+      }
+
+      if (pageCtx.isLikelyOwnershipPage) {
+        score -= 320;
+        reasons.push("ownershipPagePenalty:-320");
       }
 
       if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
@@ -1846,6 +1965,8 @@ module.exports = async function (context, req) {
             isLikelyEquityStatement: pageCtx.isLikelyEquityStatement,
             isLikelyComprehensiveIncome: pageCtx.isLikelyComprehensiveIncome,
             isLikelyNarrativePage: pageCtx.isLikelyNarrativePage,
+            isLikelyOwnershipPage: pageCtx.isLikelyOwnershipPage,
+            ownershipLikeRowCount: pageCtx.ownershipLikeRowCount,
             header: pageCtx.header,
             pageGuardrails: pageCtx.pageGuardrails
           };
@@ -2391,6 +2512,31 @@ module.exports = async function (context, req) {
         return { ok: false, reason: "weak_label" };
       }
 
+      const ownershipLike =
+        isLikelySubsidiaryNarrativeText(label) &&
+        (
+          isLikelyOwnershipPercentValue(values.current) ||
+          isLikelyOwnershipPercentValue(values.previous) ||
+          isLikelyOwnershipHeaderText(joined)
+        );
+
+      if (ownershipLike) {
+        return { ok: false, reason: "ownership_row" };
+      }
+
+      if (
+        statementKey === "balance" &&
+        (
+          isLikelyOwnershipHeaderText(joined) ||
+          (
+            isLikelySubsidiaryNarrativeText(label) &&
+            (isLikelyOwnershipPercentValue(values.current) || isLikelyOwnershipPercentValue(values.previous))
+          )
+        )
+      ) {
+        return { ok: false, reason: "ownership_row" };
+      }
+
       if (statementKey === "cashflow") {
         if (
           labelNorm.includes("الانشطه التشغيليه") ||
@@ -2499,6 +2645,7 @@ module.exports = async function (context, req) {
 
       if (nextCtx.isLikelyIndexPage || nextCtx.isLikelyStandardsPage || nextCtx.isLikelyNarrativePage) return false;
       if (nextCtx.isLikelyEquityStatement) return false;
+      if (nextCtx.isLikelyOwnershipPage) return false;
       if (statementKey === "income" && nextCtx.isLikelyComprehensiveIncome) return false;
 
       const primaryCols = safeNumber(primaryCtx.mainColumnCount, 0);
@@ -3001,6 +3148,8 @@ module.exports = async function (context, req) {
         isLikelyEquityStatement: r.isLikelyEquityStatement,
         isLikelyComprehensiveIncome: r.isLikelyComprehensiveIncome,
         isLikelyNarrativePage: r.isLikelyNarrativePage,
+        isLikelyOwnershipPage: r.isLikelyOwnershipPage,
+        ownershipLikeRowCount: r.ownershipLikeRowCount,
         pageGuardrails: r.pageGuardrails,
         header: r.header
       }));
@@ -3008,8 +3157,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v6.0",
-      phase: "4B_guarded_recovery_and_core_row_boundary",
+      engine: "extract-financial-v6.1",
+      phase: "4B_ownership_page_guardrail_and_balance_cleanup",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -3069,10 +3218,10 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v6.0 adds guarded template recovery instead of allowing unlabeled numeric rows to flood lite outputs",
-          "v6.0 stops recovered rows once enough real core rows have already been extracted",
-          "v6.0 prunes synthetic spillover so income/cashflow stay focused on core statement rows",
-          "v6.0 keeps the existing ranking and statement-selection architecture intact",
+          "v6.1 adds ownership-page detection to stop subsidiary/entity tables from winning balance ranking",
+          "v6.1 rejects ownership-style rows during extraction even if such a page is selected accidentally",
+          "v6.1 keeps guarded template recovery from v6.0",
+          "v6.1 keeps ranking and statement-selection architecture intact",
           "multi-page extension remains guarded against crossing into the next detected statement page"
         ]
       },
