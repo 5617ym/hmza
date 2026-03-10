@@ -460,20 +460,19 @@ module.exports = async function (context, req) {
         ? Math.max(0, headerState.headerRowIndex + 1)
         : 0;
 
-      for (const row of (rows || []).slice(start, start + 36)) {
+      for (const row of (rows || []).slice(start, start + 40)) {
         if (!Array.isArray(row)) continue;
 
         row.forEach((cell, idx) => {
           const raw = String(cell || "").trim();
           if (!raw) return;
           if (idx === headerState?.currentCol || idx === headerState?.previousCol || idx === headerState?.noteCol) return;
-
           if (!isLikelyTextLabelCell(raw)) return;
 
           let score = Math.min(raw.length, 80) + 10;
           if (hasArabicChars(raw)) score += 8;
-          if (idx === row.length - 1 && headerState?.direction === "rtl") score += 18;
-          if (idx === 0 && headerState?.direction === "ltr") score += 10;
+          if (headerState?.direction === "rtl") score += idx * 6;
+          if (headerState?.direction === "ltr") score += (row.length - idx) * 2;
 
           scoreByCol[idx] = (scoreByCol[idx] || 0) + score;
         });
@@ -489,10 +488,26 @@ module.exports = async function (context, req) {
       if (ranked.length) {
         if (headerState?.direction === "rtl") {
           const bestScore = ranked[0].score;
-          const close = ranked.filter((x) => x.score >= bestScore - 12);
-          return close.sort((a, b) => b.idx - a.idx)[0].idx;
+          const close = ranked.filter((x) => x.score >= bestScore - 14);
+          return close.sort((a, b) => b.idx - a.idx || b.score - a.score)[0].idx;
         }
         return ranked[0].idx;
+      }
+
+      const maxCols = Math.max(0, ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0)));
+      const reserved = new Set(
+        [headerState?.currentCol, headerState?.previousCol, headerState?.noteCol]
+          .filter((x) => Number.isFinite(x))
+      );
+
+      if (headerState?.direction === "rtl") {
+        for (let c = maxCols - 1; c >= 0; c -= 1) {
+          if (!reserved.has(c)) return c;
+        }
+      } else {
+        for (let c = 0; c < maxCols; c += 1) {
+          if (!reserved.has(c)) return c;
+        }
       }
 
       return headerState?.labelCol ?? 0;
@@ -689,7 +704,7 @@ module.exports = async function (context, req) {
         }
       }
 
-            // 7) label column refinement from body rows with RTL/LTR awareness
+      // 7) label column refinement from body rows with RTL/LTR awareness
       labelCol = refineLabelColumnFromBody(rows, {
         currentCol,
         previousCol,
@@ -699,45 +714,46 @@ module.exports = async function (context, req) {
         direction: language.direction
       });
 
-      // 8) hard RTL fallback:
-      // if table is Arabic/RTL and the detected label column is on the far left
-      // while the rightmost column looks textual, force the last textual column as label.
+      // 8) hard structural fallback
+      const maxColCount = Math.max(0, ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0)));
+      const reservedCols = new Set([currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x)));
+
       if (language.direction === "rtl") {
-        const maxColCount = Math.max(0, ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0)));
-        const candidateCols = [];
-
-        for (let c = maxColCount - 1; c >= 0; c -= 1) {
-          if (c === currentCol || c === previousCol || c === noteCol) continue;
-
-          let textHits = 0;
-
-          for (const row of (rows || []).slice(headerRowIndex != null ? headerRowIndex + 1 : 0, 36)) {
-            if (!Array.isArray(row)) continue;
-            const raw = String(row[c] || "").trim();
-            if (!raw) continue;
-            if (isLikelyTextLabelCell(raw)) textHits += 1;
+        const rightmostFreeCol = (() => {
+          for (let c = maxColCount - 1; c >= 0; c -= 1) {
+            if (!reservedCols.has(c)) return c;
           }
+          return null;
+        })();
 
-          if (textHits > 0) {
-            candidateCols.push({ idx: c, textHits });
-          }
-        }
-
-        if (candidateCols.length) {
-          candidateCols.sort((a, b) => b.idx - a.idx || b.textHits - a.textHits);
-          const rtlBest = candidateCols[0].idx;
-
-          if (
+        if (
+          rightmostFreeCol != null &&
+          (
             labelCol == null ||
-            labelCol <= Math.min(
-              currentCol != null ? currentCol : Infinity,
-              previousCol != null ? previousCol : Infinity,
-              noteCol != null ? noteCol : Infinity
-            )
-          ) {
-            labelCol = rtlBest;
-            mode = `${mode}_rtl_hard_fallback`;
+            reservedCols.has(labelCol) ||
+            labelCol < rightmostFreeCol
+          )
+        ) {
+          labelCol = rightmostFreeCol;
+          mode = `${mode}_rtl_rightmost_free_col`;
+        }
+      } else {
+        const leftmostFreeCol = (() => {
+          for (let c = 0; c < maxColCount; c += 1) {
+            if (!reservedCols.has(c)) return c;
           }
+          return null;
+        })();
+
+        if (
+          leftmostFreeCol != null &&
+          (
+            labelCol == null ||
+            reservedCols.has(labelCol)
+          )
+        ) {
+          labelCol = leftmostFreeCol;
+          mode = `${mode}_ltr_leftmost_free_col`;
         }
       }
 
@@ -1949,6 +1965,19 @@ module.exports = async function (context, req) {
         if (!pieces.includes(raw)) {
           pieces.push(raw);
           if (header?.direction === "rtl") break;
+        }
+      }
+
+      // fallback: if no dedicated label column was found, try any textual cell
+      if (!pieces.length) {
+        for (const i of orderedIndexes) {
+          const raw = String(cells[i] || "").trim();
+          if (!raw) continue;
+          if (i === header?.currentCol || i === header?.previousCol) continue;
+          if (isLikelyTextLabelCell(raw)) {
+            pieces.push(raw);
+            break;
+          }
         }
       }
 
