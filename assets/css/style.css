@@ -1,156 +1,146 @@
-/* إعدادات الخط والألوان الأساسية */
-body {
+/* إجبار الخلفية على اللون الأخضر الفاتح جداً */
+html, body {
     margin: 0;
     padding: 0;
-    background-color: #f0f7f2 !important; /* لون الخلفية الأخضر الفاتح جداً */
+    background-color: #e9f2ec !important; /* نفس درجة لون الصورة المرفقة */
     font-family: 'Tajawal', sans-serif;
-    color: #062b18;
+    color: #062b18 !important;
     direction: rtl;
     min-height: 100vh;
 }
 
-/* شريط التنقل العلوي */
-.top-navbar {
+.navbar {
     display: flex;
     justify-content: space-between;
     padding: 20px 5%;
     align-items: center;
 }
 
-.signin-button {
+.signin-btn {
     background: #143323;
-    color: white;
+    color: white !important;
     padding: 8px 25px;
     border-radius: 8px;
     text-decoration: none;
     font-weight: bold;
 }
 
-.nav-item {
-    margin-right: 15px;
-    font-weight: 500;
-}
+.nav-text { margin-right: 15px; font-weight: 500; }
+.nav-logo-icon { width: 35px; }
 
-.mini-logo-nav {
-    width: 40px;
-}
-
-/* القسم الرئيسي */
-.hero-section {
+.content-wrapper {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-bottom: 50px;
+    padding: 0 20px 60px 20px;
 }
 
-.brand-logo-large {
-    width: 350px; /* حجم الشعار كما في التصميم */
-    margin-top: 20px;
+/* تكبير حجم اللوجو ليطابق الصورة */
+.main-hero-logo {
+    width: 450px !important; /* حجم كبير جداً */
+    max-width: 90%;
     height: auto;
+    margin-top: 10px;
 }
 
-.brand-title {
-    font-size: 3.5rem;
-    margin: 10px 0;
+.brand-name {
+    font-size: 3.8rem;
     font-weight: 800;
+    margin: 5px 0;
+    color: #062b18 !important;
 }
 
-.brand-subtitle {
-    font-size: 1.2rem;
+.brand-tagline {
+    font-size: 1.4rem;
     margin-bottom: 40px;
-    opacity: 0.9;
+    color: #062b18;
 }
 
-/* تصميم البطاقة الزجاجية (Glassmorphism) */
-.glass-card-panel {
-    background: rgba(255, 255, 255, 0.45); /* شفافية بيضاء */
-    backdrop-filter: blur(15px);
-    -webkit-backdrop-filter: blur(15px);
-    border-radius: 30px;
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    width: 90%;
-    max-width: 950px;
-    padding: 40px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.02);
+/* البطاقة الزجاجية الاحترافية */
+.glass-container {
+    background: rgba(255, 255, 255, 0.4) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 35px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    width: 100%;
+    max-width: 900px;
+    padding: 45px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.03);
 }
 
-.card-internal-title {
+.glass-title {
     text-align: center;
-    margin-bottom: 35px;
-    font-size: 1.8rem;
+    font-size: 2rem;
     font-weight: 700;
+    margin-bottom: 40px;
 }
 
-/* توزيع الحقول بشكل أفقي */
-.inputs-row-container {
+.form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 25px;
-    margin-bottom: 35px;
+    gap: 30px;
+    margin-bottom: 40px;
 }
 
-.form-group label {
+.input-group label {
     display: block;
     margin-bottom: 12px;
     font-weight: 700;
+    text-align: center;
 }
 
-/* منطقة الرفع */
-.upload-drop-zone {
-    height: 120px;
+.drop-box {
+    height: 140px;
     border: 2px dashed rgba(6, 43, 24, 0.1);
-    border-radius: 15px;
+    border-radius: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.2);
-    color: rgba(6, 43, 24, 0.5);
+    background: rgba(255, 255, 255, 0.3);
+    color: rgba(6, 43, 24, 0.4);
 }
 
 /* القوائم المنسدلة الداكنة كما في الصورة */
-.custom-dark-select {
+.dark-dropdown {
     width: 100%;
-    background-color: #1a2b23;
-    color: white;
-    padding: 15px;
+    background-color: #1a2b23 !important;
+    color: #92b0a1 !important; /* لون الخط المائل للأخضر الباهت داخل القائمة */
+    padding: 16px;
     border-radius: 12px;
     border: none;
     font-family: 'Tajawal';
-    font-size: 1rem;
-    cursor: pointer;
+    appearance: none;
 }
 
-/* أزرار العمليات */
-.card-action-footer {
+.button-footer {
     display: flex;
     align-items: center;
-    gap: 30px;
+    gap: 20px;
 }
 
-.btn-reset-text {
-    cursor: pointer;
-    font-weight: bold;
-    color: #062b18;
-    background: #e1ede5;
-    padding: 8px 20px;
-    border-radius: 10px;
-}
-
-.btn-submit-results {
-    background: linear-gradient(90deg, #3d8a63, #2d6a4f);
+.clear-btn-text {
+    background: #062b18;
     color: white;
     border: none;
-    padding: 14px 50px;
+    padding: 10px 30px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.submit-btn-green {
+    background: linear-gradient(90deg, #57a77d, #428e67); /* تدرج أخضر كما في الصورة */
+    color: white;
+    border: none;
+    padding: 14px 55px;
     border-radius: 30px;
     font-weight: 800;
     font-size: 1.1rem;
     cursor: pointer;
-    box-shadow: 0 4px 15px rgba(45, 106, 79, 0.3);
+    box-shadow: 0 4px 15px rgba(66, 142, 103, 0.4);
 }
 
-/* للهواتف: ترتيب عمودي */
 @media (max-width: 768px) {
-    .inputs-row-container {
-        grid-template-columns: 1fr;
-    }
+    .form-grid { grid-template-columns: 1fr; }
 }
