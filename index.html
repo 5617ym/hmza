@@ -8,39 +8,48 @@
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header class="nav-bar">
-        <div class="nav-right">
-            <a href="#" class="btn-signin">Sign in</a>
-            <span class="nav-text">وصلة</span>
-            <span class="nav-text">وصلة المالية</span>
+    <header class="main-header">
+        <div class="header-right">
+            <a href="#" class="login-btn">Sign in</a>
+            <span class="nav-label">وصلة</span>
+            <span class="nav-label">وصلة المالية</span>
         </div>
-        <img src="assets/images/logo.png" class="nav-logo-small">
+        <img src="assets/images/logo.png" class="header-logo">
     </header>
 
-    <section class="hero-content">
-        <img src="assets/images/logo.png" class="hero-logo-large" alt="Logo">
-        <h1 class="brand-title">وصلة المالية</h1>
-        <p class="brand-slogan">نتحدث مع الأرقام وتحدثنا عن الأداء</p>
+    <section class="hero-wrapper">
+        <div class="logo-container">
+            <img src="assets/images/logo.png" class="big-logo" alt="Wasla Logo">
+        </div>
+        <h1 class="hero-title">وصلة المالية</h1>
+        <p class="hero-desc">نتحدث مع الأرقام وتحدثنا عن الأداء</p>
 
-        <div class="glass-card">
-            <h2 class="card-heading">ارفع ملفات واترك الباقي علينا</h2>
-            <div class="grid-inputs">
-                <div class="input-col">
+        <div class="main-glass-card">
+            <h2 class="card-headline">ارفع ملفات واترك الباقي علينا</h2>
+            <div class="inputs-row-grid">
+                <div class="field-group">
                     <label>ارفع ملفاتك</label>
-                    <div class="drop-zone">اسحب الملفات هنا</div>
+                    <div class="file-drop-area">اسحب الملفات هنا</div>
                 </div>
-                <div class="input-col">
+                <div class="field-group">
                     <label>الفترة</label>
-                    <select class="select-dark"><option>سنوي</option><option>ربعي</option></select>
+                    <select class="themed-select">
+                        <option>سنوي</option>
+                        <option>ربعي</option>
+                        <option>آخر 12 شهر</option>
+                    </select>
                 </div>
-                <div class="input-col">
+                <div class="field-group">
                     <label>للمقارنة</label>
-                    <select class="select-dark"><option>بدون مقارنة</option></select>
+                    <select class="themed-select">
+                        <option>بدون مقارنة</option>
+                        <option>مقارنة بفترة سابقة</option>
+                    </select>
                 </div>
             </div>
-            <div class="card-btns">
-                <span class="reset-link">مسح</span>
-                <button class="btn-primary">عرض النتائج</button>
+            <div class="card-actions">
+                <span class="clear-btn">مسح</span>
+                <button class="submit-btn">عرض النتائج</button>
             </div>
         </div>
     </section>
