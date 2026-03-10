@@ -216,6 +216,10 @@ module.exports = async function (context, req) {
       return s.trim();
     }
 
+    function cleanupNote(note) {
+      return String(note || "").replace(/\s+/g, " ").trim() || null;
+    }
+
     function pageNumFromObj(obj) {
       return safeNumber(
         obj?.pageNumber ??
@@ -2105,6 +2109,28 @@ module.exports = async function (context, req) {
       return labels[index] || `${statementKey}_row_${index + 1}`;
     }
 
+    function isSyntheticStatementLabel(label, statementKey) {
+      return new RegExp(`^${statementKey}_row_\\d+$`, "i").test(String(label || "").trim());
+    }
+
+    function hasRealExtractedLabel(item, statementKey) {
+      if (!item) return false;
+      if (item.recoveredByTemplate) return false;
+      return !isSyntheticStatementLabel(item.label, statementKey);
+    }
+
+    function minCoreLabelThreshold(statementKey) {
+      if (statementKey === "balance") return 5;
+      if (statementKey === "income") return 6;
+      return 5;
+    }
+
+    function maxRecoveredRowsAllowed(statementKey) {
+      if (statementKey === "income") return 4;
+      if (statementKey === "cashflow") return 3;
+      return 4;
+    }
+
     function isSeparatorRow(cells) {
       const text = (cells || []).join(" ").trim();
       return /^[-–—_=|.\s]+$/.test(text);
@@ -2407,12 +2433,14 @@ module.exports = async function (context, req) {
         const prevStrength =
           (prev.current != null ? 1 : 0) +
           (prev.previous != null ? 1 : 0) +
-          (prev.note ? 0.25 : 0);
+          (prev.note ? 0.25 : 0) +
+          (hasRealExtractedLabel(prev, prev.statementKey || "") ? 0.75 : 0);
 
         const nowStrength =
           (item.current != null ? 1 : 0) +
           (item.previous != null ? 1 : 0) +
-          (item.note ? 0.25 : 0);
+          (item.note ? 0.25 : 0) +
+          (hasRealExtractedLabel(item, item.statementKey || "") ? 0.75 : 0);
 
         if (nowStrength > prevStrength) {
           map.set(key, item);
@@ -2420,6 +2448,46 @@ module.exports = async function (context, req) {
       }
 
       return Array.from(map.values());
+    }
+
+    function shouldAcceptRecoveredRow(params) {
+      const {
+        statementKey,
+        tableIndex,
+        recoveredAcceptedCount,
+        realLabelAcceptedCount,
+        note
+      } = params;
+
+      const minReal = minCoreLabelThreshold(statementKey);
+      const maxRecovered = maxRecoveredRowsAllowed(statementKey);
+
+      if (realLabelAcceptedCount >= minReal) return false;
+      if (recoveredAcceptedCount >= maxRecovered) return false;
+
+      if (tableIndex > 0 && recoveredAcceptedCount >= 1) return false;
+      if (tableIndex > 0 && realLabelAcceptedCount >= Math.max(3, minReal - 2)) return false;
+
+      if (note && !isLikelyReferenceValue(note) && normalizeText(note).length > 0) {
+        return false;
+      }
+
+      return true;
+    }
+
+    function pruneStatementItems(items, statementKey) {
+      const list = Array.isArray(items) ? items : [];
+      const realLabeledItems = list.filter((x) => hasRealExtractedLabel(x, statementKey));
+      const threshold = minCoreLabelThreshold(statementKey);
+
+      if (realLabeledItems.length >= threshold) {
+        return realLabeledItems;
+      }
+
+      const recoveredCap = maxRecoveredRowsAllowed(statementKey);
+      const recoveredItems = list.filter((x) => !hasRealExtractedLabel(x, statementKey)).slice(0, recoveredCap);
+
+      return [...realLabeledItems, ...recoveredItems];
     }
 
     function areTableStructuresCompatible(primaryCtx, nextCtx, statementKey) {
@@ -2514,13 +2582,15 @@ module.exports = async function (context, req) {
       return result;
     }
 
-    function buildLiteItem(label, current, previous, note, source) {
+    function buildLiteItem(label, current, previous, note, source, statementKey, recoveredByTemplate = false) {
       return {
         label: String(label || "").trim(),
         current: current != null ? current : null,
         previous: previous != null ? previous : null,
-        note: note || null,
-        source: source || null
+        note: cleanupNote(note),
+        source: source || null,
+        statementKey,
+        recoveredByTemplate: !!recoveredByTemplate
       };
     }
 
@@ -2595,6 +2665,8 @@ module.exports = async function (context, req) {
       let acceptedRowsCount = 0;
       let rejectedRowsCount = 0;
       let recoveredNumericRowsCount = 0;
+      let acceptedRecoveredRowsCount = 0;
+      let acceptedRealLabelRowsCount = 0;
 
       for (let t = 0; t < statementTables.length; t += 1) {
         const tableInfo = statementTables[t];
@@ -2622,6 +2694,9 @@ module.exports = async function (context, req) {
         for (let i = startRowIndex; i < metaRows.length; i += 1) {
           const cells = metaRows[i].cells || [];
           const validation = validateRow(cells, header, statementKey);
+          const note = header.noteCol != null
+            ? cleanupNote(cells[header.noteCol])
+            : null;
 
           if (!validation.ok) {
             rejectedRowsCount += 1;
@@ -2634,14 +2709,34 @@ module.exports = async function (context, req) {
             continue;
           }
 
-          const note = header.noteCol != null
-            ? String(cells[header.noteCol] || "").trim() || null
-            : null;
+          if (validation.reason === "numeric_row_recovered") {
+            const acceptRecovered = shouldAcceptRecoveredRow({
+              statementKey,
+              tableIndex: t,
+              recoveredAcceptedCount: acceptedRecoveredRowsCount,
+              realLabelAcceptedCount: acceptedRealLabelRowsCount,
+              note
+            });
+
+            if (!acceptRecovered) {
+              rejectedRowsCount += 1;
+              rejectedRows.push({
+                pageNumber: tableInfo.pageNumber,
+                rowIndex: i,
+                reason: "recovered_row_pruned",
+                row: cells.join(" | ")
+              });
+              continue;
+            }
+          }
 
           const finalLabel = cleanupLabel(validation.label) || getSyntheticLabel(statementKey, allItems.length);
 
           if (validation.reason === "numeric_row_recovered") {
             recoveredNumericRowsCount += 1;
+            acceptedRecoveredRowsCount += 1;
+          } else {
+            acceptedRealLabelRowsCount += 1;
           }
 
           allItems.push(buildLiteItem(
@@ -2652,20 +2747,31 @@ module.exports = async function (context, req) {
             {
               pageNumber: tableInfo.pageNumber,
               rowIndex: i
-            }
+            },
+            statementKey,
+            validation.recoveredByTemplate
           ));
           acceptedRowsCount += 1;
         }
       }
 
-      const items = dedupeItems(allItems);
+      const deduped = dedupeItems(allItems);
+      const pruned = pruneStatementItems(deduped, statementKey)
+        .filter((x) => x.current != null || x.previous != null)
+        .map((x) => ({
+          label: x.label,
+          current: x.current,
+          previous: x.previous,
+          note: x.note,
+          source: x.source
+        }));
 
       return {
         pageNumber,
         latest,
         previous,
         years: [latest, previous].filter(Boolean),
-        items: items.filter((x) => x.current != null || x.previous != null),
+        items: pruned,
         extractionMeta: {
           currentCol: primaryHeader.currentCol,
           previousCol: primaryHeader.previousCol,
@@ -2678,10 +2784,13 @@ module.exports = async function (context, req) {
           acceptedRowsCount,
           rejectedRowsCount,
           recoveredNumericRowsCount,
+          realLabelAcceptedRowsCount: acceptedRealLabelRowsCount,
+          recoveredRowsAcceptedCount: acceptedRecoveredRowsCount,
+          outputItemsCount: pruned.length,
           labelMode:
-            recoveredNumericRowsCount > 0
-              ? "mixed_extracted_and_template_recovery"
-              : items.some((x) => !/^balance_row_|^income_row_|^cashflow_row_/i.test(x.label))
+            acceptedRecoveredRowsCount > 0
+              ? "mixed_extracted_and_guarded_template_recovery"
+              : pruned.some((x) => !isSyntheticStatementLabel(x.label, statementKey))
                 ? "extracted_from_table_rows"
                 : "synthetic_by_statement_template",
           rejectedRowsSample: rejectedRows.slice(0, 20)
@@ -2899,8 +3008,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.9",
-      phase: "4B_kind_specific_core_shape_ranking",
+      engine: "extract-financial-v6.0",
+      phase: "4B_guarded_recovery_and_core_row_boundary",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2937,26 +3046,34 @@ module.exports = async function (context, req) {
           income: {
             accepted: incomeStatementLite?.extractionMeta?.acceptedRowsCount ?? 0,
             rejected: incomeStatementLite?.extractionMeta?.rejectedRowsCount ?? 0,
-            recoveredNumericRows: incomeStatementLite?.extractionMeta?.recoveredNumericRowsCount ?? 0
+            recoveredNumericRows: incomeStatementLite?.extractionMeta?.recoveredNumericRowsCount ?? 0,
+            realLabelAcceptedRows: incomeStatementLite?.extractionMeta?.realLabelAcceptedRowsCount ?? 0,
+            recoveredRowsAccepted: incomeStatementLite?.extractionMeta?.recoveredRowsAcceptedCount ?? 0,
+            outputItems: incomeStatementLite?.extractionMeta?.outputItemsCount ?? 0
           },
           balance: {
             accepted: balanceSheetLite?.extractionMeta?.acceptedRowsCount ?? 0,
             rejected: balanceSheetLite?.extractionMeta?.rejectedRowsCount ?? 0,
-            recoveredNumericRows: balanceSheetLite?.extractionMeta?.recoveredNumericRowsCount ?? 0
+            recoveredNumericRows: balanceSheetLite?.extractionMeta?.recoveredNumericRowsCount ?? 0,
+            realLabelAcceptedRows: balanceSheetLite?.extractionMeta?.realLabelAcceptedRowsCount ?? 0,
+            recoveredRowsAccepted: balanceSheetLite?.extractionMeta?.recoveredRowsAcceptedCount ?? 0,
+            outputItems: balanceSheetLite?.extractionMeta?.outputItemsCount ?? 0
           },
           cashflow: {
             accepted: cashFlowLite?.extractionMeta?.acceptedRowsCount ?? 0,
             rejected: cashFlowLite?.extractionMeta?.rejectedRowsCount ?? 0,
-            recoveredNumericRows: cashFlowLite?.extractionMeta?.recoveredNumericRowsCount ?? 0
+            recoveredNumericRows: cashFlowLite?.extractionMeta?.recoveredNumericRowsCount ?? 0,
+            realLabelAcceptedRows: cashFlowLite?.extractionMeta?.realLabelAcceptedRowsCount ?? 0,
+            recoveredRowsAccepted: cashFlowLite?.extractionMeta?.recoveredRowsAcceptedCount ?? 0,
+            outputItems: cashFlowLite?.extractionMeta?.outputItemsCount ?? 0
           }
         },
         notes: [
-          "v5.9 makes early-core boost kind-specific instead of generic",
-          "v5.9 prevents early balance-like pages from dominating income and cashflow ranking",
-          "late note-detail penalty remains active for late dense pages without strong own titles",
-          "numeric-row recovery remains active when OCR drops the label column from RTL tables",
-          "template recovery is tracked explicitly in extractionMeta.labelMode",
-          "multi-page extension is guarded against crossing into the next detected statement page"
+          "v6.0 adds guarded template recovery instead of allowing unlabeled numeric rows to flood lite outputs",
+          "v6.0 stops recovered rows once enough real core rows have already been extracted",
+          "v6.0 prunes synthetic spillover so income/cashflow stay focused on core statement rows",
+          "v6.0 keeps the existing ranking and statement-selection architecture intact",
+          "multi-page extension remains guarded against crossing into the next detected statement page"
         ]
       },
 
