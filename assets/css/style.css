@@ -1,16 +1,16 @@
 :root {
-  /* تعديل 3: ألوان الخلفية أخضر فاتح جداً */
-  --bg: #f0f7f2; 
-  /* تعديل 6: لون البطاقة أخضر غامق */
-  --panel: #062b18;
-  --panel2: #08361e;
+  /* تعديل 3: لون الخلفية الجديد */
+  --bg: #bed4be; 
+  /* تعديل 6: لون البطاقة الجديد مع خاصية الشفافية */
+  --panel: rgba(63, 79, 63, 0.85); 
+  --panel-glass: rgba(63, 79, 63, 0.7);
+  
+  /* تعديل 4: لون الكتابة في الواجهة */
+  --text-main: #1e2b1e; 
+  /* تعديل 7: لون الكتابة داخل البطاقة */
+  --text-panel: #bed4be; 
+  
   --stroke: rgba(255, 255, 255, 0.1);
-  /* تعديل 4: ألوان الكتابة في الواجهة أخضر غامق */
-  --text-main: #062b18; 
-  /* تعديل 6: الكتابة داخل البطاقة بلون أخضر فاتح جداً */
-  --text-panel: #f0f7f2;
-  --muted-dark: rgba(6, 43, 24, 0.7);
-
   --btn: linear-gradient(90deg, #57a77d, #428e67);
 }
 
@@ -19,121 +19,105 @@ html, body { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text-main); /* تطبيق الأخضر الغامق على نصوص الواجهة */
-  font-family: "Mona", "Tajawal", "Cairo", "IBM Plex Sans Arabic", system-ui, -apple-system, sans-serif;
+  background-color: var(--bg) !important;
+  color: var(--text-main);
+  font-family: "Mona", "Tajawal", "Cairo", "IBM Plex Sans Arabic", system-ui, sans-serif;
   direction: rtl;
 }
 
-/* container */
+/* تعديل 5: تصغير حجم البطاقة بـ 5 درجات (من 1100px إلى 900px) */
 .container {
-  /* تعديل 5: تقليل حجم البطاقة (Container) بمقدار 5 درجات تقريباً */
-  width: min(950px, calc(100% - 40px)); 
+  width: min(900px, calc(100% - 40px));
   margin-inline: auto;
 }
 
-/* HERO */
+/* HERO Section */
 .hero {
   position: relative;
-  /* تعديل 2: تقليل البادينج العلوي لتقريب العناصر من الأعلى */
-  padding: 30px 0 50px; 
-  background: transparent; /* إزالة التدرج القديم للحصول على مظهر نظيف */
+  padding: 40px 0 50px;
+  background: transparent !important; /* إزالة التدرج القديم ليظهر لون الخلفية الجديد */
 }
 
-/* إزالة التأثير السفلي للهيرو لضمان نظافة الخلفية الفاتحة */
-.hero::after { display: none; }
+/* إزالة الخط الفاصل السفلي لضمان نظافة التصميم الجديد */
+.hero::after { display: none !important; }
 
 .hero-inner {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0px; /* تقليل الفجوة بين العناصر */
+  gap: 0; 
 }
 
+/* تعديل 1 و 2: تكبير الشعار وتقريبه جداً من الاسم */
 .hero-logo {
-  /* تعديل 1: رفع حجم الشعار (من 170px إلى حوالي 240px) */
-  width: 240px; 
+  width: 260px !important; /* زيادة الحجم بخمس درجات تقريباً */
   height: auto;
-  /* تعديل 2: تقريب الشعار من الاسم بمسافة قريبة جداً دون تداخل */
-  margin-bottom: -15px; 
+  margin-bottom: -25px !important; /* تقريب الشعار جداً من الاسم */
   filter: drop-shadow(0 10px 20px rgba(0,0,0,0.1));
 }
 
 .hero-title {
   margin: 0;
   font-size: clamp(34px, 4vw, 56px);
+  color: var(--text-main);
   font-weight: 800;
-  color: var(--text-main); /* أخضر غامق */
 }
 
 .hero-subtitle {
   margin: 5px 0 0;
-  color: var(--muted-dark);
-  font-size: 18px;
+  color: var(--text-main);
+  opacity: 0.8;
 }
 
-/* CONTENT */
+/* CONTENT & PANEL */
 .content {
-  margin-top: 20px;
+  margin-top: 10px;
   padding-bottom: 34px;
 }
 
 .panel {
-  background: var(--panel) !important; /* أخضر غامق */
-  color: var(--text-panel) !important; /* نصوص فاتحة جداً */
-  border: 1px solid var(--stroke);
+  /* تعديل 6: البطاقة بلون #3f4f3f وزجاجية شفافة */
+  background: var(--panel-glass) !important;
+  backdrop-filter: blur(15px); /* تأثير الزجاج الضبابي */
+  -webkit-backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 25px;
-  box-shadow: 0 15px 40px rgba(0,0,0,0.1);
-  backdrop-filter: blur(12px);
-  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+  color: var(--text-panel) !important;
 }
 
-.panel-title h2, .label, .uploader-hint, .file-name, .file-meta {
-  color: var(--text-panel) !important; /* ضمان تحول كل نصوص البطاقة للأخضر الفاتح */
+/* تعديل 7: توحيد لون الكتابة داخل البطاقة */
+.panel-title h2, .label, .uploader-hint, .file-name, .file-meta, .muted {
+  color: var(--text-panel) !important;
 }
 
 .panel-body {
-  padding: 25px 30px;
+  padding: 30px;
 }
 
-/* الأزرار والحقول داخل البطاقة */
+/* تحسين شكل القوائم المنسدلة لتناسب التصميم الزجاجي */
 .select {
-  width: 100%;
-  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: var(--text-panel) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1); /* خلفية فاتحة شفافة داخل البطاقة الغامقة */
-  color: var(--text-panel);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  outline: none;
 }
 
 .uploader-row {
-  border: 1px dashed rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px dashed rgba(189, 212, 190, 0.3) !important;
 }
 
 .btn {
-  appearance: none;
-  border: none;
-  cursor: pointer;
-  padding: 12px 30px;
+  background: var(--btn) !important;
+  color: #fff !important;
   border-radius: 30px;
-  color: #fff;
-  background: var(--btn);
+  padding: 12px 35px;
   font-weight: 700;
-  box-shadow: 0 4px 15px rgba(66, 142, 103, 0.3);
 }
 
 .btn-ghost {
-  background: transparent;
-  color: var(--text-panel);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-/* تعديل إضافي لضمان بقاء البطاقة في المنتصف */
-.container {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  color: var(--text-panel) !important;
+  border: 1px solid var(--text-panel) !important;
 }
