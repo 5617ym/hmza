@@ -1,52 +1,24 @@
-/* إجبار الخلفية على اللون الأخضر الفاتح المطلوب */
-:root {
-    --bg-light: #f0f7f2;
-    --dark-green: #062b18;
-    --glass-white: rgba(255, 255, 255, 0.45);
-}
-
-body {
-    background-color: var(--bg-light) !important;
-    color: var(--dark-green) !important;
+/* فرض اللون الفاتح ومنع اللون الغامق نهائياً */
+html, body {
+    background-color: #f0f7f2 !important; /* أخضر فاتح جداً */
+    background-image: none !important;
+    color: #062b18 !important;
     margin: 0;
-    font-family: 'Tajawal', sans-serif;
+    padding: 0;
 }
 
-/* تكبير الشعار وتقريبه من الاسم كما في الصورة المطلوبة */
-.hero-logo-large, #logo, .main-logo { 
-    width: 450px !important; 
-    margin-bottom: -25px !important;
-    display: block;
-    margin-left: auto;
-    margin-right: auto;
+/* تقريب الشعار من الاسم ورفع جودته بصرياً */
+.hero-logo-large, #logo, img[src*="logo"] {
+    width: 400px !important;
+    margin-bottom: -30px !important; /* تقريب المسافة */
+    filter: contrast(1.1);
 }
 
-/* تحويل البطاقة للنمط الزجاجي الفاتح */
-.glass-card, #upload-container, .container {
-    background: var(--glass-white) !important;
-    backdrop-filter: blur(15px);
-    -webkit-backdrop-filter: blur(15px);
-    border: 1px solid rgba(255, 255, 255, 0.6) !important;
-    border-radius: 35px !important;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.02) !important;
-    color: var(--dark-green) !important;
-}
-
-/* الحفاظ على أزرار الاختيار الداكنة */
-select, .custom-select {
-    background-color: #1a2b23 !important;
-    color: #92b0a1 !important;
-    border-radius: 12px !important;
-    border: none !important;
-    padding: 12px !important;
-}
-
-/* زر عرض النتائج الأخضر */
-#btnShow, .submit-btn {
-    background: linear-gradient(90deg, #57a77d, #428e67) !important;
-    color: white !important;
-    border-radius: 30px !important;
-    padding: 15px 50px !important;
-    border: none !important;
-    font-weight: 800 !important;
+/* البطاقة الزجاجية كما في التصميم المطلوب */
+.glass-card, #upload-container {
+    background: rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border-radius: 40px !important;
+    border: 1px solid rgba(255, 255, 255, 0.7) !important;
 }
