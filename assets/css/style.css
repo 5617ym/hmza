@@ -1,24 +1,249 @@
-/* فرض اللون الفاتح ومنع اللون الغامق نهائياً */
-html, body {
-    background-color: #f0f7f2 !important; /* أخضر فاتح جداً */
-    background-image: none !important;
-    color: #062b18 !important;
-    margin: 0;
-    padding: 0;
-}
+ستايلي  سس
 
-/* تقريب الشعار من الاسم ورفع جودته بصرياً */
-.hero-logo-large, #logo, img[src*="logo"] {
-    width: 400px !important;
-    margin-bottom: -30px !important; /* تقريب المسافة */
-    filter: contrast(1.1);
-}
 
-/* البطاقة الزجاجية كما في التصميم المطلوب */
-.glass-card, #upload-container {
-    background: rgba(255, 255, 255, 0.5) !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
-    border-radius: 40px !important;
-    border: 1px solid rgba(255, 255, 255, 0.7) !important;
-}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>وصلة المالية</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&family=Tajawal:wght@400;500;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-light: #e9f2ec; /* خلفية الموقع الفاتحة */
+            --text-dark: #062b18; /* لون النصوص الأساسي */
+            --glass-bg: rgba(255, 255, 255, 0.4); /* البطاقة الزجاجية الفاتحة */
+            --accent-green: #4caf50; /* الأخضر للأزرار والتحديد */
+            --input-bg: #1a2b23; /* خلفية القوائم المنسدلة */
+            --input-text: #ffffff;
+        }
+
+        body {
+            margin: 0;
+            background-color: var(--bg-light);
+            font-family: 'Tajawal', sans-serif;
+            color: var(--text-dark);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* الهيدر العلوي */
+        header {
+            width: 90%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .btn-sign {
+            background-color: #1a3d29;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        /* قسم اللوجو والاسم */
+        .hero {
+            text-align: center;
+            margin-top: 20px;
+            margin-bottom: 40px; /* مسافة إضافية بين الاسم والبطاقة */
+        }
+
+        .hero-logo {
+            width: 320px;
+            height: auto;
+            margin-bottom: 10px;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            margin: 0;
+            font-weight: 800;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            margin-top: 5px;
+            opacity: 0.9;
+        }
+
+        /* البطاقة الزجاجية المعدلة */
+        .main-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 25px;
+            padding: 30px;
+            width: 90%;
+            max-width: 900px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.05);
+            margin-top: 10px; /* لضمان نزول البطاقة عن الاسم */
+        }
+
+        .card-header {
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 30px;
+        }
+
+        /* الحقول الأفقية الثلاثة */
+        .inputs-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .input-group label {
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .upload-area {
+            height: 120px;
+            border: 2px dashed rgba(6, 43, 24, 0.2);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+        }
+
+        select {
+            background-color: var(--input-bg);
+            color: var(--input-text);
+            padding: 12px;
+            border-radius: 10px;
+            border: none;
+            font-family: 'Tajawal', sans-serif;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white' stroke='none'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: left 10px center;
+            background-size: 20px;
+        }
+
+        /* ألوان الخيارات عند الفتح */
+        select option {
+            background-color: #1a2b23;
+            color: #ffffff;
+            padding: 10px;
+        }
+
+        /* أزرار التحكم بالأسفل */
+        .footer-actions {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .btn-results {
+            background: linear-gradient(90deg, #2d6a4f, #52b788);
+            color: white;
+            border: none;
+            padding: 12px 35px;
+            border-radius: 25px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(45, 106, 79, 0.3);
+        }
+
+        .btn-clear {
+            background: #1a2b23;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        @media (max-width: 768px) {
+            .inputs-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="nav-links">
+            <a href="#" class="btn-sign">Sign in</a>
+            <span>وصلة</span>
+            <span>وصلة المالية</span>
+        </div>
+        <div class="logo-small">
+            <img src="logo.png" style="width: 40px; opacity: 0.8;">
+        </div>
+    </header>
+
+    <div class="hero">
+        <img src="logo.png" alt="Logo" class="hero-logo">
+        <h1>وصلة المالية</h1>
+        <p>نتحدث مع الأرقام وتحدثنا عن الأداء</p>
+    </div>
+
+    <div class="main-card">
+        <div class="card-header">ارفع ملفات واترك الباقي علينا</div>
+        
+        <div class="inputs-row">
+            <div class="input-group">
+                <label>ارفع ملفاتك</label>
+                <div class="upload-area">
+                    <span style="opacity: 0.5;">اسحب الملفات هنا</span>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>الفترة</label>
+                <select>
+                    <option>Select</option>
+                    <option selected>✓ سنوي</option>
+                    <option>ربعي</option>
+                    <option>آخر 12 شهر</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label>للمقارنة</label>
+                <select>
+                    <option>Select select</option>
+                    <option selected>✓ بدون مقارنة</option>
+                    <option>مقارنة بفترة سابقة</option>
+                    <option>مقارنة بمتوسط القطاع (لاحقاً)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="footer-actions">
+            <button class="btn-clear">مسح</button>
+            <button class="btn-results">عرض النتائج</button>
+        </div>
+    </div>
+
+</body>
+</html>
