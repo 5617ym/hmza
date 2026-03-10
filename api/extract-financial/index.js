@@ -689,7 +689,7 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 7) label column refinement from body rows with RTL/LTR awareness
+            // 7) label column refinement from body rows with RTL/LTR awareness
       labelCol = refineLabelColumnFromBody(rows, {
         currentCol,
         previousCol,
@@ -698,6 +698,48 @@ module.exports = async function (context, req) {
         headerRowIndex,
         direction: language.direction
       });
+
+      // 8) hard RTL fallback:
+      // if table is Arabic/RTL and the detected label column is on the far left
+      // while the rightmost column looks textual, force the last textual column as label.
+      if (language.direction === "rtl") {
+        const maxColCount = Math.max(0, ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0)));
+        const candidateCols = [];
+
+        for (let c = maxColCount - 1; c >= 0; c -= 1) {
+          if (c === currentCol || c === previousCol || c === noteCol) continue;
+
+          let textHits = 0;
+
+          for (const row of (rows || []).slice(headerRowIndex != null ? headerRowIndex + 1 : 0, 36)) {
+            if (!Array.isArray(row)) continue;
+            const raw = String(row[c] || "").trim();
+            if (!raw) continue;
+            if (isLikelyTextLabelCell(raw)) textHits += 1;
+          }
+
+          if (textHits > 0) {
+            candidateCols.push({ idx: c, textHits });
+          }
+        }
+
+        if (candidateCols.length) {
+          candidateCols.sort((a, b) => b.idx - a.idx || b.textHits - a.textHits);
+          const rtlBest = candidateCols[0].idx;
+
+          if (
+            labelCol == null ||
+            labelCol <= Math.min(
+              currentCol != null ? currentCol : Infinity,
+              previousCol != null ? previousCol : Infinity,
+              noteCol != null ? noteCol : Infinity
+            )
+          ) {
+            labelCol = rtlBest;
+            mode = `${mode}_rtl_hard_fallback`;
+          }
+        }
+      }
 
       return {
         latest,
