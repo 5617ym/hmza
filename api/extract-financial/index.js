@@ -1512,6 +1512,79 @@ module.exports = async function (context, req) {
       return keywordHits(firstRowsText, cfg.titles) > 0;
     }
 
+    function statementSpecificCoreShape(pageCtx, kind, cfg) {
+      const firstRowsText = (pageCtx.mainRows || [])
+        .slice(0, 8)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
+
+      const wholeText = `${pageCtx.headerText || ""}\n${firstRowsText}\n${pageCtx.structuralText || ""}`;
+      const structureHits = keywordHits(wholeText, cfg.structure);
+
+      const isEarly = pageCtx.positionRatio < 0.22;
+      const hasTwoYears = !!(pageCtx.header?.latest && pageCtx.header?.previous);
+      const compactCols = pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 5;
+      const usableRows = pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60;
+
+      if (!(isEarly && hasTwoYears && compactCols && usableRows)) {
+        return false;
+      }
+
+      if (kind === "balance") {
+        return (
+          structureHits >= 2 ||
+          containsAny(wholeText, [
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات",
+            "اجمالي المطلوبات وحقوق الملكيه",
+            "الموجودات",
+            "المطلوبات",
+            "حقوق الملكيه",
+            "total assets",
+            "total liabilities",
+            "total liabilities and equity"
+          ])
+        );
+      }
+
+      if (kind === "income") {
+        return (
+          structureHits >= 2 ||
+          containsAny(wholeText, [
+            "الدخل من التمويل",
+            "الدخل من التمويل والاستثمارات",
+            "اجمالي دخل العمليات",
+            "اجمالي مصاريف العمليات",
+            "دخل السنة قبل الزكاة",
+            "صافي دخل السنة",
+            "ربحية السهم",
+            "gross financing and investment income",
+            "net financing and investment income",
+            "fee from banking services",
+            "profit before zakat",
+            "net income"
+          ])
+        );
+      }
+
+      return (
+        structureHits >= 2 ||
+        containsAny(wholeText, [
+          "صافي النقد الناتج من الانشطة التشغيلية",
+          "صافي النقد المستخدم في الانشطة الاستثمارية",
+          "صافي النقد الناتج من الانشطة التمويلية",
+          "النقد وشبه النقد",
+          "operating activities",
+          "investing activities",
+          "financing activities",
+          "cash and cash equivalents",
+          "cash flows from operating activities",
+          "cash flows from investing activities",
+          "cash flows from financing activities"
+        ])
+      );
+    }
+
     function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
@@ -1532,9 +1605,6 @@ module.exports = async function (context, req) {
       const crossStatementTitleHits = keywordHits(pageCtx.structuralText, otherStatementTitleAliases(kind));
       const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, cfg);
 
-      // =========================================================
-      // Added hardening: late note detail penalty + early core boost
-      // =========================================================
       let lateNoteDetail = false;
       if (
         pageCtx.positionRatio > 0.6 &&
@@ -1547,17 +1617,10 @@ module.exports = async function (context, req) {
         reasons.push("lateNoteDetailPenalty:-120");
       }
 
-      let earlyCoreShape = false;
-      if (
-        pageCtx.positionRatio < 0.35 &&
-        pageCtx.mainColumnCount >= 3 &&
-        pageCtx.mainColumnCount <= 5 &&
-        pageCtx.header?.latest &&
-        pageCtx.header?.previous
-      ) {
-        earlyCoreShape = true;
-        score += 70;
-        reasons.push("earlyCoreStatementBoost:+70");
+      const earlyCoreShape = statementSpecificCoreShape(pageCtx, kind, cfg);
+      if (earlyCoreShape) {
+        score += 28;
+        reasons.push("earlyCoreStatementBoost:+28");
       }
 
       signals.titleHitsHeader = titleHitsHeader;
@@ -1617,7 +1680,6 @@ module.exports = async function (context, req) {
         reasons.push(`structureFirstRows:+${s}`);
       }
 
-      // تقليل وزن structure للصفحات المتأخرة إذا لم تملك عنوانًا قويًا
       if (
         pageCtx.positionRatio > 0.6 &&
         structureHits > 0 &&
@@ -2837,8 +2899,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.8.1",
-      phase: "4B_hardening_core_statement_preference_and_late_note_penalty_final",
+      engine: "extract-financial-v5.9",
+      phase: "4B_kind_specific_core_shape_ranking",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2889,9 +2951,9 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v5.8.1 adds a hard penalty for late note-detail pages that mimic statement structure",
-          "v5.8.1 boosts early core statement-shaped pages with two real years and compact column shape",
-          "v5.8.1 reduces structure weight on late pages when no strong own statement title exists",
+          "v5.9 makes early-core boost kind-specific instead of generic",
+          "v5.9 prevents early balance-like pages from dominating income and cashflow ranking",
+          "late note-detail penalty remains active for late dense pages without strong own titles",
           "numeric-row recovery remains active when OCR drops the label column from RTL tables",
           "template recovery is tracked explicitly in extractionMeta.labelMode",
           "multi-page extension is guarded against crossing into the next detected statement page"
