@@ -1,185 +1,107 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>وصلة المالية</title>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
-    <style>
-        /* إجبار الخلفية على اللون الأخضر الفاتح جداً */
-        html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background-color: #f0f7f2 !important; 
-            font-family: 'Tajawal', sans-serif;
-            color: #062b18 !important;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>وصلة المالية</title>
 
-        /* الهيدر العلوي */
-        .header-nav {
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            padding: 20px 50px;
-            box-sizing: border-box;
-            align-items: center;
-        }
-
-        .signin-btn {
-            background: #143323;
-            color: white;
-            padding: 8px 25px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        /* الشعار الكبير (تقريب المسافة وتحسين الجودة) */
-        .hero-container {
-            text-align: center;
-            margin-top: 10px;
-        }
-
-        .main-logo {
-            width: 420px !important; /* حجم ضخم كما في الصورة */
-            max-width: 90%;
-            height: auto;
-            margin-bottom: -20px; /* لتقريب اللوجو من النص */
-        }
-
-        h1 {
-            font-size: 3.5rem;
-            font-weight: 800;
-            margin: 0;
-        }
-
-        .subtitle {
-            font-size: 1.2rem;
-            margin-top: 5px;
-            margin-bottom: 40px;
-            opacity: 0.8;
-        }
-
-        /* البطاقة الزجاجية الفاتحة */
-        .glass-card {
-            background: rgba(255, 255, 255, 0.45) !important;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            border-radius: 35px;
-            padding: 40px;
-            width: 90%;
-            max-width: 950px;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.02);
-        }
-
-        .card-title {
-            text-align: center;
-            font-size: 1.8rem;
-            font-weight: 700;
-            margin-bottom: 35px;
-        }
-
-        /* ترتيب الحقول */
-        .inputs-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 25px;
-        }
-
-        .input-item label {
-            display: block;
-            margin-bottom: 12px;
-            font-weight: 700;
-        }
-
-        .upload-area {
-            height: 120px;
-            border: 2px dashed rgba(6, 43, 24, 0.1);
-            border-radius: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255, 255, 255, 0.2);
-            color: rgba(6, 43, 24, 0.4);
-        }
-
-        .select-dark {
-            width: 100%;
-            background: #1a2b23 !important;
-            color: #92b0a1 !important;
-            padding: 15px;
-            border-radius: 12px;
-            border: none;
-            font-family: 'Tajawal';
-        }
-
-        .actions {
-            display: flex;
-            align-items: center;
-            gap: 25px;
-            margin-top: 35px;
-        }
-
-        .btn-green {
-            background: linear-gradient(90deg, #57a77d, #428e67);
-            color: white;
-            border: none;
-            padding: 14px 50px;
-            border-radius: 30px;
-            font-weight: 800;
-            cursor: pointer;
-        }
-
-        .clear-text {
-            color: #062b18;
-            font-weight: bold;
-            cursor: pointer;
-        }
-    </style>
+  <link rel="stylesheet" href="assets/css/style.css" />
 </head>
+
 <body>
 
-    <header class="header-nav">
-        <div style="display: flex; align-items: center; gap: 20px;">
-            <a href="#" class="signin-btn">Sign in</a>
-            <span>وصلة</span>
-            <span>وصلة المالية</span>
-        </div>
-        <img src="assets/images/logo.png" width="40">
-    </header>
+  <!-- HERO -->
+  <header class="hero">
+    <div class="hero-inner container">
+      
+      <img class="hero-logo" src="assets/images/logo.png" alt="Wasla Logo" />
+      <h1 class="hero-title">وصلة المالية</h1>
+      <p class="hero-subtitle">تتحدث مع الأرقام وتخبرنا عن الأداء</p>
 
-    <div class="hero-container">
-        <img src="assets/images/logo.png" class="main-logo">
-        <h1>وصلة المالية</h1>
-        <p class="subtitle">نتحدث مع الأرقام وتحدثنا عن الأداء</p>
-
-        <div class="glass-card">
-            <h2 class="card-title">ارفع ملفات واترك الباقي علينا</h2>
-            <div class="inputs-grid">
-                <div class="input-item">
-                    <label>ارفع ملفاتك</label>
-                    <div class="upload-area">اسحب الملفات هنا</div>
-                </div>
-                <div class="input-item">
-                    <label>الفترة</label>
-                    <select class="select-dark"><option>Select</option></select>
-                </div>
-                <div class="input-item">
-                    <label>للمقارنة</label>
-                    <select class="select-dark"><option>Select select</option></select>
-                </div>
-            </div>
-            <div class="actions">
-                <span class="clear-text">مسح</span>
-                <button class="btn-green">عرض النتائج</button>
-            </div>
-        </div>
+      <div class="hero-badges">
+        <span class="badge">نسخة تجريبية</span>
+        <span class="badge badge-muted">RTL</span>
+      </div>
     </div>
+  </header>
 
+  <!-- CONTENT -->
+  <main class="container content">
+
+    <section class="panel">
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2>ابدأ برفع الملفات</h2>
+        </div>
+        <span class="pill">الخطوة 1</span>
+      </div>
+
+      <div class="panel-body">
+
+        <div class="grid-2">
+          <div>
+            <label class="label" for="period">الفترة</label>
+            <select id="period" class="select">
+              <option value="yearly" selected>سنوي</option>
+              <option value="quarterly">ربعي</option>
+              <option value="ttm">آخر 12 شهر</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="label" for="compare">المقارنة</label>
+            <select id="compare" class="select">
+              <option value="none" selected>بدون مقارنة</option>
+              <option value="prev">مقارنة بفترة سابقة</option>
+              <option value="industry">مقارنة بمتوسط القطاع (لاحقًا)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="uploader">
+          <div class="uploader-row">
+            <!-- ✅ يقبل كل الأنواع -->
+            <input
+              id="fileInput"
+              class="file"
+              type="file"
+              multiple
+              accept="*/*"
+            />
+            <div class="uploader-hint">
+              يقبل جميع الملفات: PDF / Excel / CSV / Word / صور / أي نوع آخر
+            </div>
+          </div>
+
+          <div id="fileList" class="file-list"></div>
+        </div>
+
+        <div class="actions">
+          <button id="btnClear" class="btn btn-ghost" type="button">مسح</button>
+          <button id="btnShow" class="btn" type="button" disabled>عرض النتائج</button>
+        </div>
+
+        <div id="status" class="status"></div>
+      </div>
+    </section>
+
+    <!-- النتائج (مخفية مؤقتًا إلى أن نرفع ملفات) -->
+    <section id="results" class="results hidden">
+      <div class="results-head">
+        <h3>النتائج</h3>
+        <p class="muted">حالياً: نعرض الملفات المرفوعة ونجهز خطوة استخراج البيانات.</p>
+      </div>
+
+      <div class="cards" id="cards"></div>
+    </section>
+
+    <footer class="footer">
+      <p class="muted small">© وصلة المالية — بناء تدريجي خطوة بخطوة.</p>
+    </footer>
+
+  </main>
+
+  <script src="assets/js/main.js"></script>
 </body>
 </html>
