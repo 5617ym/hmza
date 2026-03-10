@@ -1,123 +1,316 @@
-:root {
-  /* تعديل 3: لون الخلفية الجديد */
-  --bg: #bed4be; 
-  /* تعديل 6: لون البطاقة الجديد مع خاصية الشفافية */
-  --panel: rgba(63, 79, 63, 0.85); 
-  --panel-glass: rgba(63, 79, 63, 0.7);
-  
-  /* تعديل 4: لون الكتابة في الواجهة */
-  --text-main: #1e2b1e; 
-  /* تعديل 7: لون الكتابة داخل البطاقة */
-  --text-panel: #bed4be; 
-  
-  --stroke: rgba(255, 255, 255, 0.1);
-  --btn: linear-gradient(90deg, #57a77d, #428e67);
+:root{
+  --bg: #c5d6c5;
+  --panel: rgba(10, 16, 24, 0.78);
+  --panel2: rgba(12, 18, 26, 0.9);
+  --stroke: rgba(255,255,255,0.08);
+  --text: #1e2b1e;
+  --muted: rgba(30,43,30,0.70);
+
+  /* ألوان قريبة من اللوجو */
+  --c1: #0B63B6;
+  --c2: #17B6C6;
+  --c3: #35C86B;
+  --btn: linear-gradient(90deg, rgba(23,182,198,1), rgba(53,200,107,1));
 }
 
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-
-body {
-  margin: 0;
-  background-color: var(--bg) !important;
-  color: var(--text-main);
-  font-family: "Mona", "Tajawal", "Cairo", "IBM Plex Sans Arabic", system-ui, sans-serif;
-  direction: rtl;
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Mona", "Tajawal", "Cairo", "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
 }
 
-/* تعديل 5: تصغير حجم البطاقة بـ 5 درجات (من 1100px إلى 900px) */
-.container {
-  width: min(900px, calc(100% - 40px));
-  margin-inline: auto;
+/* container */
+.container{
+  width:min(1100px, calc(100% - 40px));
+  margin-inline:auto;
 }
 
-/* HERO Section */
-.hero {
+/* HERO */
+.hero{
   position: relative;
-  padding: 40px 0 50px;
-  background: transparent !important; /* إزالة التدرج القديم ليظهر لون الخلفية الجديد */
+  padding: 54px 0 70px;
+  background:
+    radial-gradient(600px 300px at 50% 35%, rgba(255,255,255,0.10), transparent 60%),
+    linear-gradient(180deg, #c5d6c5 0%, #c5d6c5 100%);
 }
 
-/* إزالة الخط الفاصل السفلي لضمان نظافة التصميم الجديد */
-.hero::after { display: none !important; }
-
-.hero-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 0; 
+/* مزج ناعم بدون خط فاصل */
+.hero::after{
+  content:"";
+  position:absolute;
+  left:0; right:0; bottom:-1px;
+  height: 90px;
+  background: linear-gradient(to bottom, rgba(197,214,197,0) 0%, rgba(197,214,197,0.65) 40%, rgba(197,214,197,1) 100%);
+  pointer-events:none;
 }
 
-/* تعديل 1 و 2: تكبير الشعار وتقريبه جداً من الاسم */
-.hero-logo {
-  width: 260px !important; /* زيادة الحجم بخمس درجات تقريباً */
+.hero-inner{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  gap: 2px;
+}
+
+.hero-logo{
+  width: 260px;
   height: auto;
-  margin-bottom: -25px !important; /* تقريب الشعار جداً من الاسم */
-  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.1));
+  margin-top: 2px;
+  margin-bottom: -8px;
+  filter: drop-shadow(0 18px 28px rgba(0,0,0,0.12));
 }
 
-.hero-title {
+.hero-title{
   margin: 0;
   font-size: clamp(34px, 4vw, 56px);
-  color: var(--text-main);
-  font-weight: 800;
+  letter-spacing: 0.2px;
+  color: var(--text);
 }
 
-.hero-subtitle {
-  margin: 5px 0 0;
-  color: var(--text-main);
-  opacity: 0.8;
+.hero-subtitle{
+  margin: 8px 0 0;
+  color: rgba(30,43,30,0.85);
+  font-size: 18px;
 }
 
-/* CONTENT & PANEL */
-.content {
+.hero-badges{
   margin-top: 10px;
+  display:flex;
+  gap: 10px;
+  align-items:center;
+}
+
+.badge{
+  display:inline-flex;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(30,43,30,0.08);
+  border: 1px solid rgba(30,43,30,0.12);
+  font-size: 13px;
+  color: rgba(30,43,30,0.9);
+}
+.badge-muted{
+  background: rgba(30,43,30,0.05);
+  color: rgba(30,43,30,0.75);
+}
+
+/* CONTENT */
+.content{
+  margin-top: -34px;
   padding-bottom: 34px;
 }
 
-.panel {
-  /* تعديل 6: البطاقة بلون #3f4f3f وزجاجية شفافة */
-  background: var(--panel-glass) !important;
-  backdrop-filter: blur(15px); /* تأثير الزجاج الضبابي */
-  -webkit-backdrop-filter: blur(15px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 25px;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.15);
-  color: var(--text-panel) !important;
+.panel{
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 20px;
+  box-shadow: 0 22px 70px rgba(0,0,0,0.50);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
 }
 
-/* تعديل 7: توحيد لون الكتابة داخل البطاقة */
-.panel-title h2, .label, .uploader-hint, .file-name, .file-meta, .muted {
-  color: var(--text-panel) !important;
+.panel-head{
+  display:flex;
+  justify-content: space-between;
+  align-items:center;
+  padding: 18px 18px 10px;
 }
 
-.panel-body {
-  padding: 30px;
+.panel-title h2{
+  margin:0;
+  font-size: 20px;
 }
 
-/* تحسين شكل القوائم المنسدلة لتناسب التصميم الزجاجي */
-.select {
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: var(--text-panel) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+.pill{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(53,200,107,0.18);
+  border: 1px solid rgba(53,200,107,0.28);
+  color: rgba(223,255,238,0.95);
+  font-size: 13px;
 }
 
-.uploader-row {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px dashed rgba(189, 212, 190, 0.3) !important;
+.panel-body{
+  padding: 12px 18px 18px;
 }
 
-.btn {
-  background: var(--btn) !important;
-  color: #fff !important;
-  border-radius: 30px;
-  padding: 12px 35px;
+.grid-2{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 860px){
+  .grid-2{ grid-template-columns: 1fr; }
+}
+
+.label{
+  display:block;
+  margin-bottom: 8px;
+  color: rgba(255,255,255,0.85);
+  font-size: 14px;
+}
+
+.select{
+  width:100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.10);
+  outline:none;
+}
+
+.select:focus{
+  border-color: rgba(23,182,198,0.55);
+  box-shadow: 0 0 0 4px rgba(23,182,198,0.14);
+}
+
+/* Uploader */
+.uploader{
+  margin-top: 10px;
+}
+
+.uploader-row{
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.03);
+  border: 1px dashed rgba(255,255,255,0.16);
+}
+
+.file{
+  width:100%;
+  display:block;
+}
+
+.uploader-hint{
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.file-list{
+  margin-top: 12px;
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.file-item{
+  display:flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.file-left{
+  display:flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.file-name{
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 720px;
+}
+.file-meta{
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tag{
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(23,182,198,0.14);
+  border: 1px solid rgba(23,182,198,0.22);
+  color: rgba(224,255,255,0.95);
+}
+
+/* Actions */
+.actions{
+  margin-top: 14px;
+  display:flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.btn{
+  appearance:none;
+  border: none;
+  cursor:pointer;
+  padding: 12px 16px;
+  border-radius: 14px;
+  color: rgba(0,0,0,0.88);
+  background: var(--btn);
   font-weight: 700;
 }
 
-.btn-ghost {
-  color: var(--text-panel) !important;
-  border: 1px solid var(--text-panel) !important;
+.btn:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-ghost{
+  background: transparent;
+  color: rgba(255,255,255,0.9);
+  border: 1px solid rgba(255,255,255,0.14);
+}
+
+.status{
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Results */
+.results{
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.results-head h3{ margin:0; }
+.muted{ color: var(--muted); }
+.small{ font-size: 12px; }
+
+.hidden{ display:none; }
+
+.cards{
+  margin-top: 12px;
+  display:grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 980px){
+  .cards{ grid-template-columns: 1fr; }
+}
+
+.card{
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.22);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.footer{
+  margin-top: 18px;
+  text-align:center;
 }
