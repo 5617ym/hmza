@@ -2110,8 +2110,17 @@ module.exports = async function (context, req) {
 
       const label = extractLabelFromRow(cells, header);
       const values = extractValuesFromRow(cells, header);
-
       const labelNorm = normalizeText(label);
+
+      if (!label && (values.current != null || values.previous != null)) {
+        return {
+          ok: true,
+          reason: "numeric_row_recovered",
+          label: "",
+          values,
+          recoveredByTemplate: true
+        };
+      }
 
       if (!label) return { ok: false, reason: "no_label" };
 
@@ -2175,7 +2184,8 @@ module.exports = async function (context, req) {
         ok: true,
         reason: "valid",
         label,
-        values
+        values,
+        recoveredByTemplate: false
       };
     }
 
@@ -2324,6 +2334,7 @@ module.exports = async function (context, req) {
             sourcePages: [],
             acceptedRowsCount: 0,
             rejectedRowsCount: 0,
+            recoveredNumericRowsCount: 0,
             labelMode: "synthetic_by_statement_template"
           }
         };
@@ -2349,6 +2360,7 @@ module.exports = async function (context, req) {
             sourcePages: [],
             acceptedRowsCount: 0,
             rejectedRowsCount: 0,
+            recoveredNumericRowsCount: 0,
             labelMode: "synthetic_by_statement_template"
           }
         };
@@ -2373,6 +2385,7 @@ module.exports = async function (context, req) {
       const rejectedRows = [];
       let acceptedRowsCount = 0;
       let rejectedRowsCount = 0;
+      let recoveredNumericRowsCount = 0;
 
       for (let t = 0; t < statementTables.length; t += 1) {
         const tableInfo = statementTables[t];
@@ -2418,6 +2431,10 @@ module.exports = async function (context, req) {
 
           const finalLabel = cleanupLabel(validation.label) || getSyntheticLabel(statementKey, allItems.length);
 
+          if (validation.reason === "numeric_row_recovered") {
+            recoveredNumericRowsCount += 1;
+          }
+
           allItems.push(buildLiteItem(
             finalLabel,
             validation.values.current,
@@ -2451,6 +2468,7 @@ module.exports = async function (context, req) {
           sourcePages,
           acceptedRowsCount,
           rejectedRowsCount,
+          recoveredNumericRowsCount,
           labelMode: items.some((x) => !/^balance_row_|^income_row_|^cashflow_row_/i.test(x.label))
             ? "extracted_from_table_rows"
             : "synthetic_by_statement_template",
@@ -2669,8 +2687,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.5",
-      phase: "4B_hardening_rtl_label_note_separation_and_multipage_guard",
+      engine: "extract-financial-v5.6",
+      phase: "4B_hardening_numeric_row_recovery_rtl_label_guard",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2706,21 +2724,24 @@ module.exports = async function (context, req) {
         rowStats: {
           income: {
             accepted: incomeStatementLite?.extractionMeta?.acceptedRowsCount ?? 0,
-            rejected: incomeStatementLite?.extractionMeta?.rejectedRowsCount ?? 0
+            rejected: incomeStatementLite?.extractionMeta?.rejectedRowsCount ?? 0,
+            recoveredNumericRows: incomeStatementLite?.extractionMeta?.recoveredNumericRowsCount ?? 0
           },
           balance: {
             accepted: balanceSheetLite?.extractionMeta?.acceptedRowsCount ?? 0,
-            rejected: balanceSheetLite?.extractionMeta?.rejectedRowsCount ?? 0
+            rejected: balanceSheetLite?.extractionMeta?.rejectedRowsCount ?? 0,
+            recoveredNumericRows: balanceSheetLite?.extractionMeta?.recoveredNumericRowsCount ?? 0
           },
           cashflow: {
             accepted: cashFlowLite?.extractionMeta?.acceptedRowsCount ?? 0,
-            rejected: cashFlowLite?.extractionMeta?.rejectedRowsCount ?? 0
+            rejected: cashFlowLite?.extractionMeta?.rejectedRowsCount ?? 0,
+            recoveredNumericRows: cashFlowLite?.extractionMeta?.recoveredNumericRowsCount ?? 0
           }
         },
         notes: [
-          "v5.5 separates label extraction from note/reference values more aggressively",
-          "reference-like note values such as 6, 7, 6 و 7, 6/7 are blocked from becoming labels",
-          "RTL label detection remains enabled with rightmost free-column fallback",
+          "v5.6 adds numeric-row recovery when OCR drops the label column from RTL financial tables",
+          "reference-like note values remain blocked from becoming labels",
+          "synthetic template labels are used only when a row has valid numeric values but no surviving label cell",
           "multi-page extension still requires structural compatibility before merging"
         ]
       },
