@@ -541,7 +541,6 @@ module.exports = async function (context, req) {
       let headerRowIndex = null;
       let mode = "fallback";
 
-      // 1) explicit year header
       for (let i = 0; i < headerRows.length; i += 1) {
         const row = headerRows[i];
         if (!Array.isArray(row) || !row.length) continue;
@@ -588,7 +587,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 2) merged header row support
       if ((currentCol == null || previousCol == null) && headerRows.length >= 2) {
         for (let i = 0; i < headerRows.length - 1; i += 1) {
           const row1 = headerRows[i] || [];
@@ -631,7 +629,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 3) note column
       if (noteCol == null) {
         for (const row of headerRows) {
           for (let i = 0; i < row.length; i += 1) {
@@ -644,7 +641,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 4) header row by notes / periods even if years are not isolated
       if (headerRowIndex == null) {
         for (let i = 0; i < headerRows.length; i += 1) {
           const row = headerRows[i] || [];
@@ -668,7 +664,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 5) infer cols from header row neighborhood
       if ((currentCol == null || previousCol == null) && headerRowIndex != null) {
         const neighborhood = [
           headerRows[headerRowIndex - 1] || [],
@@ -698,7 +693,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 6) numeric density fallback
       if (currentCol == null || previousCol == null) {
         const numericCols = getNumericColumnDensity(rows, 24)
           .filter((x) => x.idx !== noteCol);
@@ -719,7 +713,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 7) label column refinement from body rows with RTL/LTR awareness
       labelCol = refineLabelColumnFromBody(rows, {
         currentCol,
         previousCol,
@@ -729,7 +722,6 @@ module.exports = async function (context, req) {
         direction: language.direction
       });
 
-      // 8) hard structural fallback
       const maxColCount = Math.max(0, ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0)));
       const reservedCols = new Set([currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x)));
 
@@ -1464,6 +1456,62 @@ module.exports = async function (context, req) {
 
     const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
 
+    function statementKindTitleAliases(kind) {
+      if (kind === "balance") {
+        return [
+          "قائمة المركز المالي",
+          "المركز المالي",
+          "قائمة الوضع المالي",
+          "الميزانية",
+          "الميزانية العمومية",
+          "statement of financial position",
+          "financial position",
+          "balance sheet"
+        ];
+      }
+
+      if (kind === "income") {
+        return [
+          "قائمة الدخل",
+          "قائمة الدخل الموحدة",
+          "قائمة الارباح والخسائر",
+          "قائمة الربح والخسارة",
+          "statement of income",
+          "income statement",
+          "statement of profit or loss",
+          "profit and loss",
+          "profit or loss"
+        ];
+      }
+
+      return [
+        "قائمة التدفقات النقدية",
+        "بيان التدفقات النقدية",
+        "التدفقات النقدية",
+        "cash flow statement",
+        "statement of cash flows",
+        "cash flows",
+        "consolidated statement of cash flows"
+      ];
+    }
+
+    function otherStatementTitleAliases(kind) {
+      const kinds = ["balance", "income", "cashflow"].filter((x) => x !== kind);
+      return kinds.flatMap(statementKindTitleAliases);
+    }
+
+    function strongStatementTitleHit(pageCtx, cfg) {
+      const headerHits = keywordHits(pageCtx.headerText, cfg.titles);
+      if (headerHits > 0) return true;
+
+      const firstRowsText = (pageCtx.mainRows || [])
+        .slice(0, 4)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
+
+      return keywordHits(firstRowsText, cfg.titles) > 0;
+    }
+
     function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
@@ -1471,65 +1519,98 @@ module.exports = async function (context, req) {
 
       const titleHitsHeader = keywordHits(pageCtx.headerText, cfg.titles);
       const titleHitsAll = keywordHits(pageCtx.structuralText, cfg.titles);
+      const structureHits = keywordHits(pageCtx.structuralText, cfg.structure);
+      const negativeHits = keywordHits(pageCtx.structuralText, cfg.negatives);
+
+      const firstRowsText = (pageCtx.mainRows || [])
+        .slice(0, 6)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
+
+      const titleHitsFirstRows = keywordHits(firstRowsText, cfg.titles);
+      const structureHitsFirstRows = keywordHits(firstRowsText, cfg.structure);
+      const crossStatementTitleHits = keywordHits(pageCtx.structuralText, otherStatementTitleAliases(kind));
+      const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, cfg);
+
       signals.titleHitsHeader = titleHitsHeader;
       signals.titleHitsAll = titleHitsAll;
+      signals.titleHitsFirstRows = titleHitsFirstRows;
+      signals.structureHits = structureHits;
+      signals.structureHitsFirstRows = structureHitsFirstRows;
+      signals.negativeHits = negativeHits;
+      signals.crossStatementTitleHits = crossStatementTitleHits;
+      signals.hasStrongOwnTitle = hasStrongOwnTitle;
 
       if (titleHitsHeader > 0) {
-        const s = titleHitsHeader * 95;
+        const s = titleHitsHeader * 110;
         score += s;
         reasons.push(`titleHeader:+${s}`);
+      } else if (titleHitsFirstRows > 0) {
+        const s = titleHitsFirstRows * 72;
+        score += s;
+        reasons.push(`titleFirstRows:+${s}`);
       } else if (titleHitsAll > 0) {
-        const s = titleHitsAll * 55;
+        const s = titleHitsAll * 42;
         score += s;
         reasons.push(`titleAll:+${s}`);
 
         if (pageCtx.positionRatio > 0.55) {
-          score -= 45;
-          reasons.push("lateTitleOnlyPenalty:-45");
+          score -= 55;
+          reasons.push("lateTitleOnlyPenalty:-55");
         }
       }
 
       if (pageCtx.hasYearLikeHeader) {
-        score += 30;
-        reasons.push("yearHeader:+30");
-      }
-      if (pageCtx.header?.latest && pageCtx.header?.previous) {
-        score += 24;
-        reasons.push("twoYearsDetected:+24");
-      }
-      if (pageCtx.header?.currentCol != null && pageCtx.header?.labelCol != null) {
-        score += 12;
-        reasons.push("usableColumns:+12");
+        score += 26;
+        reasons.push("yearHeader:+26");
       }
 
-      const structureHits = keywordHits(pageCtx.structuralText, cfg.structure);
-      signals.structureHits = structureHits;
+      if (pageCtx.header?.latest && pageCtx.header?.previous) {
+        score += 18;
+        reasons.push("twoYearsDetected:+18");
+      }
+
+      if (pageCtx.header?.currentCol != null && pageCtx.header?.labelCol != null) {
+        score += 10;
+        reasons.push("usableColumns:+10");
+      }
+
       if (structureHits > 0) {
-        const s = Math.min(structureHits, 12) * 12;
+        const s = Math.min(structureHits, 12) * 16;
         score += s;
         reasons.push(`structure:+${s}`);
       }
 
-      const negativeHits = keywordHits(pageCtx.structuralText, cfg.negatives);
-      signals.negativeHits = negativeHits;
+      if (structureHitsFirstRows > 0) {
+        const s = Math.min(structureHitsFirstRows, 6) * 18;
+        score += s;
+        reasons.push(`structureFirstRows:+${s}`);
+      }
+
       if (negativeHits > 0) {
-        const s = Math.min(negativeHits, 8) * 18;
+        const s = Math.min(negativeHits, 8) * 20;
         score -= s;
         reasons.push(`negative:-${s}`);
       }
 
+      if (crossStatementTitleHits > 0 && !hasStrongOwnTitle) {
+        const s = Math.min(crossStatementTitleHits, 4) * 40;
+        score -= s;
+        reasons.push(`crossStatementTitle:-${s}`);
+      }
+
       if (pageCtx.numbersCount >= 8) {
-        const s = Math.round(Math.min(pageCtx.numbersCount, 90) * 0.5);
+        const s = Math.round(Math.min(pageCtx.numbersCount, 90) * 0.35);
         score += s;
         reasons.push(`numbers:+${s}`);
       }
 
       if (pageCtx.positionRatio <= 0.35) {
-        score += 6;
-        reasons.push("earlySoft:+6");
+        score += 4;
+        reasons.push("earlySoft:+4");
       } else if (pageCtx.positionRatio >= 0.8) {
-        score -= 6;
-        reasons.push("lateSoft:-6");
+        score -= 8;
+        reasons.push("lateSoft:-8");
       }
 
       if (pageCtx.isLikelyIndexPage) {
@@ -1538,52 +1619,59 @@ module.exports = async function (context, req) {
       }
 
       if (pageCtx.isLikelyStandardsPage) {
-        score -= 180;
-        reasons.push("standards:-180");
+        score -= 190;
+        reasons.push("standards:-190");
       }
 
       if (pageCtx.isLikelyNarrativePage) {
-        score -= 170;
-        reasons.push("narrative:-170");
+        score -= 180;
+        reasons.push("narrative:-180");
       }
 
       if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
-        score -= 160;
-        reasons.push("comprehensiveIncomePenalty:-160");
+        score -= 170;
+        reasons.push("comprehensiveIncomePenalty:-170");
       }
 
-      if (kind !== "balance" && containsAny(pageCtx.normalizedText, [
+      if (kind === "cashflow" && pageCtx.isLikelyComprehensiveIncome) {
+        score -= 120;
+        reasons.push("comprehensivePenalty:-120");
+      }
+
+      if ((kind === "income" || kind === "cashflow") && containsAny(pageCtx.normalizedText, [
         "اجمالي الموجودات",
+        "اجمالي المطلوبات",
         "اجمالي المطلوبات وحقوق الملكيه",
+        "الموجودات",
+        "المطلوبات",
+        "حقوق الملكيه",
+        "total assets",
+        "total liabilities",
         "total liabilities and equity",
         "customer deposits",
-        "total assets",
-        "total liabilities"
+        "ودائع العملاء"
       ])) {
-        if (!keywordHits(pageCtx.structuralText, cfg.titles)) {
-          score -= 50;
-          reasons.push("balanceCrossPenalty:-50");
+        if (!hasStrongOwnTitle && structureHits < 2) {
+          score -= 170;
+          reasons.push("balanceCrossHardPenalty:-170");
+        } else {
+          score -= 70;
+          reasons.push("balanceCrossSoftPenalty:-70");
         }
       }
 
       if (kind !== "cashflow" && containsAny(pageCtx.normalizedText, [
         "cash flows from operating activities",
-        "صافي النقد الناتج من الانشطه التشغيليه"
+        "cash flows from investing activities",
+        "cash flows from financing activities",
+        "صافي النقد الناتج من الانشطه التشغيليه",
+        "صافي النقد المستخدم في الانشطه الاستثماريه",
+        "صافي النقد الناتج من الانشطه التمويليه"
       ])) {
-        score -= 65;
-        reasons.push("cashflowCrossPenalty:-65");
-      }
-
-      if (kind === "income" && containsAny(pageCtx.normalizedText, [
-        "اجمالي الموجودات",
-        "اجمالي المطلوبات",
-        "ودائع العملاء",
-        "total assets",
-        "total liabilities",
-        "customer deposits"
-      ]) && structureHits < 2) {
-        score -= 140;
-        reasons.push("incomeVsBalanceHardPenalty:-140");
+        if (!hasStrongOwnTitle) {
+          score -= 90;
+          reasons.push("cashflowCrossPenalty:-90");
+        }
       }
 
       if (kind === "income" && pageCtx.isLikelyEquityStatement) {
@@ -1591,15 +1679,9 @@ module.exports = async function (context, req) {
         reasons.push("equityPenalty:-150");
       }
 
-      if (kind === "cashflow") {
-        if (pageCtx.isLikelyEquityStatement) {
-          score -= 150;
-          reasons.push("equityPenalty:-150");
-        }
-        if (pageCtx.isLikelyComprehensiveIncome) {
-          score -= 110;
-          reasons.push("comprehensivePenalty:-110");
-        }
+      if (kind === "cashflow" && pageCtx.isLikelyEquityStatement) {
+        score -= 150;
+        reasons.push("equityPenalty:-150");
       }
 
       if (kind === "balance" && pageCtx.isLikelyEquityStatement) {
@@ -1607,19 +1689,29 @@ module.exports = async function (context, req) {
         reasons.push("equityPenalty:-110");
       }
 
-      if (pageCtx.mainColumnCount >= 5 && !pageCtx.isLikelyEquityStatement) {
-        score -= 14;
-        reasons.push("manyCols:-14");
+      if (!hasStrongOwnTitle && structureHits === 0) {
+        score -= 45;
+        reasons.push("noTitleNoStructurePenalty:-45");
       }
 
-      if (pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4) {
-        score += 18;
-        reasons.push("statementLikeCols:+18");
+      if (!hasStrongOwnTitle && structureHits <= 1 && pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4) {
+        score -= 28;
+        reasons.push("genericThreeColPenalty:-28");
+      }
+
+      if (pageCtx.mainColumnCount >= 5 && !pageCtx.isLikelyEquityStatement) {
+        score -= 12;
+        reasons.push("manyCols:-12");
+      }
+
+      if (pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4 && (hasStrongOwnTitle || structureHits > 0)) {
+        score += 16;
+        reasons.push("statementLikeCols:+16");
       }
 
       if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
-        score += 10;
-        reasons.push("rowRange:+10");
+        score += 8;
+        reasons.push("rowRange:+8");
       }
 
       return { score, reasons, signals };
@@ -2704,8 +2796,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.6.1",
-      phase: "4B_hardening_numeric_row_recovery_and_safe_statement_boundary",
+      engine: "extract-financial-v5.7",
+      phase: "4B_hardening_statement_ranking_and_safe_statement_boundary",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2756,9 +2848,9 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v5.6.1 keeps numeric-row recovery when OCR drops the label column from RTL financial tables",
-          "reference-like note values remain blocked from becoming labels",
-          "template recovery is now tracked explicitly in extractionMeta.labelMode",
+          "v5.7 tightens statement ranking by prioritizing true statement titles and structure over generic year-density signals",
+          "numeric-row recovery remains active when OCR drops the label column from RTL tables",
+          "template recovery is tracked explicitly in extractionMeta.labelMode",
           "multi-page extension is guarded against crossing into the next detected statement page"
         ]
       },
