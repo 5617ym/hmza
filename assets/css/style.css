@@ -1,276 +1,126 @@
-:root{
-  --bg: #d7ded3;
-  --bg-soft: #cdd5ca;
-  --panel: rgba(166, 179, 161, 0.32);
-  --panel2: rgba(154, 169, 150, 0.38);
-  --stroke: rgba(6, 43, 24, 0.10);
-  --stroke-strong: rgba(6, 43, 24, 0.16);
-  --text: #062b18;
-  --muted: rgba(6, 43, 24, 0.68);
-
-  --c1: #93aa91;
-  --c2: #aec0ab;
-  --c3: #c5d1c1;
-  --c4: #dfe6dc;
-
-  --btn: linear-gradient(90deg, #1f4a31, #356b47);
+:root {
+  /* 1. خلفية الموقع: أخضر فاتح جداً (قريب من الأبيض الكريمي) */
+  --bg: #f2f5f1; 
+  --bg-soft: #e8ede6;
+  
+  /* 2. البطاقة الزجاجية: أخضر غامق جداً مع شفافية */
+  --panel: rgba(6, 43, 24, 0.88); 
+  --panel2: rgba(13, 58, 35, 0.92);
+  
+  /* 3. الخطوط والحدود للبطاقة الزجاجية */
+  --stroke: rgba(255, 255, 255, 0.15);
+  --stroke-strong: rgba(255, 255, 255, 0.25);
+  
+  /* 4. النصوص الخارجية: أخضر غامق */
+  --text: #062b18; 
+  /* 5. النصوص داخل البطاقة: أخضر فاتح جداً */
+  --text-on-dark: #eef3ed;
+  
+  --muted: rgba(6, 43, 24, 0.65);
+  --btn: linear-gradient(90deg, #2d6a4f, #40916c);
 
   --hero-glow:
-    radial-gradient(600px 320px at 20% 20%, rgba(255,255,255,0.18), transparent 60%),
-    radial-gradient(500px 260px at 80% 10%, rgba(255,255,255,0.10), transparent 60%);
+    radial-gradient(600px 320px at 20% 20%, rgba(45, 106, 79, 0.05), transparent 60%),
+    radial-gradient(500px 260px at 80% 10%, rgba(64, 145, 108, 0.05), transparent 60%);
 }
 
-*{ box-sizing:border-box; }
+* { box-sizing: border-box; }
 
-html,body{ height:100%; }
+html, body { height: 100%; }
 
-body{
-  margin:0;
-  background:
-    var(--hero-glow),
-    linear-gradient(180deg,#d7ded3 0%, #d9e0d5 45%, #d2d9cf 100%);
-  color:var(--text);
-  font-family:"Tajawal","Cairo","IBM Plex Sans Arabic",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
-  overflow-x:hidden;
-}
-
-.container{
-  width:min(1180px, calc(100% - 40px));
-  margin-inline:auto;
-}
-
-/* HERO */
-
-.hero{
-  position:relative;
-  padding:70px 0 80px;
-  background:
-    radial-gradient(600px 300px at 50% 35%, rgba(255,255,255,0.18), transparent 60%),
-    linear-gradient(180deg, #d7ded3 0%, #d8dfd4 55%, #d3dacf 100%);
-}
-
-.hero::after{
-  content:"";
-  position:absolute;
-  left:0;
-  right:0;
-  bottom:-1px;
-  height:90px;
-  background:linear-gradient(to bottom, rgba(215,222,211,0), rgba(215,222,211,1));
-}
-
-.hero-inner{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  text-align:center;
-  gap:4px;
-}
-
-.hero-logo{
-  width:280px;
-  height:auto;
-  margin-top:10px;
-  filter:
-    drop-shadow(0 18px 40px rgba(6,43,24,0.10))
-    drop-shadow(0 6px 12px rgba(6,43,24,0.10));
-}
-
-.hero-title{
-  margin:2px 0 0;
-  font-size:clamp(38px,4.4vw,60px);
-  letter-spacing:-0.3px;
-  font-weight:800;
+body {
+  margin: 0;
+  background-color: var(--bg);
+  background-image: var(--hero-glow);
   color: var(--text);
+  font-family: "Tajawal", "Cairo", system-ui, sans-serif;
+  overflow-x: hidden;
 }
 
-.hero-subtitle{
-  margin:8px 0 0;
-  color:rgba(6,43,24,0.72);
-  font-size:19px;
-  font-weight:500;
+/* --- تحسين اللوجو --- */
+.hero-logo {
+  width: 250px;
+  height: auto;
+  margin-top: 10px;
+  /* هذه الخاصية تدمج اللوجو مع الخلفية وتزيل المربعات إذا كانت فاتحة */
+  mix-blend-mode: multiply; 
+  filter: contrast(1.1) brightness(1.05);
+  transition: transform 0.3s ease;
 }
 
-.hero-badges{
-  margin-top:10px;
-  display:flex;
-  gap:10px;
+.hero-logo:hover {
+  transform: scale(1.02);
 }
 
-.badge{
-  padding:8px 14px;
-  border-radius:999px;
-  background:rgba(255,255,255,0.20);
-  border:1px solid rgba(6,43,24,0.10);
+.hero {
+  position: relative;
+  padding: 60px 0 100px;
+  background: transparent; /* جعلناها شفافة لبروز الخلفية الفاتحة */
+}
+
+.hero-title {
   color: var(--text);
-  font-size:13px;
+  font-weight: 900;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
-.badge-muted{
-  opacity:0.8;
+/* --- تطوير البطاقة الزجاجية --- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 10px;
 }
 
-/* CONTENT */
-
-.content{
-  margin-top:-34px;
-  padding-bottom:34px;
-  position:relative;
-  z-index:2;
+/* تعديل ألوان النصوص داخل البطاقة لتكون فاتحة */
+.panel-title h2, 
+.panel-body .label, 
+.panel-body p, 
+.panel-body .status,
+.panel-body .file {
+  color: var(--text-on-dark) !important;
 }
 
-.panel{
-  background:var(--panel);
-  border:1px solid var(--stroke);
-  border-radius:20px;
-  box-shadow:0 22px 70px rgba(80, 99, 78, 0.12);
-  backdrop-filter:blur(12px);
-  -webkit-backdrop-filter:blur(12px);
-  overflow:hidden;
+.pill {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-on-dark);
 }
 
-.panel-head{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:18px 18px 10px;
+/* تحسين القوائم المنسدلة داخل الزجاج */
+.select {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  outline: none;
 }
 
-.panel-title h2{
-  margin:0;
-  font-size:20px;
-  color: var(--text);
+.select option {
+  background: #1a3d29; /* لون غامق لخيارات القائمة لكي تظهر */
+  color: white;
 }
 
-.pill{
-  padding:8px 12px;
-  border-radius:999px;
-  background:rgba(147,170,145,0.22);
-  border:1px solid rgba(6,43,24,0.10);
-  color: var(--text);
-  font-size:13px;
+/* منطقة رفع الملفات */
+.uploader-row {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
 }
 
-.panel-body{
-  padding:12px 18px 18px;
+.uploader-row:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--text-on-dark);
 }
 
-.grid-2{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:12px;
-  margin-bottom:14px;
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-on-dark);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
-.label{
-  display:block;
-  margin-bottom:8px;
-  font-size:14px;
-  color: var(--text);
-}
-
-.select{
-  width:100%;
-  padding:12px 14px;
-  border-radius:14px;
-  background:rgba(255,255,255,0.18);
-  color:var(--text);
-  border:1px solid rgba(6,43,24,0.10);
-}
-
-.uploader-row{
-  padding:14px;
-  border-radius:16px;
-  background:rgba(255,255,255,0.14);
-  border:1px dashed rgba(6,43,24,0.14);
-}
-
-.file{
-  width:100%;
-  color: var(--text);
-}
-
-.actions{
-  margin-top:14px;
-  display:flex;
-  gap:10px;
-  justify-content:flex-end;
-}
-
-.btn{
-  border:none;
-  cursor:pointer;
-  padding:12px 16px;
-  border-radius:14px;
-  color:#f4f7f1;
-  background:var(--btn);
-  font-weight:700;
-}
-
-.btn-ghost{
-  background:rgba(255,255,255,0.16);
-  color:var(--text);
-  border:1px solid rgba(6,43,24,0.12);
-}
-
-.status{
-  margin-top:12px;
-  color:var(--muted);
-  font-size:13px;
-}
-
-/* RESULTS */
-
-.results{
-  margin-top:18px;
-  padding:16px;
-  border-radius:20px;
-  background:rgba(166, 179, 161, 0.20);
-  border:1px solid rgba(6,43,24,0.08);
-}
-
-.cards{
-  margin-top:12px;
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:12px;
-}
-
-.card{
-  padding:14px;
-  border-radius:18px;
-  background:rgba(255,255,255,0.16);
-  border:1px solid rgba(6,43,24,0.08);
-}
-
-.footer{
-  margin-top:18px;
-  text-align:center;
-  color: var(--muted);
-}
-
-/* Responsive */
-
-@media (max-width:980px){
-
-  .grid-2{
-    grid-template-columns:1fr;
-  }
-
-  .cards{
-    grid-template-columns:1fr;
-  }
-
-}
-
-@media (max-width:640px){
-
-  .hero-logo{
-    width:180px;
-  }
-
-  .hero-title{
-    font-size:34px;
-  }
-
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
