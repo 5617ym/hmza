@@ -8,50 +8,60 @@
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header class="main-header">
-        <div class="header-right">
-            <a href="#" class="login-btn">Sign in</a>
-            <span class="nav-label">وصلة</span>
-            <span class="nav-label">وصلة المالية</span>
+
+    <header class="top-navbar">
+        <div class="nav-content">
+            <a href="#" class="signin-button">Sign in</a>
+            <span class="nav-item">وصلة</span>
+            <span class="nav-item">وصلة المالية</span>
         </div>
-        <img src="assets/images/logo.png" class="header-logo">
+        <img src="assets/images/logo.png" class="mini-logo-nav">
     </header>
 
-    <section class="hero-wrapper">
-        <div class="logo-container">
-            <img src="assets/images/logo.png" class="big-logo" alt="Wasla Logo">
+    <main class="hero-section">
+        <div class="main-logo-container">
+            <img src="assets/images/logo.png" alt="Wasla Logo" class="brand-logo-large">
         </div>
-        <h1 class="hero-title">وصلة المالية</h1>
-        <p class="hero-desc">نتحدث مع الأرقام وتحدثنا عن الأداء</p>
+        
+        <h1 class="brand-title">وصلة المالية</h1>
+        <p class="brand-subtitle">نتحدث مع الأرقام وتحدثنا عن الأداء</p>
 
-        <div class="main-glass-card">
-            <h2 class="card-headline">ارفع ملفات واترك الباقي علينا</h2>
-            <div class="inputs-row-grid">
-                <div class="field-group">
+        <div class="glass-card-panel">
+            <h2 class="card-internal-title">ارفع ملفات واترك الباقي علينا</h2>
+            
+            <div class="inputs-row-container">
+                <div class="form-group">
                     <label>ارفع ملفاتك</label>
-                    <div class="file-drop-area">اسحب الملفات هنا</div>
+                    <div class="upload-drop-zone">
+                        <span>اسحب الملفات هنا</span>
+                    </div>
                 </div>
-                <div class="field-group">
+
+                <div class="form-group">
                     <label>الفترة</label>
-                    <select class="themed-select">
-                        <option>سنوي</option>
+                    <select class="custom-dark-select">
+                        <option selected>سنوي</option>
                         <option>ربعي</option>
                         <option>آخر 12 شهر</option>
                     </select>
                 </div>
-                <div class="field-group">
+
+                <div class="form-group">
                     <label>للمقارنة</label>
-                    <select class="themed-select">
-                        <option>بدون مقارنة</option>
+                    <select class="custom-dark-select">
+                        <option selected>بدون مقارنة</option>
                         <option>مقارنة بفترة سابقة</option>
+                        <option>مقارنة بمتوسط القطاع</option>
                     </select>
                 </div>
             </div>
-            <div class="card-actions">
-                <span class="clear-btn">مسح</span>
-                <button class="submit-btn">عرض النتائج</button>
+
+            <div class="card-action-footer">
+                <span class="btn-reset-text">مسح</span>
+                <button class="btn-submit-results">عرض النتائج</button>
             </div>
         </div>
-    </section>
+    </main>
+
 </body>
 </html>
