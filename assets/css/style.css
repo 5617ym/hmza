@@ -1,146 +1,121 @@
-/* إجبار الخلفية على اللون الأخضر الفاتح جداً */
+/* إجبار الخلفية على اللون الفاتح ومنع أي تضارب */
 html, body {
-    margin: 0;
-    padding: 0;
-    background-color: #e9f2ec !important; /* نفس درجة لون الصورة المرفقة */
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: #f0f7f2 !important; /* اللون الأخضر الفاتح جداً كما في الصورة */
     font-family: 'Tajawal', sans-serif;
     color: #062b18 !important;
     direction: rtl;
     min-height: 100vh;
 }
 
-.navbar {
+/* تنسيق الهيدر العلوي */
+.navbar-custom {
     display: flex;
     justify-content: space-between;
-    padding: 20px 5%;
+    padding: 15px 5%;
     align-items: center;
 }
 
-.signin-btn {
+.signin-link {
     background: #143323;
-    color: white !important;
+    color: #fff !important;
     padding: 8px 25px;
     border-radius: 8px;
     text-decoration: none;
     font-weight: bold;
 }
 
-.nav-text { margin-right: 15px; font-weight: 500; }
-.nav-logo-icon { width: 35px; }
-
-.content-wrapper {
+/* الحاوية الرئيسية */
+.main-wrapper {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 0 20px 60px 20px;
+    padding: 20px;
 }
 
-/* تكبير حجم اللوجو ليطابق الصورة */
-.main-hero-logo {
-    width: 450px !important; /* حجم كبير جداً */
+/* الشعار: تقريب المسافة وزيادة الجودة بصرياً */
+.logo-large {
+    width: 380px !important; /* حجم متناسق */
     max-width: 90%;
-    height: auto;
-    margin-top: 10px;
+    margin-bottom: -10px; /* تقريب الشعار من الاسم */
+    filter: drop-shadow(0 5px 15px rgba(0,0,0,0.05)); /* تحسين مظهر الجودة */
 }
 
-.brand-name {
-    font-size: 3.8rem;
+.site-title {
+    font-size: 3.2rem;
     font-weight: 800;
-    margin: 5px 0;
+    margin: 0;
     color: #062b18 !important;
 }
 
-.brand-tagline {
-    font-size: 1.4rem;
-    margin-bottom: 40px;
-    color: #062b18;
+.site-slogan {
+    font-size: 1.2rem;
+    margin-top: 5px;
+    margin-bottom: 35px;
+    opacity: 0.8;
 }
 
-/* البطاقة الزجاجية الاحترافية */
-.glass-container {
+/* البطاقة الزجاجية المطابقة للصورة تماماً */
+.glass-panel {
     background: rgba(255, 255, 255, 0.4) !important;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border-radius: 35px;
-    border: 1px solid rgba(255, 255, 255, 0.7);
-    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 30px;
+    padding: 40px;
+    width: 90%;
     max-width: 900px;
-    padding: 45px;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.03);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.03);
 }
 
-.glass-title {
-    text-align: center;
-    font-size: 2rem;
-    font-weight: 700;
-    margin-bottom: 40px;
-}
-
-.form-grid {
+.grid-inputs {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 30px;
-    margin-bottom: 40px;
+    gap: 20px;
+    margin-bottom: 30px;
 }
 
-.input-group label {
+.input-field label {
     display: block;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     font-weight: 700;
-    text-align: center;
 }
 
-.drop-box {
-    height: 140px;
+.drop-zone-area {
+    height: 120px;
     border: 2px dashed rgba(6, 43, 24, 0.1);
-    border-radius: 20px;
+    border-radius: 15px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.3);
-    color: rgba(6, 43, 24, 0.4);
+    background: rgba(255, 255, 255, 0.2);
 }
 
-/* القوائم المنسدلة الداكنة كما في الصورة */
-.dark-dropdown {
+.select-box-dark {
     width: 100%;
-    background-color: #1a2b23 !important;
-    color: #92b0a1 !important; /* لون الخط المائل للأخضر الباهت داخل القائمة */
-    padding: 16px;
-    border-radius: 12px;
+    background: #1a2b23 !important;
+    color: #fff !important;
+    padding: 12px;
+    border-radius: 10px;
     border: none;
     font-family: 'Tajawal';
-    appearance: none;
 }
 
-.button-footer {
+.footer-actions {
     display: flex;
     align-items: center;
     gap: 20px;
 }
 
-.clear-btn-text {
-    background: #062b18;
-    color: white;
+.btn-green-gradient {
+    background: linear-gradient(90deg, #57a77d, #428e67) !important;
+    color: white !important;
     border: none;
-    padding: 10px 30px;
-    border-radius: 12px;
-    cursor: pointer;
-    font-weight: bold;
-}
-
-.submit-btn-green {
-    background: linear-gradient(90deg, #57a77d, #428e67); /* تدرج أخضر كما في الصورة */
-    color: white;
-    border: none;
-    padding: 14px 55px;
-    border-radius: 30px;
+    padding: 12px 45px;
+    border-radius: 25px;
     font-weight: 800;
-    font-size: 1.1rem;
     cursor: pointer;
-    box-shadow: 0 4px 15px rgba(66, 142, 103, 0.4);
 }
 
-@media (max-width: 768px) {
-    .form-grid { grid-template-columns: 1fr; }
-}
+@media (max-width: 768px) { .grid-inputs { grid-template-columns: 1fr; } }
