@@ -1,5 +1,4 @@
 :root{
-
   --bg: #e7f3ee;
 
   --panel: rgba(10, 16, 24, 0.78);
@@ -22,86 +21,88 @@ html,body{ height:100%; }
 
 body{
   margin:0;
-
   background:
     radial-gradient(780px 380px at 18% 0%, #dff2ea 0%, transparent 60%),
     radial-gradient(720px 360px at 82% 0%, #efe3f7 0%, transparent 60%),
     linear-gradient(180deg,#e7f3ee 0%, #f6f8ff 100%);
-
   color:var(--text);
-
   font-family:
-  "IBM Plex Sans Arabic",
-  system-ui,
-  -apple-system,
-  "Segoe UI",
-  Arial,
-  sans-serif;
+    "IBM Plex Sans Arabic",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Arial,
+    sans-serif;
 }
 
 /* container */
-
 .container{
   width:min(1100px, calc(100% - 40px));
   margin-inline:auto;
 }
 
 /* HERO */
-
 .hero{
   position:relative;
-  padding:40px 0 28px;
-  min-height:200px;
-
+  padding:56px 0 26px;
+  min-height:180px;
   background:
     radial-gradient(560px 260px at 30% 20%, rgba(72,164,132,0.20), transparent 60%),
     radial-gradient(560px 260px at 72% 12%, rgba(123,67,151,0.14), transparent 60%);
 }
 
-/* حذف الشعار نهائيا */
+.hero::after{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:-1px;
+  height:70px;
+  background:linear-gradient(
+    to bottom,
+    rgba(231,243,238,0) 0%,
+    rgba(231,243,238,0.72) 45%,
+    rgba(231,243,238,1) 100%
+  );
+  pointer-events:none;
+}
 
+/* لا يوجد شعار */
 .hero-logo{
   display:none;
 }
-
-/* النص */
 
 .hero-inner{
   display:flex;
   flex-direction:column;
   align-items:center;
   text-align:center;
-  gap:4px;
+  gap:0;
 }
-
-/* الاسم */
 
 .hero-title{
   margin:0;
-  font-size:clamp(34px,4vw,52px);
-  line-height:1.1;
+  font-size:clamp(36px,4vw,54px);
+  line-height:1.08;
   font-weight:700;
   letter-spacing:0;
   color:#1e2b1e;
 }
 
-/* العبارة */
-
 .hero-subtitle{
-  margin:6px 0 0;
+  margin:10px 0 0;
   font-size:18px;
   line-height:1.8;
   color:#1e2b1e;
   opacity:0.92;
 }
 
-/* badges */
-
 .hero-badges{
-  margin-top:14px;
+  margin-top:16px;
   display:flex;
   gap:10px;
   align-items:center;
+  justify-content:center;
   flex-wrap:wrap;
 }
 
@@ -121,26 +122,24 @@ body{
 }
 
 /* CONTENT */
-
 .content{
-  margin-top:-6px;
+  margin-top:2px;
   padding-bottom:34px;
 }
 
 /* البطاقة */
-
 .panel{
-  background: var(--panel);
-  border: 1px solid var(--stroke);
-  border-radius: 20px;
-  box-shadow: 0 22px 70px rgba(0,0,0,0.50);
-  backdrop-filter: blur(12px);
-  overflow: hidden;
+  background:var(--panel);
+  border:1px solid var(--stroke);
+  border-radius:20px;
+  box-shadow:0 22px 70px rgba(0,0,0,0.50);
+  backdrop-filter:blur(12px);
+  overflow:hidden;
 }
 
 .panel-head{
   display:flex;
-  justify-content: space-between;
+  justify-content:space-between;
   align-items:center;
   padding:18px 18px 10px;
 }
@@ -156,18 +155,17 @@ body{
   gap:8px;
   padding:8px 12px;
   border-radius:999px;
-  background: rgba(72,164,132,0.20);
-  border: 1px solid rgba(72,164,132,0.32);
-  color: rgba(223,255,238,0.95);
-  font-size: 13px;
+  background:rgba(72,164,132,0.20);
+  border:1px solid rgba(72,164,132,0.32);
+  color:rgba(223,255,238,0.95);
+  font-size:13px;
 }
 
 .panel-body{
-  padding: 12px 18px 18px;
+  padding:12px 18px 18px;
 }
 
 /* GRID */
-
 .grid-2{
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -189,6 +187,7 @@ body{
   background:rgba(255,255,255,0.04);
   color:#fff;
   border:1px solid rgba(255,255,255,0.10);
+  outline:none;
 }
 
 .select:focus{
@@ -197,6 +196,9 @@ body{
 }
 
 /* uploader */
+.uploader{
+  margin-top:10px;
+}
 
 .uploader-row{
   padding:14px;
@@ -207,8 +209,63 @@ body{
 
 .file{
   width:100%;
+  display:block;
 }
 
+.uploader-hint{
+  margin-top:10px;
+  color:var(--muted);
+  font-size:13px;
+}
+
+.file-list{
+  margin-top:12px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.file-item{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  padding:12px 14px;
+  border-radius:14px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.08);
+}
+
+.file-left{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0;
+}
+
+.file-name{
+  font-size:14px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:720px;
+}
+
+.file-meta{
+  font-size:12px;
+  color:var(--muted);
+}
+
+.tag{
+  font-size:12px;
+  padding:6px 10px;
+  border-radius:999px;
+  background:rgba(245,166,35,0.18);
+  border:1px solid rgba(245,166,35,0.25);
+  color:#fff;
+}
+
+/* ACTIONS */
 .actions{
   margin-top:14px;
   display:flex;
@@ -217,6 +274,7 @@ body{
 }
 
 .btn{
+  appearance:none;
   border:none;
   cursor:pointer;
   padding:12px 16px;
@@ -226,20 +284,46 @@ body{
   font-weight:700;
 }
 
+.btn:disabled{
+  opacity:0.55;
+  cursor:not-allowed;
+}
+
 .btn-ghost{
   background:transparent;
   color:#fff;
   border:1px solid rgba(255,255,255,0.14);
 }
 
-/* RESULTS */
+.status{
+  margin-top:12px;
+  color:var(--muted);
+  font-size:13px;
+}
 
+/* RESULTS */
 .results{
   margin-top:18px;
   padding:16px;
   border-radius:20px;
   background:rgba(255,255,255,0.03);
   border:1px solid rgba(255,255,255,0.08);
+}
+
+.results-head h3{
+  margin:0;
+}
+
+.muted{
+  color:var(--muted);
+}
+
+.small{
+  font-size:12px;
+}
+
+.hidden{
+  display:none;
 }
 
 .cards{
@@ -262,13 +346,21 @@ body{
 }
 
 /* Responsive */
-
 @media (max-width:980px){
-  .cards{ grid-template-columns:1fr; }
+  .cards{
+    grid-template-columns:1fr;
+  }
 }
 
 @media (max-width:860px){
-  .grid-2{ grid-template-columns:1fr; }
+  .grid-2{
+    grid-template-columns:1fr;
+  }
+
+  .hero{
+    padding:44px 0 20px;
+    min-height:160px;
+  }
 
   .hero-title{
     font-size:30px;
@@ -276,5 +368,9 @@ body{
 
   .hero-subtitle{
     font-size:16px;
+  }
+
+  .hero-badges{
+    margin-top:12px;
   }
 }
