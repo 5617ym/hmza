@@ -2076,12 +2076,14 @@ module.exports = async function (context, req) {
           .filter((x) => !isLikelyStatementDateText(x.raw))
           .filter((x) => !isLikelyStandardEffectiveDateText(x.raw))
           .filter((x) => x.idx !== header?.noteCol)
-          .filter((x) => x.idx !== header?.labelCol)
           .sort((a, b) => a.idx - b.idx);
 
         if (numericCells.length >= 2) {
-          previous = numericCells[numericCells.length - 2].num;
-          current = numericCells[numericCells.length - 1].num;
+          const filteredForValues = numericCells.filter((x) => x.idx !== header?.labelCol);
+          const pool = filteredForValues.length >= 2 ? filteredForValues : numericCells;
+
+          previous = pool[pool.length - 2]?.num ?? null;
+          current = pool[pool.length - 1]?.num ?? null;
         } else if (numericCells.length === 1) {
           current = numericCells[0].num;
         }
@@ -2145,7 +2147,12 @@ module.exports = async function (context, req) {
         return { ok: false, reason: "date_header_row" };
       }
 
-      if (isLikelyStatementDateText(label) || isLikelyStandardEffectiveDateText(label) || isLikelyNarrativeLine(label) || isQuarterOrPeriodCell(label)) {
+      if (
+        isLikelyStatementDateText(label) ||
+        isLikelyStandardEffectiveDateText(label) ||
+        isLikelyNarrativeLine(label) ||
+        isQuarterOrPeriodCell(label)
+      ) {
         return { ok: false, reason: "narrative_label" };
       }
 
@@ -2291,6 +2298,13 @@ module.exports = async function (context, req) {
         extensionSignals += 1;
       }
       if (areTableStructuresCompatible(primary, nextCtx, statementKey)) extensionSignals += 3;
+
+      if (statementKey === "balance" && nextCtx.pageNumber === chosen?.incomePage) {
+        extensionSignals -= 10;
+      }
+      if (statementKey === "income" && nextCtx.pageNumber === chosen?.cashFlowPage) {
+        extensionSignals -= 10;
+      }
 
       const canExtend = extensionSignals >= 4;
 
@@ -2469,9 +2483,12 @@ module.exports = async function (context, req) {
           acceptedRowsCount,
           rejectedRowsCount,
           recoveredNumericRowsCount,
-          labelMode: items.some((x) => !/^balance_row_|^income_row_|^cashflow_row_/i.test(x.label))
-            ? "extracted_from_table_rows"
-            : "synthetic_by_statement_template",
+          labelMode:
+            recoveredNumericRowsCount > 0
+              ? "mixed_extracted_and_template_recovery"
+              : items.some((x) => !/^balance_row_|^income_row_|^cashflow_row_/i.test(x.label))
+                ? "extracted_from_table_rows"
+                : "synthetic_by_statement_template",
           rejectedRowsSample: rejectedRows.slice(0, 20)
         }
       };
@@ -2687,8 +2704,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.6",
-      phase: "4B_hardening_numeric_row_recovery_rtl_label_guard",
+      engine: "extract-financial-v5.6.1",
+      phase: "4B_hardening_numeric_row_recovery_and_safe_statement_boundary",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2739,10 +2756,10 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v5.6 adds numeric-row recovery when OCR drops the label column from RTL financial tables",
+          "v5.6.1 keeps numeric-row recovery when OCR drops the label column from RTL financial tables",
           "reference-like note values remain blocked from becoming labels",
-          "synthetic template labels are used only when a row has valid numeric values but no surviving label cell",
-          "multi-page extension still requires structural compatibility before merging"
+          "template recovery is now tracked explicitly in extractionMeta.labelMode",
+          "multi-page extension is guarded against crossing into the next detected statement page"
         ]
       },
 
