@@ -1512,45 +1512,6 @@ module.exports = async function (context, req) {
       return keywordHits(firstRowsText, cfg.titles) > 0;
     }
 
-    function isLateNoteDetailCandidate(pageCtx, hasStrongOwnTitle) {
-      const noDetectedYears = !pageCtx.header?.latest || !pageCtx.header?.previous;
-      const late = pageCtx.positionRatio > 0.6;
-      const wide = safeNumber(pageCtx.mainColumnCount, 0) >= 6;
-      const titleOnlyInBody =
-        keywordHits(pageCtx.headerText, [
-          "قائمة المركز المالي",
-          "قائمة الدخل",
-          "قائمة التدفقات النقدية",
-          "statement of financial position",
-          "income statement",
-          "statement of cash flows",
-          "cash flow statement",
-          "statement of income",
-          "statement of profit or loss"
-        ]) === 0 &&
-        keywordHits(pageCtx.structuralText, [
-          "قائمة المركز المالي",
-          "قائمة الدخل",
-          "قائمة التدفقات النقدية",
-          "statement of financial position",
-          "income statement",
-          "statement of cash flows",
-          "cash flow statement",
-          "statement of income",
-          "statement of profit or loss"
-        ]) > 0;
-
-      return late && wide && noDetectedYears && !hasStrongOwnTitle && titleOnlyInBody;
-    }
-
-    function isEarlyCoreStatementShape(pageCtx, hasStrongOwnTitle, structureHits) {
-      const early = pageCtx.positionRatio <= 0.22;
-      const cols = safeNumber(pageCtx.mainColumnCount, 0);
-      const hasTwoYears = !!(pageCtx.header?.latest && pageCtx.header?.previous);
-      const rtl = pageCtx.header?.direction === "rtl";
-      return early && cols >= 3 && cols <= 5 && hasTwoYears && rtl && (hasStrongOwnTitle || structureHits > 0);
-    }
-
     function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
@@ -1570,8 +1531,34 @@ module.exports = async function (context, req) {
       const structureHitsFirstRows = keywordHits(firstRowsText, cfg.structure);
       const crossStatementTitleHits = keywordHits(pageCtx.structuralText, otherStatementTitleAliases(kind));
       const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, cfg);
-      const lateNoteDetail = isLateNoteDetailCandidate(pageCtx, hasStrongOwnTitle);
-      const earlyCoreShape = isEarlyCoreStatementShape(pageCtx, hasStrongOwnTitle, structureHits);
+
+      // =========================================================
+      // Added hardening: late note detail penalty + early core boost
+      // =========================================================
+      let lateNoteDetail = false;
+      if (
+        pageCtx.positionRatio > 0.6 &&
+        pageCtx.mainColumnCount >= 6 &&
+        !pageCtx.header?.latest &&
+        !hasStrongOwnTitle
+      ) {
+        lateNoteDetail = true;
+        score -= 120;
+        reasons.push("lateNoteDetailPenalty:-120");
+      }
+
+      let earlyCoreShape = false;
+      if (
+        pageCtx.positionRatio < 0.35 &&
+        pageCtx.mainColumnCount >= 3 &&
+        pageCtx.mainColumnCount <= 5 &&
+        pageCtx.header?.latest &&
+        pageCtx.header?.previous
+      ) {
+        earlyCoreShape = true;
+        score += 70;
+        reasons.push("earlyCoreStatementBoost:+70");
+      }
 
       signals.titleHitsHeader = titleHitsHeader;
       signals.titleHitsAll = titleHitsAll;
@@ -1619,22 +1606,26 @@ module.exports = async function (context, req) {
       }
 
       if (structureHits > 0) {
-        let s = Math.min(structureHits, 12) * 16;
-
-        if (pageCtx.positionRatio > 0.6 && !hasStrongOwnTitle) {
-          s = Math.round(s * 0.45);
-          reasons.push(`lateStructureWeightReduced:+${s}`);
-        } else {
-          reasons.push(`structure:+${s}`);
-        }
-
+        const s = Math.min(structureHits, 12) * 16;
         score += s;
+        reasons.push(`structure:+${s}`);
       }
 
       if (structureHitsFirstRows > 0) {
         const s = Math.min(structureHitsFirstRows, 6) * 18;
         score += s;
         reasons.push(`structureFirstRows:+${s}`);
+      }
+
+      // تقليل وزن structure للصفحات المتأخرة إذا لم تملك عنوانًا قويًا
+      if (
+        pageCtx.positionRatio > 0.6 &&
+        structureHits > 0 &&
+        !hasStrongOwnTitle
+      ) {
+        const penalty = Math.min(structureHits, 4) * 9;
+        score -= penalty;
+        reasons.push(`lateStructureWeightReduced:-${penalty}`);
       }
 
       if (negativeHits > 0) {
@@ -1764,26 +1755,6 @@ module.exports = async function (context, req) {
         reasons.push("rowRange:+8");
       }
 
-      if (lateNoteDetail) {
-        score -= 180;
-        reasons.push("lateNoteDetailPenalty:-180");
-      }
-
-      if (pageCtx.positionRatio > 0.6 && safeNumber(pageCtx.mainColumnCount, 0) >= 6 && !(pageCtx.header?.latest && pageCtx.header?.previous) && !hasStrongOwnTitle) {
-        score -= 95;
-        reasons.push("lateWideNoYearsPenalty:-95");
-      }
-
-      if (earlyCoreShape) {
-        score += 70;
-        reasons.push("earlyCoreStatementBoost:+70");
-      }
-
-      if (kind === "cashflow" && !hasStrongOwnTitle && structureHits === 0 && pageCtx.positionRatio > 0.45) {
-        score -= 55;
-        reasons.push("cashflowLateNoSignalPenalty:-55");
-      }
-
       return { score, reasons, signals };
     }
 
@@ -1900,17 +1871,7 @@ module.exports = async function (context, req) {
 
             const sequence = softSequenceScore(balancePage, incomePage, cashFlowPage);
             const uniqueness = uniquenessScore(balancePage, incomePage, cashFlowPage);
-
-            let totalScore = baseScore + sequence + uniqueness;
-
-            if (balancePage > 40 && incomePage > 40 && cashFlowPage < 20) {
-              totalScore -= 80;
-            }
-
-            if (balancePage >= 90 || incomePage >= 90 || cashFlowPage >= 90) {
-              const veryLateCount = [balancePage, incomePage, cashFlowPage].filter((x) => x >= 90).length;
-              totalScore -= veryLateCount * 40;
-            }
+            const totalScore = baseScore + sequence + uniqueness;
 
             const candidate = {
               balancePage,
@@ -2876,8 +2837,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.8",
-      phase: "4B_hardening_core_statement_preference_and_late_note_penalty",
+      engine: "extract-financial-v5.8.1",
+      phase: "4B_hardening_core_statement_preference_and_late_note_penalty_final",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2928,10 +2889,12 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v5.8 penalizes late note-detail pages that mimic statement structure without strong header titles or detected comparison years",
-          "early core statement tables with 3-5 columns and detected years now receive an explicit ranking boost",
+          "v5.8.1 adds a hard penalty for late note-detail pages that mimic statement structure",
+          "v5.8.1 boosts early core statement-shaped pages with two real years and compact column shape",
+          "v5.8.1 reduces structure weight on late pages when no strong own statement title exists",
           "numeric-row recovery remains active when OCR drops the label column from RTL tables",
-          "multi-page extension is still guarded against crossing into the next detected statement page"
+          "template recovery is tracked explicitly in extractionMeta.labelMode",
+          "multi-page extension is guarded against crossing into the next detected statement page"
         ]
       },
 
