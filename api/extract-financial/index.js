@@ -367,6 +367,32 @@ module.exports = async function (context, req) {
       return /^[\d,.\-()]+$/.test(raw);
     }
 
+    function hasArabicChars(text) {
+      return /[\u0600-\u06FF]/.test(String(text || ""));
+    }
+
+    function hasLatinChars(text) {
+      return /[A-Za-z]/.test(String(text || ""));
+    }
+
+    function isLikelyTextLabelCell(cell) {
+      const raw = String(cell || "").trim();
+      if (!raw) return false;
+      if (isNoteHeaderCell(raw)) return false;
+      if (getYearFromCell(raw) != null) return false;
+      if (isLikelyReferenceValue(raw)) return false;
+      if (isLikelyStatementDateText(raw)) return false;
+      if (isLikelyStandardEffectiveDateText(raw)) return false;
+      if (isLikelyNarrativeLine(raw)) return false;
+      if (isQuarterOrPeriodCell(raw)) return false;
+      if (isPureNumericSymbolCell(raw)) return false;
+
+      const n = parseNumberSmart(raw);
+      if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return false;
+
+      return /[A-Za-z\u0600-\u06FF]/.test(raw);
+    }
+
     // =========================================================
     // Layer 2: Page / Table Context Builder
     // =========================================================
@@ -406,42 +432,67 @@ module.exports = async function (context, req) {
         .sort((a, b) => b.score - a.score || a.idx - b.idx);
     }
 
-    function refineLabelColumnFromBody(rows, headerState) {
-      const scoreByCol = {};
+    function detectTableLanguageDirection(rows) {
+      let arabicScore = 0;
+      let latinScore = 0;
 
+      for (const row of (rows || []).slice(0, 20)) {
+        if (!Array.isArray(row)) continue;
+        for (const cell of row) {
+          const raw = String(cell || "").trim();
+          if (!raw) continue;
+          if (hasArabicChars(raw)) arabicScore += 2;
+          if (hasLatinChars(raw)) latinScore += 1;
+        }
+      }
+
+      return {
+        isArabicTable: arabicScore > latinScore,
+        direction: arabicScore > latinScore ? "rtl" : "ltr",
+        arabicScore,
+        latinScore
+      };
+    }
+
+    function scoreLabelColumnsFromBody(rows, headerState) {
+      const scoreByCol = {};
       const start = headerState?.headerRowIndex != null
         ? Math.max(0, headerState.headerRowIndex + 1)
         : 0;
 
-      for (const row of (rows || []).slice(start, start + 30)) {
+      for (const row of (rows || []).slice(start, start + 36)) {
         if (!Array.isArray(row)) continue;
 
         row.forEach((cell, idx) => {
           const raw = String(cell || "").trim();
           if (!raw) return;
           if (idx === headerState?.currentCol || idx === headerState?.previousCol || idx === headerState?.noteCol) return;
-          if (getYearFromCell(raw) != null) return;
-          if (isLikelyReferenceValue(raw)) return;
-          if (isLikelyStatementDateText(raw)) return;
-          if (isLikelyStandardEffectiveDateText(raw)) return;
-          if (isQuarterOrPeriodCell(raw)) return;
-          if (isLikelyNarrativeLine(raw)) return;
-          if (isPureNumericSymbolCell(raw)) return;
 
-          const n = parseNumberSmart(raw);
-          if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return;
+          if (!isLikelyTextLabelCell(raw)) return;
 
-          const lenScore = Math.min(raw.length, 80);
-          scoreByCol[idx] = (scoreByCol[idx] || 0) + lenScore + 10;
+          let score = Math.min(raw.length, 80) + 10;
+          if (hasArabicChars(raw)) score += 8;
+          if (idx === row.length - 1 && headerState?.direction === "rtl") score += 18;
+          if (idx === 0 && headerState?.direction === "ltr") score += 10;
+
+          scoreByCol[idx] = (scoreByCol[idx] || 0) + score;
         });
       }
 
-      const best = Object.keys(scoreByCol)
+      return Object.keys(scoreByCol)
         .map((k) => ({ idx: Number(k), score: scoreByCol[k] }))
-        .sort((a, b) => b.score - a.score || b.idx - a.idx)[0];
+        .sort((a, b) => b.score - a.score || b.idx - a.idx);
+    }
 
-      if (best && best.score >= 20) {
-        return best.idx;
+    function refineLabelColumnFromBody(rows, headerState) {
+      const ranked = scoreLabelColumnsFromBody(rows, headerState);
+      if (ranked.length) {
+        if (headerState?.direction === "rtl") {
+          const bestScore = ranked[0].score;
+          const close = ranked.filter((x) => x.score >= bestScore - 12);
+          return close.sort((a, b) => b.idx - a.idx)[0].idx;
+        }
+        return ranked[0].idx;
       }
 
       return headerState?.labelCol ?? 0;
@@ -449,6 +500,7 @@ module.exports = async function (context, req) {
 
     function detectHeaderColumns(rows) {
       const headerRows = getHeaderRows(rows);
+      const language = detectTableLanguageDirection(rows);
 
       let latest = null;
       let previous = null;
@@ -493,13 +545,14 @@ module.exports = async function (context, req) {
             if (c === currentCol || c === previousCol || c === noteCol) continue;
             const text = String(row[c] || "").trim();
             if (!text) continue;
-            if (getYearFromCell(text) != null || isLikelyReferenceValue(text)) continue;
-            if (isQuarterOrPeriodCell(text) || isLikelyStatementDateText(text) || isLikelyStandardEffectiveDateText(text)) continue;
+            if (!isLikelyTextLabelCell(text)) continue;
             candidates.push(c);
           }
 
           if (candidates.length) {
-            labelCol = Math.max(...candidates);
+            labelCol = language.direction === "rtl"
+              ? Math.max(...candidates)
+              : Math.min(...candidates);
           }
           break;
         }
@@ -636,13 +689,14 @@ module.exports = async function (context, req) {
         }
       }
 
-      // 7) label column refinement from body rows
+      // 7) label column refinement from body rows with RTL/LTR awareness
       labelCol = refineLabelColumnFromBody(rows, {
         currentCol,
         previousCol,
         noteCol,
         labelCol,
-        headerRowIndex
+        headerRowIndex,
+        direction: language.direction
       });
 
       return {
@@ -653,7 +707,13 @@ module.exports = async function (context, req) {
         noteCol,
         labelCol,
         headerRowIndex,
-        resolutionMode: mode
+        resolutionMode: mode,
+        direction: language.direction,
+        isArabicTable: language.isArabicTable,
+        languageScores: {
+          arabic: language.arabicScore,
+          latin: language.latinScore
+        }
       };
     }
 
@@ -1826,39 +1886,28 @@ module.exports = async function (context, req) {
 
     function extractLabelFromRow(cells, header) {
       const pieces = [];
+      const orderedIndexes = header?.direction === "rtl"
+        ? [...cells.keys()].sort((a, b) => b - a)
+        : [...cells.keys()].sort((a, b) => a - b);
 
       if (header?.labelCol != null && cells[header.labelCol] != null) {
         const raw = String(cells[header.labelCol] || "").trim();
-        if (
-          raw &&
-          getYearFromCell(raw) == null &&
-          !isLikelyReferenceValue(raw) &&
-          parseNumberSmart(raw) == null &&
-          !isLikelyStatementDateText(raw) &&
-          !isLikelyStandardEffectiveDateText(raw) &&
-          !isLikelyNarrativeLine(raw) &&
-          !isQuarterOrPeriodCell(raw)
-        ) {
+        if (isLikelyTextLabelCell(raw)) {
           pieces.push(raw);
         }
       }
 
-      for (let i = 0; i < cells.length; i += 1) {
+      for (const i of orderedIndexes) {
         if (i === header?.currentCol || i === header?.previousCol || i === header?.noteCol) continue;
 
         const raw = String(cells[i] || "").trim();
         if (!raw) continue;
-        if (getYearFromCell(raw) != null) continue;
-        if (isLikelyReferenceValue(raw)) continue;
-        if (isLikelyStatementDateText(raw)) continue;
-        if (isLikelyStandardEffectiveDateText(raw)) continue;
-        if (isLikelyNarrativeLine(raw)) continue;
-        if (isQuarterOrPeriodCell(raw)) continue;
+        if (!isLikelyTextLabelCell(raw)) continue;
 
-        const n = parseNumberSmart(raw);
-        if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) continue;
-
-        if (!pieces.includes(raw)) pieces.push(raw);
+        if (!pieces.includes(raw)) {
+          pieces.push(raw);
+          if (header?.direction === "rtl") break;
+        }
       }
 
       const finalLabel = cleanupLabel(pieces.join(" "));
@@ -1967,6 +2016,10 @@ module.exports = async function (context, req) {
         return { ok: false, reason: "date_header_row" };
       }
 
+      if (labelNorm.length <= 1) {
+        return { ok: false, reason: "weak_label" };
+      }
+
       if (statementKey === "cashflow") {
         if (
           labelNorm.includes("الانشطه التشغيليه") ||
@@ -2023,6 +2076,47 @@ module.exports = async function (context, req) {
       return Array.from(map.values());
     }
 
+    function areTableStructuresCompatible(primaryCtx, nextCtx, statementKey) {
+      if (!primaryCtx || !nextCtx) return false;
+      if (!primaryCtx.mainTable || !nextCtx.mainTable) return false;
+
+      const primaryHeader = primaryCtx.header || {};
+      const nextHeader = nextCtx.header || {};
+
+      if (nextCtx.isLikelyIndexPage || nextCtx.isLikelyStandardsPage || nextCtx.isLikelyNarrativePage) return false;
+      if (nextCtx.isLikelyEquityStatement) return false;
+      if (statementKey === "income" && nextCtx.isLikelyComprehensiveIncome) return false;
+
+      const primaryCols = safeNumber(primaryCtx.mainColumnCount, 0);
+      const nextCols = safeNumber(nextCtx.mainColumnCount, 0);
+      if (!primaryCols || !nextCols) return false;
+      if (Math.abs(primaryCols - nextCols) > 1) return false;
+
+      if ((primaryHeader.direction || "ltr") !== (nextHeader.direction || "ltr")) return false;
+
+      const primaryLabelCol = primaryHeader.labelCol;
+      const nextLabelCol = nextHeader.labelCol;
+      if (primaryLabelCol != null && nextLabelCol != null && Math.abs(primaryLabelCol - nextLabelCol) > 1) return false;
+
+      const primaryCurrentCol = primaryHeader.currentCol;
+      const nextCurrentCol = nextHeader.currentCol;
+      if (primaryCurrentCol != null && nextCurrentCol != null && Math.abs(primaryCurrentCol - nextCurrentCol) > 1) return false;
+
+      const primaryPreviousCol = primaryHeader.previousCol;
+      const nextPreviousCol = nextHeader.previousCol;
+      if (primaryPreviousCol != null && nextPreviousCol != null && Math.abs(primaryPreviousCol - nextPreviousCol) > 1) return false;
+
+      const primaryYears = unique([primaryHeader.latest, primaryHeader.previous].filter(Boolean)).sort((a, b) => b - a);
+      const nextYears = unique([nextHeader.latest, nextHeader.previous].filter(Boolean)).sort((a, b) => b - a);
+
+      if (primaryYears.length && nextYears.length) {
+        const sameTopYear = primaryYears[0] === nextYears[0];
+        if (!sameTopYear) return false;
+      }
+
+      return true;
+    }
+
     function collectStatementTables(startPageNumber, statementKey) {
       const startIndex = allPageNumbers.indexOf(startPageNumber);
       const primary = pageContexts.find((p) => p.pageNumber === startPageNumber);
@@ -2046,15 +2140,13 @@ module.exports = async function (context, req) {
 
       let extensionSignals = 0;
       if (nextScore >= primaryScore - 30) extensionSignals += 1;
-      if (!nextCtx.isLikelyIndexPage && !nextCtx.isLikelyStandardsPage && !nextCtx.isLikelyNarrativePage) extensionSignals += 1;
-      if (!nextCtx.isLikelyEquityStatement) extensionSignals += 1;
-      if (!(statementKey === "income" && nextCtx.isLikelyComprehensiveIncome)) extensionSignals += 1;
       if (
         (primary.header?.latest && nextCtx.header?.latest && primary.header.latest === nextCtx.header.latest) ||
         (primary.years.length && nextCtx.years.length && primary.years[0] === nextCtx.years[0])
       ) {
         extensionSignals += 1;
       }
+      if (areTableStructuresCompatible(primary, nextCtx, statementKey)) extensionSignals += 3;
 
       const canExtend = extensionSignals >= 4;
 
@@ -2093,6 +2185,7 @@ module.exports = async function (context, req) {
             noteCol: null,
             labelCol: null,
             headerResolutionMode: null,
+            tableDirection: null,
             tablesUsed: 0,
             sourcePages: [],
             acceptedRowsCount: 0,
@@ -2117,6 +2210,7 @@ module.exports = async function (context, req) {
             noteCol: null,
             labelCol: null,
             headerResolutionMode: null,
+            tableDirection: null,
             tablesUsed: 0,
             sourcePages: [],
             acceptedRowsCount: 0,
@@ -2160,7 +2254,9 @@ module.exports = async function (context, req) {
           noteCol: primaryHeader.noteCol != null ? primaryHeader.noteCol : localHeader.noteCol,
           labelCol: primaryHeader.labelCol != null ? primaryHeader.labelCol : localHeader.labelCol,
           headerRowIndex: localHeader.headerRowIndex != null ? localHeader.headerRowIndex : primaryHeader.headerRowIndex,
-          resolutionMode: primaryHeader.resolutionMode || localHeader.resolutionMode
+          resolutionMode: primaryHeader.resolutionMode || localHeader.resolutionMode,
+          direction: primaryHeader.direction || localHeader.direction || "ltr",
+          isArabicTable: primaryHeader.isArabicTable != null ? primaryHeader.isArabicTable : localHeader.isArabicTable
         };
 
         const startRowIndex = header.headerRowIndex != null
@@ -2216,6 +2312,7 @@ module.exports = async function (context, req) {
           noteCol: primaryHeader.noteCol,
           labelCol: primaryHeader.labelCol,
           headerResolutionMode: primaryHeader.resolutionMode || null,
+          tableDirection: primaryHeader.direction || null,
           tablesUsed: statementTables.length,
           sourcePages,
           acceptedRowsCount,
@@ -2438,8 +2535,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.3",
-      phase: "4B_rewrite_plus_rtl_label_fix",
+      engine: "extract-financial-v5.4",
+      phase: "4B_hardening_rtl_row_fallback_and_multipage_guard",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2487,11 +2584,10 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v5.3 improves RTL/Arabic label column inference using body-row text scoring",
-          "statement date headers like 31 December 2025 are separated from IFRS/effective-date narrative detection",
-          "late note pages with title matches are penalized more heavily",
-          "bank income ranking now gets a stronger hard penalty against balance-like pages when income structure is weak",
-          "response shape remains compatible with the existing architecture"
+          "v5.4 adds RTL-aware label detection with right-to-left row fallback",
+          "label column selection now uses body-row text scoring with Arabic/LTR direction awareness",
+          "multi-page extension now requires structural compatibility before merging the next page",
+          "row validation now blocks weak labels and preserves the existing response shape"
         ]
       },
 
