@@ -1,73 +1,102 @@
-/* فرض اللون الفاتح ومنع التضارب */
+/* إعدادات الخط والألوان الأساسية */
 body {
     margin: 0;
-    background: #e9f2ec !important; 
+    padding: 0;
+    background-color: #f0f7f2 !important; /* لون الخلفية الأخضر الفاتح جداً */
     font-family: 'Tajawal', sans-serif;
     color: #062b18;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    direction: rtl;
     min-height: 100vh;
 }
 
-.main-header {
-    width: 90%;
+/* شريط التنقل العلوي */
+.top-navbar {
     display: flex;
     justify-content: space-between;
-    padding: 20px 0;
+    padding: 20px 5%;
     align-items: center;
 }
 
-.login-btn {
+.signin-button {
     background: #143323;
     color: white;
-    padding: 8px 22px;
+    padding: 8px 25px;
     border-radius: 8px;
     text-decoration: none;
     font-weight: bold;
 }
 
-.nav-label { margin-right: 15px; font-weight: 500; }
-.header-logo { width: 35px; }
+.nav-item {
+    margin-right: 15px;
+    font-weight: 500;
+}
 
-.hero-wrapper {
+.mini-logo-nav {
+    width: 40px;
+}
+
+/* القسم الرئيسي */
+.hero-section {
     display: flex;
     flex-direction: column;
     align-items: center;
-    text-align: center;
-    width: 100%;
+    padding-bottom: 50px;
 }
 
-.big-logo {
-    width: 320px;
-    margin-top: 10px;
+.brand-logo-large {
+    width: 350px; /* حجم الشعار كما في التصميم */
+    margin-top: 20px;
+    height: auto;
 }
 
-.hero-title { font-size: 3.5rem; font-weight: 800; margin: 5px 0; }
-.hero-desc { font-size: 1.3rem; margin-bottom: 40px; }
+.brand-title {
+    font-size: 3.5rem;
+    margin: 10px 0;
+    font-weight: 800;
+}
 
-/* تصميم البطاقة الزجاجية المطلوب */
-.main-glass-card {
-    background: rgba(255, 255, 255, 0.45);
+.brand-subtitle {
+    font-size: 1.2rem;
+    margin-bottom: 40px;
+    opacity: 0.9;
+}
+
+/* تصميم البطاقة الزجاجية (Glassmorphism) */
+.glass-card-panel {
+    background: rgba(255, 255, 255, 0.45); /* شفافية بيضاء */
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
     border-radius: 30px;
     border: 1px solid rgba(255, 255, 255, 0.6);
+    width: 90%;
+    max-width: 950px;
     padding: 40px;
-    width: 85%;
-    max-width: 900px;
-    box-shadow: 0 15px 35px rgba(0,0,0,0.03);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.02);
 }
 
-.inputs-row-grid {
+.card-internal-title {
+    text-align: center;
+    margin-bottom: 35px;
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+
+/* توزيع الحقول بشكل أفقي */
+.inputs-row-container {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 25px;
+    margin-bottom: 35px;
 }
 
-.field-group label { display: block; margin-bottom: 10px; font-weight: bold; }
+.form-group label {
+    display: block;
+    margin-bottom: 12px;
+    font-weight: 700;
+}
 
-.file-drop-area {
+/* منطقة الرفع */
+.upload-drop-zone {
     height: 120px;
     border: 2px dashed rgba(6, 43, 24, 0.1);
     border-radius: 15px;
@@ -75,32 +104,53 @@ body {
     align-items: center;
     justify-content: center;
     background: rgba(255, 255, 255, 0.2);
-    color: rgba(6, 43, 24, 0.4);
+    color: rgba(6, 43, 24, 0.5);
 }
 
-.themed-select {
+/* القوائم المنسدلة الداكنة كما في الصورة */
+.custom-dark-select {
     width: 100%;
-    background: #1a2b23;
-    color: #fff;
-    padding: 14px;
-    border-radius: 10px;
+    background-color: #1a2b23;
+    color: white;
+    padding: 15px;
+    border-radius: 12px;
     border: none;
     font-family: 'Tajawal';
+    font-size: 1rem;
+    cursor: pointer;
 }
 
-.card-actions {
+/* أزرار العمليات */
+.card-action-footer {
     display: flex;
     align-items: center;
-    gap: 25px;
-    margin-top: 30px;
+    gap: 30px;
 }
 
-.submit-btn {
-    background: linear-gradient(90deg, #3d8a63, #2d6a4f);
-    color: #fff;
-    border: none;
-    padding: 12px 45px;
-    border-radius: 25px;
-    font-weight: bold;
+.btn-reset-text {
     cursor: pointer;
+    font-weight: bold;
+    color: #062b18;
+    background: #e1ede5;
+    padding: 8px 20px;
+    border-radius: 10px;
+}
+
+.btn-submit-results {
+    background: linear-gradient(90deg, #3d8a63, #2d6a4f);
+    color: white;
+    border: none;
+    padding: 14px 50px;
+    border-radius: 30px;
+    font-weight: 800;
+    font-size: 1.1rem;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(45, 106, 79, 0.3);
+}
+
+/* للهواتف: ترتيب عمودي */
+@media (max-width: 768px) {
+    .inputs-row-container {
+        grid-template-columns: 1fr;
+    }
 }
