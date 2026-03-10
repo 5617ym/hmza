@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -12,23 +11,79 @@
 <body>
 
   <!-- HERO -->
-  <header class="hero">
-    <div class="hero-inner container">
-      <img class="hero-logo" src="assets/images/logo.png" alt="Wasla Logo" />
-      <h1 class="hero-title">وصلة المالية</h1>
-      <p class="hero-subtitle">تتحدث مع الأرقام وتخبرنا عن الأداء</p>
+  <header class="hero hero-modern">
+    <div class="container hero-shell">
 
-      <div class="hero-badges">
-        <span class="badge">نسخة تجريبية</span>
-        <span class="badge badge-muted">RTL</span>
+      <div class="hero-grid">
+        <!-- النصوص -->
+        <div class="hero-copy">
+          <div class="brand-lockup">
+            <img class="hero-logo" src="assets/images/logo.png" alt="Wasla Logo" />
+            <div class="brand-text">
+              <h1 class="hero-title">وصلة المالية</h1>
+              <p class="hero-subtitle">نتحدث مع الأرقام.. وتخبرنا عن الأداء</p>
+            </div>
+          </div>
+
+          <p class="hero-description">
+            منصة تحليل مالي ذكية تربط القوائم المالية بالرؤية، وتحوّل الأرقام إلى قراءة أوضح للأداء والفرص.
+          </p>
+
+          <div class="hero-actions">
+            <a href="#upload-panel" class="btn btn-hero">ارفع قوائمك المالية</a>
+            <a href="#results" class="btn btn-ghost">استكشف المنصة</a>
+          </div>
+        </div>
+
+        <!-- الرسم التحليلي -->
+        <div class="hero-visual" aria-hidden="true">
+          <div class="visual-card">
+            <div class="visual-grid"></div>
+
+            <div class="metric metric-a">
+              <span class="metric-label">Revenue</span>
+              <strong class="metric-value">+18%</strong>
+            </div>
+
+            <div class="metric metric-b">
+              <span class="metric-label">Cash Flow</span>
+              <strong class="metric-value">+12%</strong>
+            </div>
+
+            <div class="metric metric-c">
+              <span class="metric-label">Margin</span>
+              <strong class="metric-value">24%</strong>
+            </div>
+
+            <div class="chart-area">
+              <div class="chart-line">
+                <span class="dot dot-1"></span>
+                <span class="dot dot-2"></span>
+                <span class="dot dot-3"></span>
+                <span class="dot dot-4"></span>
+                <span class="dot dot-5"></span>
+              </div>
+            </div>
+
+            <div class="visual-numbers">
+              <span>ROI 12.7%</span>
+              <span>EPS 3.4</span>
+              <span>2024</span>
+              <span>EBITDA</span>
+            </div>
+          </div>
+        </div>
       </div>
+
     </div>
   </header>
 
   <!-- CONTENT -->
   <main class="container content">
 
-    <section class="panel">
+    <section id="upload-panel" class="panel panel-modern">
+      <div class="panel-note">ارفع قوائمك المالية واترك الباقي علينا</div>
+
       <div class="panel-head">
         <div class="panel-title">
           <h2>ابدأ برفع الملفات</h2>
@@ -60,7 +115,6 @@
 
         <div class="uploader">
           <div class="uploader-row">
-            <!-- ✅ يقبل كل الأنواع -->
             <input
               id="fileInput"
               class="file"
@@ -85,7 +139,9 @@
       </div>
     </section>
 
-    <!-- النتائج (مخفية مؤقتًا إلى أن نرفع ملفات) -->
+    <div class="brand-statement">نضع للرقم همزة</div>
+
+    <!-- النتائج -->
     <section id="results" class="results hidden">
       <div class="results-head">
         <h3>النتائج</h3>
