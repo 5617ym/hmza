@@ -281,17 +281,32 @@ module.exports = async function (context, req) {
       }));
     }
 
+    function isLikelyOnlyReferenceText(value) {
+      const raw = toEnglishDigits(String(value || "").trim());
+      const s = normalizeText(raw);
+      if (!raw) return false;
+
+      if (/^\(?\d{1,3}[a-zA-Z]?\)?$/.test(raw)) return true;
+      if (/^[a-zA-Z]\d{1,3}$/.test(raw)) return true;
+      if (/^\d{1,2}(\.\d{1,2})?$/.test(raw)) return true;
+      if (/^\d+\s*\/\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*-\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*(,|&)\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*and\s*\d+$/i.test(raw)) return true;
+      if (/^\d+\s*و\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*و\d+$/.test(raw)) return true;
+      if (/^\(?\d{1,3}\)?\s*(و|and|\/|-)\s*\(?\d{1,3}\)?$/i.test(raw)) return true;
+      if (s === "n/a") return false;
+
+      return false;
+    }
+
     function isLikelyReferenceValue(cell) {
       const raw = String(cell || "").trim();
-      const s = normalizeText(raw);
       if (!raw) return false;
       if (isNoteHeaderCell(raw)) return true;
       if (isYearCell(raw)) return false;
-      if (/^\(?\d{1,3}[a-zA-Z]?\)?$/.test(raw)) return true;
-      if (/^[a-zA-Z]\d{1,3}$/.test(raw)) return true;
-      if (/^\d{1,2}(\.\d{1,2})?$/.test(toEnglishDigits(raw))) return true;
-      if (s === "n/a") return false;
-      return false;
+      return isLikelyOnlyReferenceText(raw);
     }
 
     function isLikelyStatementDateText(text) {
@@ -1943,55 +1958,99 @@ module.exports = async function (context, req) {
     }
 
     function extractLabelFromRow(cells, header) {
-      const pieces = [];
-      const orderedIndexes = header?.direction === "rtl"
-        ? [...cells.keys()].sort((a, b) => b - a)
-        : [...cells.keys()].sort((a, b) => a - b);
+      const orderedIndexes =
+        header?.direction === "rtl"
+          ? [...cells.keys()].sort((a, b) => b - a)
+          : [...cells.keys()].sort((a, b) => a - b);
 
-      if (header?.labelCol != null && cells[header.labelCol] != null) {
-        const raw = String(cells[header.labelCol] || "").trim();
-        if (isLikelyTextLabelCell(raw)) {
-          pieces.push(raw);
+      const candidates = [];
+
+      const pushCandidate = (raw, idx, source) => {
+        const cleaned = cleanupLabel(raw);
+        if (!cleaned) return;
+        if (!isLikelyTextLabelCell(cleaned)) return;
+        if (isNumericOnlyText(cleaned)) return;
+        if (getYearFromCell(cleaned) != null) return;
+        if (isLikelyStatementDateText(cleaned)) return;
+        if (isLikelyStandardEffectiveDateText(cleaned)) return;
+        if (isLikelyNarrativeLine(cleaned)) return;
+        if (isQuarterOrPeriodCell(cleaned)) return;
+        if (isLikelyOnlyReferenceText(cleaned)) return;
+
+        const norm = normalizeText(cleaned);
+        if (
+          norm === "ايضاح" ||
+          norm === "notes" ||
+          norm === "note" ||
+          norm === "الملاحظات"
+        ) {
+          return;
         }
+
+        if (cleaned.length <= 2) return;
+
+        let score = Math.min(cleaned.length, 100);
+        if (hasArabicChars(cleaned)) score += 8;
+        if (header?.direction === "rtl") score += idx * 5;
+        if (source === "header_label_col") score += 12;
+        if (source === "body_scan") score += 6;
+
+        candidates.push({
+          label: cleaned,
+          idx,
+          score
+        });
+      };
+
+      if (
+        header?.labelCol != null &&
+        header.labelCol !== header?.noteCol &&
+        cells[header.labelCol] != null
+      ) {
+        pushCandidate(String(cells[header.labelCol] || "").trim(), header.labelCol, "header_label_col");
       }
 
       for (const i of orderedIndexes) {
-        if (i === header?.currentCol || i === header?.previousCol || i === header?.noteCol) continue;
+        if (
+          i === header?.currentCol ||
+          i === header?.previousCol ||
+          i === header?.noteCol
+        ) {
+          continue;
+        }
 
         const raw = String(cells[i] || "").trim();
         if (!raw) continue;
-        if (!isLikelyTextLabelCell(raw)) continue;
-
-        if (!pieces.includes(raw)) {
-          pieces.push(raw);
-          if (header?.direction === "rtl") break;
-        }
+        pushCandidate(raw, i, "body_scan");
       }
 
-      // fallback: if no dedicated label column was found, try any textual cell
-      if (!pieces.length) {
+      if (!candidates.length) {
         for (const i of orderedIndexes) {
+          if (i === header?.currentCol || i === header?.previousCol || i === header?.noteCol) continue;
+
           const raw = String(cells[i] || "").trim();
           if (!raw) continue;
-          if (i === header?.currentCol || i === header?.previousCol) continue;
-          if (isLikelyTextLabelCell(raw)) {
-            pieces.push(raw);
+          if (isLikelyOnlyReferenceText(raw)) continue;
+          if (isNumericOnlyText(raw)) continue;
+          if (getYearFromCell(raw) != null) continue;
+          if (isLikelyStatementDateText(raw)) continue;
+
+          const cleaned = cleanupLabel(raw);
+          if (cleaned && cleaned.length > 2 && /[A-Za-z\u0600-\u06FF]/.test(cleaned)) {
+            candidates.push({
+              label: cleaned,
+              idx: i,
+              score: cleaned.length
+            });
             break;
           }
         }
       }
 
-      const finalLabel = cleanupLabel(pieces.join(" "));
-      if (!finalLabel) return "";
+      if (!candidates.length) return "";
 
-      if (isNumericOnlyText(finalLabel)) return "";
-      if (getYearFromCell(finalLabel) != null) return "";
-      if (isLikelyStatementDateText(finalLabel)) return "";
-      if (isLikelyStandardEffectiveDateText(finalLabel)) return "";
-      if (isLikelyNarrativeLine(finalLabel)) return "";
-      if (isQuarterOrPeriodCell(finalLabel)) return "";
-
-      return finalLabel;
+      candidates.sort((a, b) => b.score - a.score || b.idx - a.idx);
+      return candidates[0].label;
     }
 
     function extractValuesFromRow(cells, header) {
@@ -2063,6 +2122,10 @@ module.exports = async function (context, req) {
         labelNorm === "الملاحظات"
       ) {
         return { ok: false, reason: "note_header_row" };
+      }
+
+      if (isLikelyOnlyReferenceText(label)) {
+        return { ok: false, reason: "reference_label" };
       }
 
       if (isNumericOnlyText(label)) {
@@ -2606,8 +2669,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v5.4",
-      phase: "4B_hardening_rtl_row_fallback_and_multipage_guard",
+      engine: "extract-financial-v5.5",
+      phase: "4B_hardening_rtl_label_note_separation_and_multipage_guard",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -2655,10 +2718,10 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v5.4 adds RTL-aware label detection with right-to-left row fallback",
-          "label column selection now uses body-row text scoring with Arabic/LTR direction awareness",
-          "multi-page extension now requires structural compatibility before merging the next page",
-          "row validation now blocks weak labels and preserves the existing response shape"
+          "v5.5 separates label extraction from note/reference values more aggressively",
+          "reference-like note values such as 6, 7, 6 و 7, 6/7 are blocked from becoming labels",
+          "RTL label detection remains enabled with rightmost free-column fallback",
+          "multi-page extension still requires structural compatibility before merging"
         ]
       },
 
