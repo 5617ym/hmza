@@ -1070,12 +1070,150 @@ module.exports = async function (context, req) {
 
     const pageContexts = allPageNumbers.map((pageNumber) => buildPageContext(pageNumber, allPageNumbers));
 
-    // =========================================================
+        // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
 
-    const PROFILE_CONFIG = { /* نفس الكود كما أرسلته أنت بدون تغيير */ };
-    function detectStatementProfile() { /* نفس الكود */ }
+    const PROFILE_CONFIG = {
+      bank: {
+        key: "bank",
+        positive: [
+          "الدخل من التمويل",
+          "التمويل والاستثمارات",
+          "رسوم الخدمات المصرفية",
+          "اجمالي دخل العمليات",
+          "ودائع العملاء",
+          "البنوك المركزية",
+          "المؤسسات المالية الاخرى",
+          "تمويل وسلف",
+          "صكوك",
+          "special commission",
+          "customer deposits",
+          "central banks",
+          "due from banks",
+          "due to banks",
+          "financing and advances",
+          "commission income"
+        ],
+        negative: [
+          "revenue",
+          "cost of sales",
+          "gross profit",
+          "inventories",
+          "selling and distribution expenses",
+          "insurance revenue",
+          "investment properties"
+        ]
+      },
+      insurance: {
+        key: "insurance",
+        positive: [
+          "ايرادات التامين",
+          "إيرادات التأمين",
+          "خدمة التامين",
+          "خدمة التأمين",
+          "اعادة التامين",
+          "إعادة التأمين",
+          "مطالبات",
+          "claims",
+          "reinsurance",
+          "insurance revenue",
+          "insurance service result",
+          "insurance finance income",
+          "insurance finance expenses",
+          "liability for incurred claims"
+        ],
+        negative: [
+          "customer deposits",
+          "special commission",
+          "gross financing",
+          "investment properties"
+        ]
+      },
+      reit: {
+        key: "reit",
+        positive: [
+          "عقارات استثماريه",
+          "عقارات استثمارية",
+          "دخل ايجار",
+          "دخل إيجار",
+          "وحدات الصندوق",
+          "القيمه العادله للوحده",
+          "القيمة العادلة للوحدة",
+          "investment properties",
+          "rental income",
+          "fair value of unit",
+          "fund units",
+          "real estate"
+        ],
+        negative: [
+          "customer deposits",
+          "insurance revenue",
+          "gross financing and investment income"
+        ]
+      },
+      operating_company: {
+        key: "operating_company",
+        positive: [
+          "الايرادات",
+          "المبيعات",
+          "تكلفة المبيعات",
+          "تكلفة الايرادات",
+          "مجمل الربح",
+          "الربح التشغيلي",
+          "المخزون",
+          "المدينون التجاريون",
+          "الموردون",
+          "revenue",
+          "sales",
+          "cost of sales",
+          "cost of revenue",
+          "gross profit",
+          "operating profit",
+          "inventories",
+          "trade receivables",
+          "trade payables",
+          "selling and distribution expenses",
+          "general and administrative expenses"
+        ],
+        negative: [
+          "ودائع العملاء",
+          "البنوك المركزية",
+          "المؤسسات المالية الاخرى",
+          "special commission",
+          "customer deposits",
+          "central banks",
+          "due from banks",
+          "due to banks",
+          "insurance revenue"
+        ]
+      }
+    };
+
+    function detectStatementProfile() {
+      const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
+      const scores = {};
+
+      for (const key of Object.keys(PROFILE_CONFIG)) {
+        const cfg = PROFILE_CONFIG[key];
+        const positive = keywordHits(fullText, cfg.positive);
+        const negative = keywordHits(fullText, cfg.negative);
+        scores[key] = (positive * 8) - (negative * 5);
+      }
+
+      const sorted = Object.keys(scores)
+        .map((k) => ({ key: k, score: scores[k] }))
+        .sort((a, b) => b.score - a.score);
+
+      const statementProfile = sorted[0]?.key || "operating_company";
+
+      return {
+        statementProfile,
+        scores,
+        rankedProfiles: sorted,
+        reason: `${statementProfile} keywords strongest`
+      };
+    }
 
     const profileDetection = detectStatementProfile();
     const statementProfile = profileDetection.statementProfile;
@@ -1084,23 +1222,419 @@ module.exports = async function (context, req) {
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
-    const STATEMENT_CONFIGS = { /* نفس الكود كما أرسلته أنت بدون تغيير */ };
-    const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
+    const STATEMENT_CONFIGS = {
+      bank: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "قائمة الوضع المالي",
+            "الميزانية",
+            "الميزانية العمومية",
+            "statement of financial position",
+            "financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات",
+            "اجمالي المطلوبات وحقوق الملكيه",
+            "الموجودات",
+            "المطلوبات",
+            "حقوق الملكيه",
+            "ودائع العملاء",
+            "نقد وارصده لدى البنوك المركزيه",
+            "ارصده لدى البنوك والمؤسسات الماليه الاخرى",
+            "total assets",
+            "total liabilities",
+            "total equity",
+            "total liabilities and equity",
+            "assets",
+            "liabilities",
+            "equity"
+          ],
+          negatives: [
+            "قائمة الدخل",
+            "الدخل الشامل",
+            "قائمة التغيرات في حقوق الملكية",
+            "قائمة التدفقات النقدية",
+            "statement of income",
+            "statement of comprehensive income",
+            "changes in equity",
+            "cash flow"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "قائمة الدخل الموحدة",
+            "قائمة الارباح والخسائر",
+            "قائمة الربح والخسارة",
+            "statement of income",
+            "income statement",
+            "profit and loss",
+            "profit or loss",
+            "statement of profit or loss",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "الدخل من التمويل",
+            "الدخل من التمويل والاستثمارات",
+            "رسوم الخدمات المصرفية",
+            "اجمالي دخل العمليات",
+            "اجمالي مصاريف العمليات",
+            "دخل السنة قبل الزكاة",
+            "صافي دخل السنة",
+            "ربحية السهم",
+            "gross financing and investment income",
+            "net financing and investment income",
+            "fee from banking services",
+            "net income",
+            "revenue",
+            "sales",
+            "operating income",
+            "operating profit",
+            "earnings"
+          ],
+          negatives: [
+            "الدخل الشامل",
+            "قائمة الدخل الشامل",
+            "statement of comprehensive income",
+            "other comprehensive income",
+            "قائمة التغيرات في حقوق الملكية",
+            "changes in equity",
+            "قائمة المركز المالي",
+            "قائمة التدفقات النقدية"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "بيان التدفقات النقدية",
+            "التدفقات النقدية",
+            "cash flow statement",
+            "statement of cash flows",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد المستخدم في الانشطة الاستثمارية",
+            "صافي النقد الناتج من الانشطة التمويلية",
+            "النقد وشبه النقد",
+            "operating activities",
+            "investing activities",
+            "financing activities",
+            "cash and cash equivalents",
+            "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities"
+          ],
+          negatives: [
+            "قائمة الدخل",
+            "الدخل الشامل",
+            "قائمة المركز المالي",
+            "قائمة التغيرات في حقوق الملكية",
+            "statement of income",
+            "comprehensive income",
+            "financial position",
+            "changes in equity"
+          ]
+        }
+      },
 
-    const SEMANTIC_RULES = { /* نفس الكود كما أرسلته أنت بدون تغيير */ };
+      insurance: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "statement of financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "نقد وما في حكمه",
+            "ودائع لاجل",
+            "استثمارات",
+            "ذمم اعاده التامين",
+            "موجودات اعاده التامين",
+            "مطلوبات عقود التامين",
+            "liabilities for incurred claims",
+            "reinsurance contract assets",
+            "insurance contract liabilities",
+            "total assets",
+            "total liabilities",
+            "total equity",
+            "assets",
+            "liabilities",
+            "equity"
+          ],
+          negatives: [
+            "statement of cash flows",
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "statement of income",
+            "income statement",
+            "statement of profit or loss",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "ايرادات التامين",
+            "إيرادات التأمين",
+            "نتيجه خدمه التامين",
+            "نتيجة خدمة التأمين",
+            "مطالبات",
+            "اعاده التامين",
+            "إعادة التأمين",
+            "insurance revenue",
+            "insurance service result",
+            "reinsurance",
+            "claims",
+            "net income",
+            "operating income"
+          ],
+          negatives: [
+            "statement of comprehensive income",
+            "other comprehensive income",
+            "statement of cash flows",
+            "changes in equity"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "statement of cash flows",
+            "cash flow statement",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "صافي النقد الناتج من الانشطة التشغيلية",
+            "cash flows from operating activities",
+            "cash and cash equivalents",
+            "operating activities",
+            "investing activities",
+            "financing activities"
+          ],
+          negatives: [
+            "statement of comprehensive income",
+            "effective date",
+            "المعايير",
+            "changes in equity"
+          ]
+        }
+      },
 
-    const NOTE_PENALTY_ANCHORS = [
-      "risk","risks","market risk","liquidity risk","credit risk","operational risk",
-      "interest rate risk","profit rate risk","sensitivity","sensitivities","gap","repricing",
-      "repricing gap","maturity","maturities","maturity gap","fair value hierarchy",
-      "debt securities","sukuk","bonds","medium term notes","issued debt","subordinated debt",
-      "derivatives","hedging","financial instruments","instruments","notes to the financial statements",
-      "contractual maturities","undiscounted cash flows","exposure","exposures","concentration",
-      "مخاطر","مخاطر السوق","مخاطر السيولة","مخاطر الائتمان","مخاطر التشغيل","مخاطر أسعار العمولات",
-      "مخاطر معدل العائد","حساسية","فجوة","فجوات","استحقاق","آجال الاستحقاق","القيمة العادلة",
-      "صكوك","سندات","أدوات دين","ادوات دين","أدوات مالية","ادوات مالية","مشتقات","تحوط",
-      "إيضاحات القوائم المالية","انكشاف","تركز","التدفقات النقدية التعاقدية","إعادة التسعير","اعادة التسعير"
-    ];
+      reit: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "statement of financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "عقارات استثمارية",
+            "موجودات مالية بالقيمة العادلة من خلال الربح أو الخسارة",
+            "وحدات الصندوق",
+            "investment properties",
+            "fund units",
+            "total assets",
+            "total liabilities",
+            "assets",
+            "liabilities",
+            "equity"
+          ],
+          negatives: [
+            "statement of cash flows",
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "statement of profit or loss",
+            "income statement",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "دخل ايجار",
+            "دخل إيجار",
+            "عقارات استثمارية",
+            "توزيعات ارباح",
+            "دخل تحويل",
+            "rental income",
+            "investment properties",
+            "net income",
+            "operating profit"
+          ],
+          negatives: [
+            "statement of comprehensive income",
+            "other comprehensive income",
+            "changes in equity"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "statement of cash flows",
+            "cash flow statement",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "صافي النقد الناتج من الانشطه التشغيليه",
+            "صافي النقد المستخدم في الانشطه الاستثماريه",
+            "صافي النقد الناتج من الانشطه التمويليه",
+            "cash and cash equivalents",
+            "operating activities",
+            "investing activities",
+            "financing activities"
+          ],
+          negatives: [
+            "effective date",
+            "المعايير",
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        }
+      },
+
+      operating_company: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "قائمة الوضع المالي",
+            "الميزانية",
+            "الميزانية العمومية",
+            "statement of financial position",
+            "financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "assets",
+            "liabilities",
+            "equity",
+            "total assets",
+            "total liabilities",
+            "total equity",
+            "total liabilities and equity",
+            "current assets",
+            "non-current assets",
+            "current liabilities",
+            "non-current liabilities",
+            "الموجودات",
+            "المطلوبات",
+            "حقوق الملكية",
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات"
+          ],
+          negatives: [
+            "special commission",
+            "customer deposits",
+            "central banks",
+            "due from banks",
+            "due to banks",
+            "statement of cash flows",
+            "statement of profit or loss"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "قائمة الارباح والخسائر",
+            "قائمة الربح والخسارة",
+            "statement of profit or loss",
+            "statement of income",
+            "income statement",
+            "profit and loss",
+            "profit or loss",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "revenue",
+            "sales",
+            "cost of sales",
+            "cost of revenue",
+            "gross profit",
+            "operating profit",
+            "profit before zakat and income tax",
+            "profit for the year",
+            "earnings per share",
+            "net income",
+            "operating income",
+            "الايرادات",
+            "تكلفة المبيعات",
+            "مجمل الربح",
+            "الربح التشغيلي",
+            "صافي الربح"
+          ],
+          negatives: [
+            "قائمة الدخل الشامل",
+            "الدخل الشامل",
+            "statement of comprehensive income",
+            "other comprehensive income",
+            "statement of financial position",
+            "statement of cash flows",
+            "statement of changes in equity"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "بيان التدفقات النقدية",
+            "cash flow statement",
+            "statement of cash flows",
+            "cash flows",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities",
+            "net cash from operating activities",
+            "cash and cash equivalents",
+            "operating activities",
+            "investing activities",
+            "financing activities",
+            "صافي النقد الناتج من الانشطه التشغيليه",
+            "صافي النقد المستخدم في الانشطه الاستثماريه",
+            "صافي النقد الناتج من الانشطه التمويليه"
+          ],
+          negatives: [
+            "statement of financial position",
+            "statement of profit or loss",
+            "gross profit",
+            "total assets",
+            "total liabilities",
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        }
+      }
+    };
+
+    const ACTIVE_STATEMENT_CONFIGS =
+      STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
+    
 
     function statementKindTitleAliases(kind) { /* نفس الكود */ }
     function otherStatementTitleAliases(kind) { /* نفس الكود */ }
