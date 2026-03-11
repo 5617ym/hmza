@@ -2813,22 +2813,40 @@ if (
   };
 
   if (!eligibility.eligible) {
-    if (
-      kind === "balance" &&
-      pageCtx.mainColumnCount === 3 &&
-      pageCtx.mainRowCount >= 20 &&
-      yearSignals.usableTwoYears
-    ) {
-      score -= 80;
-      reasons.push("mandatoryEligibilityReducedForBankThreeColBalance:-80");
-    } else {
-      score -= 260;
-      reasons.push("mandatoryEligibilityFail:-260");
-    }
+  if (
+    kind === "balance" &&
+    pageCtx.mainColumnCount === 3 &&
+    pageCtx.mainRowCount >= 20 &&
+    yearSignals.usableTwoYears
+  ) {
+    score -= 80;
+    reasons.push("mandatoryEligibilityReducedForBankThreeColBalance:-80");
+  } else if (
+    kind === "income" &&
+    hasStrongOwnTitle &&
+    pageCtx.positionRatio <= 0.12 &&
+    pageCtx.mainRowCount >= 20 &&
+    pageCtx.numbersCount >= 60
+  ) {
+    score -= 40;
+    reasons.push("mandatoryEligibilityReducedForEarlyIncomeTitlePage:-40");
+  } else if (
+    kind === "cashflow" &&
+    hasStrongOwnTitle &&
+    pageCtx.positionRatio <= 0.16 &&
+    pageCtx.mainRowCount >= 20 &&
+    pageCtx.numbersCount >= 60
+  ) {
+    score -= 40;
+    reasons.push("mandatoryEligibilityReducedForEarlyCashflowTitlePage:-40");
   } else {
-    score += 18;
-    reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
+    score -= 260;
+    reasons.push("mandatoryEligibilityFail:-260");
   }
+} else {
+  score += 18;
+  reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
+}
 
   return {
     score,
