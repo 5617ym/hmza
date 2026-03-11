@@ -5,7 +5,7 @@
 
   --panel: rgba(6, 16, 14, 0.72);
   --panel2: rgba(7, 18, 16, 0.88);
-  --stroke: rgba(117, 236, 190, 0.18);
+  --stroke: rgba(117, 236, 190, 0.16);
   --stroke-soft: rgba(255,255,255,0.08);
 
   --text: #f4f7f5;
@@ -45,9 +45,7 @@ body{
   overflow-x:hidden;
 }
 
-/* =========================
-   Background Scene
-========================= */
+/* الخلفية */
 .bg-scene{
   position:fixed;
   inset:0;
@@ -65,7 +63,7 @@ body{
 .bg-radial{
   position:absolute;
   inset:0;
-  background:radial-gradient(circle at 50% 20%, rgba(72, 208, 161, 0.12), transparent 30%);
+  background:radial-gradient(circle at 50% 20%, rgba(72, 208, 161, 0.10), transparent 30%);
   filter:blur(10px);
 }
 
@@ -73,21 +71,20 @@ body{
   position:absolute;
   inset:0;
   background:
-    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
   background-size: 48px 48px;
-  opacity:0.22;
+  opacity:0.18;
 }
 
-/* dust */
 .dust{
   position:absolute;
   border-radius:50%;
   background:rgba(237,255,248,0.92);
   box-shadow:
-    0 0 8px rgba(171,255,230,0.52),
-    0 0 24px rgba(91,247,189,0.18);
-  opacity:0.45;
+    0 0 8px rgba(171,255,230,0.42),
+    0 0 24px rgba(91,247,189,0.14);
+  opacity:0.35;
 }
 
 .dust-1{ top:12%; left:18%; width:4px; height:4px; }
@@ -101,17 +98,16 @@ body{
 .dust-9{ top:71%; left:87%; width:5px; height:5px; }
 .dust-10{ top:28%; left:46%; width:3px; height:3px; }
 
-/* nodes */
 .node{
   position:absolute;
   width:8px;
   height:8px;
   border-radius:50%;
-  background:rgba(224,255,246,0.76);
+  background:rgba(224,255,246,0.62);
   box-shadow:
-    0 0 12px rgba(123,244,200,0.40),
-    0 0 30px rgba(123,244,200,0.15);
-  opacity:0.56;
+    0 0 12px rgba(123,244,200,0.28),
+    0 0 30px rgba(123,244,200,0.10);
+  opacity:0.42;
 }
 
 .node-1{ top:10%; left:64%; }
@@ -127,11 +123,11 @@ body{
   background:linear-gradient(
     90deg,
     rgba(125,244,239,0),
-    rgba(103,240,190,0.30),
+    rgba(103,240,190,0.20),
     rgba(125,244,239,0)
   );
   transform-origin:left center;
-  opacity:0.45;
+  opacity:0.28;
 }
 
 .line-1{ top:11%; left:64%; width:120px; transform:rotate(55deg); }
@@ -139,101 +135,73 @@ body{
 .line-3{ top:39%; left:8%; width:128px; transform:rotate(-26deg); }
 .line-4{ top:19%; left:66%; width:80px; transform:rotate(-60deg); }
 
-/* =========================
-   Chain
-========================= */
+/* سلسلة أقرب للحقيقية */
 .chain{
   position:absolute;
-  top:50%;
+  top:54%;
   display:flex;
   align-items:center;
   gap:0;
   transform:translateY(-50%);
-  opacity:0.88;
+  opacity:0.92;
 }
 
-.chain-left{
-  left:-70px;
-}
-
-.chain-right{
-  right:-70px;
-}
+.chain-left{ left:-58px; }
+.chain-right{ right:-58px; }
 
 .chain-link{
   position:relative;
-  width:96px;
-  height:46px;
-  margin-inline:-10px;
+  width:88px;
+  height:42px;
+  margin-inline:-8px;
   border-radius:999px;
-  border:4px solid rgba(52, 214, 163, 0.72);
-  background:
-    radial-gradient(circle at 50% 45%, rgba(120,255,220,0.10), rgba(7,25,20,0.02));
+  border:5px solid rgba(16, 152, 117, 0.96);
+  background:transparent;
   box-shadow:
-    inset 0 0 10px rgba(120,255,220,0.10),
-    0 0 10px rgba(52,214,163,0.18),
-    0 0 24px rgba(125,244,239,0.10);
+    0 0 0 1px rgba(117,255,213,0.12),
+    0 0 8px rgba(43,210,160,0.28),
+    0 0 20px rgba(43,210,160,0.18),
+    inset 0 0 6px rgba(167,255,225,0.06);
 }
 
 .chain-link::before{
   content:"";
   position:absolute;
-  inset:8px 18px;
+  inset:7px 16px;
   border-radius:999px;
-  background:rgba(3, 14, 12, 0.92);
-  box-shadow:inset 0 0 8px rgba(0,0,0,0.45);
+  background:#06110d;
+  box-shadow:inset 0 0 6px rgba(0,0,0,0.38);
+}
+
+.chain-link::after{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  border-radius:999px;
+  box-shadow:0 0 16px rgba(69, 225, 177, 0.16);
 }
 
 .chain-left .chain-link:nth-child(odd),
 .chain-right .chain-link:nth-child(odd){
-  transform:rotate(18deg);
+  transform:rotate(21deg);
 }
 
 .chain-left .chain-link:nth-child(even),
 .chain-right .chain-link:nth-child(even){
-  transform:rotate(-18deg);
+  transform:rotate(-21deg);
 }
 
-.chain-left::after,
-.chain-right::after{
-  content:"";
-  position:absolute;
-  top:50%;
-  width:140px;
-  height:10px;
-  transform:translateY(-50%);
-  background:linear-gradient(
-    90deg,
-    rgba(82,255,211,0),
-    rgba(82,255,211,0.20),
-    rgba(82,255,211,0)
-  );
-  filter:blur(10px);
-}
-
-.chain-left::after{
-  right:20px;
-}
-
-.chain-right::after{
-  left:20px;
-}
-
-/* =========================
-   Container
-========================= */
+/* الحاوية */
 .container{
-  width:min(980px, calc(100% - 40px));
+  width:min(860px, calc(100% - 40px));
   margin-inline:auto;
 }
 
-/* =========================
-   HERO
-========================= */
+/* الهيرو */
 .hero{
   position:relative;
   z-index:2;
-  padding:82px 0 30px;
+  padding:82px 0 28px;
   text-align:center;
 }
 
@@ -291,9 +259,7 @@ body{
   min-width:68px;
 }
 
-/* =========================
-   CONTENT
-========================= */
+/* المحتوى */
 .content{
   position:relative;
   z-index:2;
@@ -301,23 +267,21 @@ body{
   padding-bottom:34px;
 }
 
-/* =========================
-   PANEL
-========================= */
+/* البطاقة */
 .panel{
   position:relative;
   overflow:hidden;
   background:
     linear-gradient(180deg, rgba(7,16,14,0.64), rgba(5,12,11,0.80)),
-    radial-gradient(circle at 50% 50%, rgba(20,70,55,0.08), transparent 65%);
+    radial-gradient(circle at 50% 50%, rgba(20,70,55,0.06), transparent 65%);
   border:1px solid var(--stroke);
-  border-radius:var(--radius-xl);
+  border-radius:24px;
   box-shadow:
-    inset 0 0 0 1px rgba(147,247,209,0.03),
-    0 12px 60px rgba(0,0,0,0.34),
-    0 0 60px rgba(60,207,150,0.05);
-  backdrop-filter:blur(16px);
-  -webkit-backdrop-filter:blur(16px);
+    inset 0 0 0 1px rgba(147,247,209,0.02),
+    0 12px 40px rgba(0,0,0,0.28),
+    0 0 42px rgba(60,207,150,0.04);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
 }
 
 .panel::before{
@@ -327,20 +291,20 @@ body{
   background:
     linear-gradient(
       90deg,
-      rgba(106,244,201,0.08),
+      rgba(106,244,201,0.05),
       transparent 18%,
       transparent 82%,
-      rgba(106,244,201,0.08)
+      rgba(106,244,201,0.05)
     );
-  opacity:0.36;
+  opacity:0.32;
   pointer-events:none;
 }
 
 .panel-glow{
   position:absolute;
   inset:auto 0 0 0;
-  height:120px;
-  background:radial-gradient(circle at 50% 0%, rgba(80,203,159,0.08), transparent 60%);
+  height:90px;
+  background:radial-gradient(circle at 50% 0%, rgba(80,203,159,0.05), transparent 60%);
   pointer-events:none;
 }
 
@@ -350,51 +314,48 @@ body{
   justify-content:space-between;
   align-items:flex-start;
   gap:16px;
-  padding:24px 20px 10px;
+  padding:20px 18px 8px;
 }
 
 .panel-title h2{
   margin:0;
-  font-size:clamp(20px,1.5vw,28px);
+  font-size:clamp(16px,1vw,22px);
   font-weight:700;
   color:#ffffff;
-  text-shadow:0 0 12px rgba(130,234,197,0.06);
+  text-shadow:0 0 10px rgba(130,234,197,0.05);
 }
 
 .pill{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  padding:10px 18px;
+  padding:9px 16px;
   border-radius:999px;
   background:
     linear-gradient(180deg, rgba(24,55,45,0.88), rgba(12,33,28,0.88));
   border:1px solid rgba(115,240,193,0.16);
   color:#d6f8ea;
-  font-size:15px;
-  box-shadow:0 0 20px rgba(103,240,190,0.08);
+  font-size:14px;
+  box-shadow:0 0 18px rgba(103,240,190,0.06);
 }
 
 .panel-body{
   position:relative;
-  padding:14px 20px 22px;
+  padding:12px 18px 18px;
 }
 
-/* =========================
-   GRID
-========================= */
 .grid-2{
   display:grid;
   grid-template-columns:1fr 1fr;
-  gap:18px;
-  margin-bottom:18px;
+  gap:16px;
+  margin-bottom:16px;
 }
 
 .label{
   display:block;
-  margin-bottom:10px;
+  margin-bottom:8px;
   color:rgba(223,236,228,0.88);
-  font-size:15px;
+  font-size:14px;
   font-weight:500;
 }
 
@@ -403,9 +364,9 @@ body{
   border-radius:16px;
   background:
     linear-gradient(180deg, rgba(12,25,22,0.84), rgba(7,17,15,0.82));
-  border:1px solid rgba(123,230,190,0.12);
+  border:1px solid rgba(123,230,190,0.10);
   box-shadow:
-    inset 0 0 12px rgba(125,244,239,0.03),
+    inset 0 0 12px rgba(125,244,239,0.02),
     0 0 0 1px rgba(255,255,255,0.01);
 }
 
@@ -424,35 +385,32 @@ body{
 
 .select{
   width:100%;
-  padding:16px 18px;
+  padding:15px 18px;
   border-radius:16px;
   background:transparent;
   color:#eef6f1;
   border:none;
   outline:none;
   appearance:none;
-  font-size:15px;
+  font-size:14px;
   font-family:inherit;
 }
 
 .select:focus{
-  box-shadow:0 0 0 2px rgba(72,208,161,0.18);
+  box-shadow:0 0 0 2px rgba(72,208,161,0.14);
 }
 
-/* =========================
-   Uploader
-========================= */
 .uploader{
   margin-top:8px;
 }
 
 .uploader-row{
-  padding:18px;
+  padding:16px;
   border-radius:18px;
   background:
-    linear-gradient(180deg, rgba(12,25,22,0.82), rgba(7,17,15,0.78));
-  border:1px solid rgba(123,230,190,0.10);
-  box-shadow:inset 0 0 12px rgba(125,244,239,0.03);
+    linear-gradient(180deg, rgba(12,25,22,0.80), rgba(7,17,15,0.76));
+  border:1px solid rgba(123,230,190,0.08);
+  box-shadow:inset 0 0 12px rgba(125,244,239,0.02);
 }
 
 .upload-topline{
@@ -466,8 +424,8 @@ body{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  min-height:42px;
-  padding:10px 18px;
+  min-height:40px;
+  padding:10px 16px;
   border-radius:12px;
   background:
     linear-gradient(180deg, rgba(62,84,73,0.95), rgba(43,58,50,0.95));
@@ -493,7 +451,7 @@ body{
 .uploader-hint{
   margin-top:12px;
   color:var(--muted-soft);
-  font-size:14px;
+  font-size:13px;
   line-height:1.8;
 }
 
@@ -509,7 +467,7 @@ body{
   justify-content:space-between;
   align-items:center;
   gap:14px;
-  padding:13px 14px;
+  padding:12px 13px;
   border-radius:15px;
   background:rgba(255,255,255,0.03);
   border:1px solid rgba(255,255,255,0.08);
@@ -546,11 +504,8 @@ body{
   white-space:nowrap;
 }
 
-/* =========================
-   ACTIONS
-========================= */
 .actions{
-  margin-top:18px;
+  margin-top:16px;
   display:flex;
   gap:12px;
   justify-content:flex-start;
@@ -561,10 +516,10 @@ body{
   appearance:none;
   border:none;
   cursor:pointer;
-  padding:14px 20px;
+  padding:13px 18px;
   border-radius:14px;
   font-family:inherit;
-  font-size:15px;
+  font-size:14px;
   font-weight:700;
   transition:transform .18s ease, opacity .18s ease, box-shadow .18s ease;
 }
@@ -584,7 +539,7 @@ body{
   background:var(--btn);
   box-shadow:
     inset 0 0 10px rgba(255,255,255,0.04),
-    0 8px 24px rgba(171,140,63,0.18);
+    0 8px 22px rgba(171,140,63,0.16);
 }
 
 .btn-ghost{
@@ -593,9 +548,6 @@ body{
   border:1px solid rgba(255,255,255,0.14);
 }
 
-/* =========================
-   STATUS
-========================= */
 .status{
   margin-top:14px;
   min-height:24px;
@@ -607,9 +559,6 @@ body{
 .status.warn{ color:#f1cf7e; }
 .status.err{ color:#ff9d9d; }
 
-/* =========================
-   RESULTS
-========================= */
 .results{
   margin-top:20px;
   padding:18px;
@@ -662,17 +611,11 @@ body{
   color:#e5f3eb;
 }
 
-/* =========================
-   FOOTER
-========================= */
 .footer{
   margin-top:18px;
   text-align:center;
 }
 
-/* =========================
-   Corner star
-========================= */
 .corner-star{
   position:fixed;
   right:42px;
@@ -707,13 +650,10 @@ body{
   height:18px;
 }
 
-/* =========================
-   Responsive
-========================= */
 @media (max-width:1100px){
   .chain-link{
-    width:80px;
-    height:40px;
+    width:76px;
+    height:38px;
   }
 }
 
@@ -745,11 +685,11 @@ body{
   }
 
   .chain{
-    opacity:0.34;
+    opacity:0.28;
   }
 
-  .chain-left{ left:-120px; }
-  .chain-right{ right:-120px; }
+  .chain-left{ left:-110px; }
+  .chain-right{ right:-110px; }
 
   .panel-head{
     flex-direction:column-reverse;
@@ -759,7 +699,7 @@ body{
 
 @media (max-width:640px){
   .container{
-    width:min(100% - 24px, 980px);
+    width:min(100% - 24px, 860px);
   }
 
   .hero{
