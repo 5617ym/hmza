@@ -5,28 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>وصلة المالية</title>
 
-  <link
-    rel="preconnect"
-    href="https://fonts.googleapis.com"
-  />
-  <link
-    rel="preconnect"
-    href="https://fonts.gstatic.com"
-    crossorigin
-  />
-  <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap"
-    rel="stylesheet"
-  />
-
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
+
 <body>
-  <div class="page-bg">
+  <!-- الخلفية الرقمية -->
+  <div class="bg-scene" aria-hidden="true">
     <div class="bg-vignette"></div>
     <div class="bg-radial"></div>
+    <div class="bg-grid"></div>
 
-    <!-- Dust / particles -->
+    <!-- Dust -->
     <span class="dust dust-1"></span>
     <span class="dust dust-2"></span>
     <span class="dust dust-3"></span>
@@ -35,8 +25,10 @@
     <span class="dust dust-6"></span>
     <span class="dust dust-7"></span>
     <span class="dust dust-8"></span>
+    <span class="dust dust-9"></span>
+    <span class="dust dust-10"></span>
 
-    <!-- network nodes -->
+    <!-- Nodes -->
     <span class="node node-1"></span>
     <span class="node node-2"></span>
     <span class="node node-3"></span>
@@ -44,13 +36,14 @@
     <span class="node node-5"></span>
     <span class="node node-6"></span>
 
+    <!-- Lines -->
     <span class="line line-1"></span>
     <span class="line line-2"></span>
     <span class="line line-3"></span>
     <span class="line line-4"></span>
 
-    <!-- decorative chain -->
-    <div class="chain chain-left" aria-hidden="true">
+    <!-- chain left -->
+    <div class="chain chain-left">
       <span class="chain-link"></span>
       <span class="chain-link"></span>
       <span class="chain-link"></span>
@@ -58,7 +51,8 @@
       <span class="chain-link"></span>
     </div>
 
-    <div class="chain chain-right" aria-hidden="true">
+    <!-- chain right -->
+    <div class="chain chain-right">
       <span class="chain-link"></span>
       <span class="chain-link"></span>
       <span class="chain-link"></span>
@@ -67,85 +61,104 @@
     </div>
   </div>
 
-  <main class="landing">
-    <section class="hero">
+  <!-- HERO -->
+  <header class="hero">
+    <div class="hero-inner container">
       <h1 class="hero-title">وصلة المالية</h1>
       <p class="hero-subtitle">تتحدث مع الأرقام وتخبرنا عن الأداء</p>
 
-      <div class="hero-actions">
-        <button class="hero-chip hero-chip-muted" type="button">RTL</button>
-        <button class="hero-chip" type="button">English Version</button>
+      <div class="hero-badges">
+        <span class="badge badge-muted">RTL</span>
+        <span class="badge">English Version</span>
       </div>
-    </section>
+    </div>
+  </header>
 
-    <section class="upload-shell">
-      <div class="upload-card">
-        <div class="step-badge">الخطوة 1</div>
+  <!-- CONTENT -->
+  <main class="container content">
+    <section class="panel">
+      <div class="panel-glow"></div>
 
-        <div class="card-header">
+      <div class="panel-head">
+        <div class="panel-title">
           <h2>ابدأ برفع الملفات</h2>
         </div>
-
-        <form class="upload-form">
-          <div class="form-grid">
-            <div class="field">
-              <label for="period">الفترة</label>
-              <div class="select-wrap">
-                <select id="period" name="period">
-                  <option value="annual">سنوي</option>
-                  <option value="quarterly">ربع سنوي</option>
-                  <option value="ttm">آخر 12 شهر</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="field">
-              <label for="comparison">المقارنة</label>
-              <div class="select-wrap">
-                <select id="comparison" name="comparison">
-                  <option value="none">بدون مقارنة</option>
-                  <option value="previous">مع الفترة السابقة</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="field field-file">
-            <label for="fileInput">الملفات</label>
-
-            <div class="file-box">
-              <div class="file-top">
-                <label class="file-button" for="fileInput">اختر الملفات</label>
-                <span class="file-note">لم يتم اختيار أي ملف</span>
-              </div>
-
-              <input
-                id="fileInput"
-                class="native-file"
-                type="file"
-                multiple
-              />
-
-              <p class="file-help">
-                يقبل جميع الملفات:
-                Word / CSV / Excel / PDF / صور / أي نوع آخر
-              </p>
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button class="btn btn-primary" type="button">عرض النتائج</button>
-            <button class="btn btn-ghost" type="reset">مسح</button>
-          </div>
-        </form>
+        <span class="pill">الخطوة 1</span>
       </div>
 
-      <div class="footer-note">
-        © وصلة المالية — بناء رقمي بخطوات مترابطة
+      <div class="panel-body">
+        <div class="grid-2">
+          <div>
+            <label class="label" for="period">الفترة</label>
+            <div class="select-wrap">
+              <select id="period" class="select">
+                <option value="yearly" selected>سنوي</option>
+                <option value="quarterly">ربعي</option>
+                <option value="ttm">آخر 12 شهر</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="label" for="compare">المقارنة</label>
+            <div class="select-wrap">
+              <select id="compare" class="select">
+                <option value="none" selected>بدون مقارنة</option>
+                <option value="prev">مقارنة بفترة سابقة</option>
+                <option value="industry">مقارنة بمتوسط القطاع (لاحقًا)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="uploader">
+          <div class="uploader-row">
+            <div class="upload-topline">
+              <label class="fake-file-btn" for="fileInput">اختر الملفات</label>
+              <span class="upload-empty-text">لم يتم اختيار أي ملف</span>
+            </div>
+
+            <input
+              id="fileInput"
+              class="file"
+              type="file"
+              multiple
+              accept="*/*"
+            />
+
+            <div class="uploader-hint">
+              يقبل جميع الملفات: PDF / Excel / CSV / Word / صور / أي نوع آخر
+            </div>
+          </div>
+
+          <div id="fileList" class="file-list"></div>
+        </div>
+
+        <div class="actions">
+          <button id="btnClear" class="btn btn-ghost" type="button">مسح</button>
+          <button id="btnShow" class="btn btn-primary" type="button" disabled>عرض النتائج</button>
+        </div>
+
+        <div id="status" class="status"></div>
       </div>
     </section>
 
-    <div class="star-mark" aria-hidden="true"></div>
+    <section id="results" class="results hidden">
+      <div class="results-head">
+        <h3>النتائج</h3>
+        <p class="muted">حالياً: نعرض الملفات المرفوعة ونجهز خطوة استخراج البيانات.</p>
+      </div>
+
+      <div class="cards" id="cards"></div>
+    </section>
+
+    <footer class="footer">
+      <p class="muted small">© وصلة المالية — بناء رقمي بخطوات مترابطة.</p>
+    </footer>
   </main>
+
+  <div class="corner-star" aria-hidden="true"></div>
+
+  <script src="assets/js/main.js"></script>
 </body>
 </html>
