@@ -2367,368 +2367,439 @@ module.exports = async function (context, req) {
       );
     }
 
+
     function statementRankScore(pageCtx, cfg, kind) {
-      let score = 0;
-      const reasons = [];
-      const signals = {};
+  let score = 0;
+  const reasons = [];
+  const signals = {};
 
-      const titleHitsHeader = keywordHits(pageCtx.headerText, cfg.titles);
-      const titleHitsAll = keywordHits(pageCtx.structuralText, cfg.titles);
-      const structureHits = keywordHits(pageCtx.structuralText, cfg.structure);
-      const negativeHits = keywordHits(pageCtx.structuralText, cfg.negatives);
+  const titleHitsHeader = keywordHits(pageCtx.headerText, cfg.titles);
+  const titleHitsAll = keywordHits(pageCtx.structuralText, cfg.titles);
+  const structureHits = keywordHits(pageCtx.structuralText, cfg.structure);
+  const negativeHits = keywordHits(pageCtx.structuralText, cfg.negatives);
 
-      const firstRowsText = (pageCtx.mainRows || [])
-        .slice(0, 6)
-        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-        .join("\n");
+  const firstRowsText = (pageCtx.mainRows || [])
+    .slice(0, 6)
+    .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+    .join("\n");
 
-      const titleHitsFirstRows = keywordHits(firstRowsText, cfg.titles);
-      const structureHitsFirstRows = keywordHits(firstRowsText, cfg.structure);
-      const crossStatementTitleHits = keywordHits(pageCtx.structuralText, otherStatementTitleAliases(kind));
-      const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, cfg, kind);
+  const titleHitsFirstRows = keywordHits(firstRowsText, cfg.titles);
+  const structureHitsFirstRows = keywordHits(firstRowsText, cfg.structure);
+  const crossStatementTitleHits = keywordHits(pageCtx.structuralText, otherStatementTitleAliases(kind));
+  const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, cfg, kind);
 
-      const yearSignals = semanticYearSignals(pageCtx);
-      const semanticBoost = semanticBoostScore(pageCtx, cfg, kind);
-      const semanticPenalty = semanticPenaltyScore(pageCtx, kind);
-      const eligibility = mandatoryEligibility(pageCtx, kind);
+  const yearSignals = semanticYearSignals(pageCtx);
+  pageCtx.yearSignals = yearSignals;
 
-      let lateNoteDetail = false;
-      if (
-        pageCtx.positionRatio > 0.6 &&
-        pageCtx.mainColumnCount >= 6 &&
-        !pageCtx.header?.latest &&
-        !hasStrongOwnTitle
-      ) {
-        lateNoteDetail = true;
-        score -= 120;
-        reasons.push("lateNoteDetailPenalty:-120");
-      }
+  const semanticBoost = semanticBoostScore(pageCtx, cfg, kind);
+  const semanticPenalty = semanticPenaltyScore(pageCtx, kind);
+  const eligibility = mandatoryEligibility(pageCtx, kind);
 
-      const earlyCoreShape = statementSpecificCoreShape(pageCtx, kind, cfg);
-      if (earlyCoreShape) {
-        score += 28;
-        reasons.push("earlyCoreStatementBoost:+28");
-      }
+  let lateNoteDetail = false;
+  if (
+    pageCtx.positionRatio > 0.6 &&
+    pageCtx.mainColumnCount >= 6 &&
+    !pageCtx.header?.latest &&
+    !hasStrongOwnTitle
+  ) {
+    lateNoteDetail = true;
+    score -= 120;
+    reasons.push("lateNoteDetailPenalty:-120");
+  }
 
-      signals.titleHitsHeader = titleHitsHeader;
-      signals.titleHitsAll = titleHitsAll;
-      signals.titleHitsFirstRows = titleHitsFirstRows;
-      signals.structureHits = structureHits;
-      signals.structureHitsFirstRows = structureHitsFirstRows;
-      signals.negativeHits = negativeHits;
-      signals.crossStatementTitleHits = crossStatementTitleHits;
-      signals.hasStrongOwnTitle = hasStrongOwnTitle;
-      signals.lateNoteDetail = lateNoteDetail;
-      signals.earlyCoreShape = earlyCoreShape;
-      signals.isLikelyOwnershipPage = !!pageCtx.isLikelyOwnershipPage;
-      signals.ownershipLikeRowCount = pageCtx.ownershipLikeRowCount || 0;
-      signals.yearSignals = yearSignals;
-      signals.eligibility = {
-        eligible: eligibility.eligible,
-        path: eligibility.path,
-        strongTitleHits: eligibility.strongTitleHits,
-        coreHits: eligibility.coreHits,
-        comboAHits: eligibility.comboAHits,
-        comboBHits: eligibility.comboBHits,
-        comboCHits: eligibility.comboCHits,
-        balanceEquityAnchors: eligibility.balanceEquityAnchors
-      };
+  const earlyCoreShape = statementSpecificCoreShape(pageCtx, kind, cfg);
+  if (earlyCoreShape) {
+    score += 28;
+    reasons.push("earlyCoreStatementBoost:+28");
+  }
 
-      if (titleHitsHeader > 0) {
-        const s = titleHitsHeader * 110;
-        score += s;
-        reasons.push(`titleHeader:+${s}`);
-      } else if (titleHitsFirstRows > 0) {
-        const s = titleHitsFirstRows * 72;
-        score += s;
-        reasons.push(`titleFirstRows:+${s}`);
-      } else if (titleHitsAll > 0) {
-        const s = titleHitsAll * 42;
-        score += s;
-        reasons.push(`titleAll:+${s}`);
+  signals.titleHitsHeader = titleHitsHeader;
+  signals.titleHitsAll = titleHitsAll;
+  signals.titleHitsFirstRows = titleHitsFirstRows;
+  signals.structureHits = structureHits;
+  signals.structureHitsFirstRows = structureHitsFirstRows;
+  signals.negativeHits = negativeHits;
+  signals.crossStatementTitleHits = crossStatementTitleHits;
+  signals.hasStrongOwnTitle = hasStrongOwnTitle;
+  signals.lateNoteDetail = lateNoteDetail;
+  signals.earlyCoreShape = earlyCoreShape;
+  signals.isLikelyOwnershipPage = !!pageCtx.isLikelyOwnershipPage;
+  signals.ownershipLikeRowCount = pageCtx.ownershipLikeRowCount || 0;
+  signals.yearSignals = yearSignals;
+  signals.eligibility = {
+    eligible: eligibility.eligible,
+    path: eligibility.path,
+    strongTitleHits: eligibility.strongTitleHits,
+    coreHits: eligibility.coreHits,
+    comboAHits: eligibility.comboAHits,
+    comboBHits: eligibility.comboBHits,
+    comboCHits: eligibility.comboCHits,
+    balanceEquityAnchors: eligibility.balanceEquityAnchors
+  };
 
-        if (pageCtx.positionRatio > 0.55) {
-          score -= 55;
-          reasons.push("lateTitleOnlyPenalty:-55");
-        }
-      }
+  if (titleHitsHeader > 0) {
+    const s = titleHitsHeader * 110;
+    score += s;
+    reasons.push(`titleHeader:+${s}`);
+  } else if (titleHitsFirstRows > 0) {
+    const s = titleHitsFirstRows * 72;
+    score += s;
+    reasons.push(`titleFirstRows:+${s}`);
+  } else if (titleHitsAll > 0) {
+    const s = titleHitsAll * 42;
+    score += s;
+    reasons.push(`titleAll:+${s}`);
 
-      if (pageCtx.hasYearLikeHeader) {
-        score += 26;
-        reasons.push("yearHeader:+26");
-      }
-
-      if (yearSignals.usableTwoYears) {
-        score += 18;
-        reasons.push("twoYearsDetected:+18");
-      } else if (yearSignals.yearsFound.length >= 2) {
-        score += 8;
-        reasons.push("textYearsDetected:+8");
-      }
-
-      if (yearSignals.duplicateHeaderYears) {
-        score -= 30;
-        reasons.push("duplicateHeaderYearsPenalty:-30");
-      }
-
-      if (pageCtx.header?.currentCol != null && pageCtx.header?.labelCol != null) {
-        score += 10;
-        reasons.push("usableColumns:+10");
-      }
-
-      if (pageCtx.header?.hasDistinctLabelColumn) {
-        score += 10;
-        reasons.push("distinctLabelCol:+10");
-      }
-
-      if (
-        !pageCtx.header?.hasDistinctLabelColumn &&
-        pageCtx.mainColumnCount <= 3 &&
-        !hasStrongOwnTitle &&
-        structureHits === 0 &&
-        structureHitsFirstRows === 0
-      ) {
-        score -= 55;
-        reasons.push("genericNoDistinctLabelPenalty:-55");
-      }
-
-      if (
-        kind === "balance" &&
-        !pageCtx.header?.hasDistinctLabelColumn &&
-        pageCtx.mainColumnCount <= 3 &&
-        pageCtx.header?.noteCol != null &&
-        !hasStrongOwnTitle &&
-        structureHits === 0
-      ) {
-        score -= 45;
-        reasons.push("balanceThreeColRecoveredPenalty:-45");
-      }
-
-      if (structureHits > 0) {
-        const s = Math.min(structureHits, 12) * 16;
-        score += s;
-        reasons.push(`structure:+${s}`);
-      }
-
-      if (structureHitsFirstRows > 0) {
-        const s = Math.min(structureHitsFirstRows, 6) * 18;
-        score += s;
-        reasons.push(`structureFirstRows:+${s}`);
-      }
-
-      if (
-        pageCtx.positionRatio > 0.6 &&
-        structureHits > 0 &&
-        !hasStrongOwnTitle
-      ) {
-        const penalty = Math.min(structureHits, 4) * 9;
-        score -= penalty;
-        reasons.push(`lateStructureWeightReduced:-${penalty}`);
-      }
-
-      if (negativeHits > 0) {
-        const s = Math.min(negativeHits, 8) * 20;
-        score -= s;
-        reasons.push(`negative:-${s}`);
-      }
-
-      if (crossStatementTitleHits > 0 && !hasStrongOwnTitle) {
-        const s = Math.min(crossStatementTitleHits, 4) * 40;
-        score -= s;
-        reasons.push(`crossStatementTitle:-${s}`);
-      }
-
-      if (pageCtx.numbersCount >= 8) {
-        const s = Math.round(Math.min(pageCtx.numbersCount, 90) * 0.35);
-        score += s;
-        reasons.push(`numbers:+${s}`);
-      }
-
-      if (pageCtx.positionRatio <= 0.35) {
-        score += 4;
-        reasons.push("earlySoft:+4");
-      } else if (pageCtx.positionRatio >= 0.8) {
-        score -= 8;
-        reasons.push("lateSoft:-8");
-      }
-
-      if (pageCtx.isLikelyIndexPage) {
-        score -= 220;
-        reasons.push("index:-220");
-      }
-
-            if (pageCtx.isLikelyIndexPage) {
-        const weakHeaderStructure =
-          !pageCtx.header?.latest &&
-          !pageCtx.header?.previous &&
-          !pageCtx.hasYearLikeHeader;
-
-        const weakTableShape =
-          pageCtx.mainColumnCount <= 3 ||
-          pageCtx.mainRowCount >= 35 ||
-          pageCtx.mainRowCount <= 6;
-
-        const lacksRealStatementBody =
-          structureHitsFirstRows <= 1 &&
-          !yearSignals.usableTwoYears &&
-          yearSignals.yearsFound.length < 2;
-
-        if (weakHeaderStructure) {
-          score -= 220;
-          reasons.push("indexHardRejectWeakHeader:-220");
-        }
-
-        if (weakTableShape) {
-          score -= 160;
-          reasons.push("indexHardRejectWeakShape:-160");
-        }
-
-        if (lacksRealStatementBody) {
-          score -= 180;
-          reasons.push("indexHardRejectNoRealBody:-180");
-        }
-      }
-
-      if (pageCtx.isLikelyStandardsPage) {
-        score -= 190;
-        reasons.push("standards:-190");
-      }
-
-      if (pageCtx.isLikelyNarrativePage) {
-        score -= 180;
-        reasons.push("narrative:-180");
-      }
-
-            if (pageCtx.isLikelyOwnershipPage) {
-        score -= 320;
-        reasons.push("ownershipPagePenalty:-320");
-
-        if (kind === "balance") {
-          score -= 260;
-          reasons.push("ownershipHardRejectForBalance:-260");
-        } else {
-          score -= 120;
-          reasons.push("ownershipHardRejectOtherStatements:-120");
-        }
-      }
-
-      if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
-        score -= 170;
-        reasons.push("comprehensiveIncomePenalty:-170");
-      }
-
-      if (kind === "cashflow" && pageCtx.isLikelyComprehensiveIncome) {
-        score -= 120;
-        reasons.push("comprehensivePenalty:-120");
-      }
-
-      if ((kind === "income" || kind === "cashflow") && containsAny(pageCtx.normalizedText, [
-        "اجمالي الموجودات",
-        "اجمالي المطلوبات",
-        "اجمالي المطلوبات وحقوق الملكيه",
-        "الموجودات",
-        "المطلوبات",
-        "حقوق الملكيه",
-        "total assets",
-        "total liabilities",
-        "total liabilities and equity",
-        "customer deposits",
-        "ودائع العملاء"
-      ])) {
-        if (!hasStrongOwnTitle && structureHits < 2) {
-          score -= 170;
-          reasons.push("balanceCrossHardPenalty:-170");
-        } else {
-          score -= 70;
-          reasons.push("balanceCrossSoftPenalty:-70");
-        }
-      }
-
-      if (kind !== "cashflow" && containsAny(pageCtx.normalizedText, [
-        "cash flows from operating activities",
-        "cash flows from investing activities",
-        "cash flows from financing activities",
-        "صافي النقد الناتج من الانشطه التشغيليه",
-        "صافي النقد المستخدم في الانشطه الاستثماريه",
-        "صافي النقد الناتج من الانشطه التمويليه"
-      ])) {
-        if (!hasStrongOwnTitle) {
-          score -= 90;
-          reasons.push("cashflowCrossPenalty:-90");
-        }
-      }
-
-      if (kind === "income" && pageCtx.isLikelyEquityStatement) {
-        score -= 150;
-        reasons.push("equityPenalty:-150");
-      }
-
-      if (kind === "cashflow" && pageCtx.isLikelyEquityStatement) {
-        score -= 150;
-        reasons.push("equityPenalty:-150");
-      }
-
-      if (kind === "balance" && pageCtx.isLikelyEquityStatement) {
-        score -= 110;
-        reasons.push("equityPenalty:-110");
-      }
-
-      if (!hasStrongOwnTitle && structureHits === 0) {
-        score -= 45;
-        reasons.push("noTitleNoStructurePenalty:-45");
-      }
-
-      if (!hasStrongOwnTitle && structureHits <= 1 && pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4) {
-        score -= 28;
-        reasons.push("genericThreeColPenalty:-28");
-      }
-
-      if (pageCtx.mainColumnCount >= 5 && !pageCtx.isLikelyEquityStatement) {
-        score -= 12;
-        reasons.push("manyCols:-12");
-      }
-
-      if (pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4 && (hasStrongOwnTitle || structureHits > 0)) {
-        score += 16;
-        reasons.push("statementLikeCols:+16");
-      }
-
-      if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
-        score += 8;
-        reasons.push("rowRange:+8");
-      }
-
-      if (semanticBoost.boost > 0) {
-        score += semanticBoost.boost;
-        reasons.push(...semanticBoost.reasons);
-      }
-
-      if (semanticPenalty.penalty > 0) {
-        score -= semanticPenalty.penalty;
-        reasons.push(...semanticPenalty.reasons);
-      }
-
-      signals.semantic = {
-        boost: semanticBoost.boost,
-        penalty: semanticPenalty.penalty,
-        ...semanticBoost.signals,
-        ...semanticPenalty.signals
-      };
-
-      if (!eligibility.eligible) {
-        score -= 260;
-        reasons.push("mandatoryEligibilityFail:-260");
-      } else {
-        score += 18;
-        reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
-      }
-
-      return {
-        score,
-        reasons,
-        signals
-      };
+    if (pageCtx.positionRatio > 0.55) {
+      score -= 55;
+      reasons.push("lateTitleOnlyPenalty:-55");
     }
+  }
+
+  if (pageCtx.hasYearLikeHeader) {
+    score += 26;
+    reasons.push("yearHeader:+26");
+  }
+
+  if (yearSignals.usableTwoYears) {
+    score += 18;
+    reasons.push("twoYearsDetected:+18");
+  } else if (yearSignals.yearsFound.length >= 2) {
+    score += 8;
+    reasons.push("textYearsDetected:+8");
+  }
+
+  if (yearSignals.duplicateHeaderYears) {
+    score -= 30;
+    reasons.push("duplicateHeaderYearsPenalty:-30");
+  }
+
+  if (pageCtx.header?.currentCol != null && pageCtx.header?.labelCol != null) {
+    score += 10;
+    reasons.push("usableColumns:+10");
+  }
+
+  if (pageCtx.header?.hasDistinctLabelColumn) {
+    score += 10;
+    reasons.push("distinctLabelCol:+10");
+  }
+
+  if (
+    !pageCtx.header?.hasDistinctLabelColumn &&
+    pageCtx.mainColumnCount <= 3 &&
+    !hasStrongOwnTitle &&
+    structureHits === 0 &&
+    structureHitsFirstRows === 0
+  ) {
+    score -= 55;
+    reasons.push("genericNoDistinctLabelPenalty:-55");
+  }
+
+  if (
+    kind === "balance" &&
+    !pageCtx.header?.hasDistinctLabelColumn &&
+    pageCtx.mainColumnCount <= 3 &&
+    pageCtx.header?.noteCol != null &&
+    !hasStrongOwnTitle &&
+    structureHits === 0
+  ) {
+    score -= 45;
+    reasons.push("balanceThreeColRecoveredPenalty:-45");
+  }
+
+  if (structureHits > 0) {
+    const s = Math.min(structureHits, 12) * 16;
+    score += s;
+    reasons.push(`structure:+${s}`);
+  }
+
+  if (kind === "balance") {
+    const headerRow = Array.isArray(pageCtx.mainRows?.[0]) ? pageCtx.mainRows[0] : [];
+    const headerJoined = normalizeText(headerRow.join(" | "));
+    const looksLikeYearYearNoteHeader =
+      headerRow.length === 3 &&
+      isYearCell(headerRow[0]) &&
+      isYearCell(headerRow[1]) &&
+      (
+        isNoteHeaderCell(headerRow[2]) ||
+        isLikelyReferenceValue(headerRow[2]) ||
+        normalizeText(headerRow[2]) === "ايضاح"
+      );
+
+    if (
+      pageCtx.mainColumnCount === 3 &&
+      pageCtx.mainRowCount >= 20 &&
+      yearSignals.usableTwoYears &&
+      looksLikeYearYearNoteHeader
+    ) {
+      score += 180;
+      reasons.push("bankThreeColumnBalanceBoost:+180");
+    } else if (
+      pageCtx.mainColumnCount === 3 &&
+      pageCtx.mainRowCount >= 20 &&
+      yearSignals.usableTwoYears &&
+      (
+        headerJoined.includes("2025") ||
+        headerJoined.includes("2024") ||
+        headerJoined.includes("ايضاح") ||
+        headerJoined.includes("note") ||
+        headerJoined.includes("notes")
+      )
+    ) {
+      score += 120;
+      reasons.push("bankThreeColumnBalanceSoftBoost:+120");
+    }
+  }
+
+  if (structureHitsFirstRows > 0) {
+    const s = Math.min(structureHitsFirstRows, 6) * 18;
+    score += s;
+    reasons.push(`structureFirstRows:+${s}`);
+  }
+
+  if (
+    pageCtx.positionRatio > 0.6 &&
+    structureHits > 0 &&
+    !hasStrongOwnTitle
+  ) {
+    const penalty = Math.min(structureHits, 4) * 9;
+    score -= penalty;
+    reasons.push(`lateStructureWeightReduced:-${penalty}`);
+  }
+
+  if (negativeHits > 0) {
+    const s = Math.min(negativeHits, 8) * 20;
+    score -= s;
+    reasons.push(`negative:-${s}`);
+  }
+
+  if (crossStatementTitleHits > 0 && !hasStrongOwnTitle) {
+    const s = Math.min(crossStatementTitleHits, 4) * 40;
+    score -= s;
+    reasons.push(`crossStatementTitle:-${s}`);
+  }
+
+  if (pageCtx.numbersCount >= 8) {
+    const s = Math.round(Math.min(pageCtx.numbersCount, 90) * 0.35);
+    score += s;
+    reasons.push(`numbers:+${s}`);
+  }
+
+  if (pageCtx.positionRatio <= 0.35) {
+    score += 4;
+    reasons.push("earlySoft:+4");
+  } else if (pageCtx.positionRatio >= 0.8) {
+    score -= 8;
+    reasons.push("lateSoft:-8");
+  }
+
+  if (pageCtx.isLikelyIndexPage) {
+    score -= 220;
+    reasons.push("index:-220");
+  }
+
+  if (pageCtx.isLikelyIndexPage) {
+    const weakHeaderStructure =
+      !pageCtx.header?.latest &&
+      !pageCtx.header?.previous &&
+      !pageCtx.hasYearLikeHeader;
+
+    const weakTableShape =
+      pageCtx.mainColumnCount <= 3 ||
+      pageCtx.mainRowCount >= 35 ||
+      pageCtx.mainRowCount <= 6;
+
+    const lacksRealStatementBody =
+      structureHitsFirstRows <= 1 &&
+      !yearSignals.usableTwoYears &&
+      yearSignals.yearsFound.length < 2;
+
+    if (weakHeaderStructure) {
+      score -= 220;
+      reasons.push("indexHardRejectWeakHeader:-220");
+    }
+
+    if (weakTableShape) {
+      score -= 160;
+      reasons.push("indexHardRejectWeakShape:-160");
+    }
+
+    if (lacksRealStatementBody) {
+      score -= 180;
+      reasons.push("indexHardRejectNoRealBody:-180");
+    }
+  }
+
+  if (pageCtx.isLikelyStandardsPage) {
+    score -= 190;
+    reasons.push("standards:-190");
+  }
+
+  if (pageCtx.isLikelyNarrativePage) {
+    score -= 180;
+    reasons.push("narrative:-180");
+  }
+
+  if (pageCtx.isLikelyOwnershipPage) {
+    score -= 320;
+    reasons.push("ownershipPagePenalty:-320");
+
+    if (kind === "balance") {
+      score -= 260;
+      reasons.push("ownershipHardRejectForBalance:-260");
+    } else {
+      score -= 120;
+      reasons.push("ownershipHardRejectOtherStatements:-120");
+    }
+  }
+
+  if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
+    score -= 170;
+    reasons.push("comprehensiveIncomePenalty:-170");
+  }
+
+  if (kind === "cashflow" && pageCtx.isLikelyComprehensiveIncome) {
+    score -= 120;
+    reasons.push("comprehensivePenalty:-120");
+  }
+
+  if ((kind === "income" || kind === "cashflow") && containsAny(pageCtx.normalizedText, [
+    "اجمالي الموجودات",
+    "اجمالي المطلوبات",
+    "اجمالي المطلوبات وحقوق الملكيه",
+    "الموجودات",
+    "المطلوبات",
+    "حقوق الملكيه",
+    "total assets",
+    "total liabilities",
+    "total liabilities and equity",
+    "customer deposits",
+    "ودائع العملاء"
+  ])) {
+    if (!hasStrongOwnTitle && structureHits < 2) {
+      score -= 170;
+      reasons.push("balanceCrossHardPenalty:-170");
+    } else {
+      score -= 70;
+      reasons.push("balanceCrossSoftPenalty:-70");
+    }
+  }
+
+  if (kind !== "cashflow" && containsAny(pageCtx.normalizedText, [
+    "cash flows from operating activities",
+    "cash flows from investing activities",
+    "cash flows from financing activities",
+    "صافي النقد الناتج من الانشطه التشغيليه",
+    "صافي النقد المستخدم في الانشطه الاستثماريه",
+    "صافي النقد الناتج من الانشطه التمويليه"
+  ])) {
+    if (!hasStrongOwnTitle) {
+      score -= 90;
+      reasons.push("cashflowCrossPenalty:-90");
+    }
+  }
+
+  if (kind === "income" && pageCtx.isLikelyEquityStatement) {
+    score -= 150;
+    reasons.push("equityPenalty:-150");
+  }
+
+  if (kind === "cashflow" && pageCtx.isLikelyEquityStatement) {
+    score -= 150;
+    reasons.push("equityPenalty:-150");
+  }
+
+  if (kind === "balance" && pageCtx.isLikelyEquityStatement) {
+    score -= 110;
+    reasons.push("equityPenalty:-110");
+  }
+
+  if (!hasStrongOwnTitle && structureHits === 0) {
+    score -= 45;
+    reasons.push("noTitleNoStructurePenalty:-45");
+  }
+
+  if (!hasStrongOwnTitle && structureHits <= 1 && pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4) {
+    score -= 28;
+    reasons.push("genericThreeColPenalty:-28");
+  }
+
+  if (
+    kind === "balance" &&
+    pageCtx.mainColumnCount <= 3 &&
+    pageCtx.mainRowCount <= 8 &&
+    !hasStrongOwnTitle
+  ) {
+    score -= 120;
+    reasons.push("tinyBalanceFragmentPenalty:-120");
+  }
+
+  if (
+    kind === "balance" &&
+    pageCtx.mainColumnCount >= 5 &&
+    pageCtx.mainRowCount <= 6 &&
+    !hasStrongOwnTitle
+  ) {
+    score -= 90;
+    reasons.push("fragmentedBalanceSlicePenalty:-90");
+  }
+
+  if (pageCtx.mainColumnCount >= 5 && !pageCtx.isLikelyEquityStatement) {
+    score -= 12;
+    reasons.push("manyCols:-12");
+  }
+
+  if (pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4 && (hasStrongOwnTitle || structureHits > 0)) {
+    score += 16;
+    reasons.push("statementLikeCols:+16");
+  }
+
+  if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
+    score += 8;
+    reasons.push("rowRange:+8");
+  }
+
+  if (semanticBoost.boost > 0) {
+    score += semanticBoost.boost;
+    reasons.push(...semanticBoost.reasons);
+  }
+
+  if (semanticPenalty.penalty > 0) {
+    score -= semanticPenalty.penalty;
+    reasons.push(...semanticPenalty.reasons);
+  }
+
+  signals.semantic = {
+    boost: semanticBoost.boost,
+    penalty: semanticPenalty.penalty,
+    ...semanticBoost.signals,
+    ...semanticPenalty.signals
+  };
+
+  if (!eligibility.eligible) {
+    if (
+      kind === "balance" &&
+      pageCtx.mainColumnCount === 3 &&
+      pageCtx.mainRowCount >= 20 &&
+      yearSignals.usableTwoYears
+    ) {
+      score -= 80;
+      reasons.push("mandatoryEligibilityReducedForBankThreeColBalance:-80");
+    } else {
+      score -= 260;
+      reasons.push("mandatoryEligibilityFail:-260");
+    }
+  } else {
+    score += 18;
+    reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
+  }
+
+  return {
+    score,
+    reasons,
+    signals
+  };
+}
 
     function rankPages(kind) {
       const cfg = ACTIVE_STATEMENT_CONFIGS[kind];
