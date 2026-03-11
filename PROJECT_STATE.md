@@ -4,10 +4,10 @@ PROJECT:
 Financial Statement Extraction Engine
 
 LAST_UPDATE:
-2026-03-10
+2026-03-11
 
 CURRENT_ENGINE_VERSION:
-extract-financial-v5.3
+extract-financial-v6.2
 
 CURRENT_PHASE:
 4B – Extraction Engine Hardening
@@ -76,10 +76,13 @@ Extraction Engine Hardening
 ليكون أكثر استقرارًا مع اختلاف هياكل الجداول
 في التقارير المالية الواقعية.
 
-تم تنفيذ عدة تحسينات على المحرك في الإصدارات:
+تم تنفيذ تحسينات متدرجة على المحرك في الإصدارات:
 
-v5.2  
-v5.3
+v5.4  
+v5.9  
+v6.0  
+v6.1  
+v6.2
 
 
 ------------------------------------------------------------
@@ -123,7 +126,8 @@ statement titles
 structure keywords  
 numeric density  
 header detection  
-page order
+page order  
+page guardrails
 
 
 3) Table Structure Detection
@@ -135,6 +139,8 @@ previousCol
 noteCol  
 labelCol  
 headerRowIndex  
+table direction  
+distinct label-column detection
 
 
 4) Row Extraction
@@ -146,9 +152,24 @@ header rows
 separator rows  
 narrative rows  
 date rows  
+ownership rows
 
 
-5) Data Output
+5) Guarded Recovery
+
+تمت إضافة guarded template recovery
+بحيث لا يتم السماح للصفوف الرقمية غير الموسومة
+بإغراق المخرجات كما كان يحدث سابقًا.
+
+
+6) Multi-page Protection
+
+تم تشديد التحقق قبل ضم الصفحة التالية
+لنفس الجدول باستخدام توافق البنية والاتجاه
+والأعمدة والسنوات.
+
+
+7) Data Output
 
 يتم إنشاء نوعين من المخرجات:
 
@@ -170,126 +191,232 @@ cashFlowStructured
 LATEST TEST
 ------------------------------------------------------------
 
-تم اختبار الإصدار v5.3 باستخدام:
+تم اختبار الإصدار v6.2 باستخدام:
 
 Saudi National Bank (SNB)
 
-نتيجة اختيار الصفحات:
+نتيجة المحرك الحالية:
 
-balancePage = 8  
-incomePage = 9  
-cashFlowPage = 12  
+statementProfile = bank
 
-اكتشاف الصفحات يعمل بشكل صحيح.
+selectedPages:
+
+balancePage = 95  
+incomePage = 96  
+cashFlowPage = 66
+
+
+إحصائيات الاستخراج:
+
+income:
+accepted = 25
+rejected = 4
+recoveredNumericRows = 0
+realLabelAcceptedRows = 25
+outputItems = 24
+
+balance:
+accepted = 25
+rejected = 4
+recoveredNumericRows = 0
+realLabelAcceptedRows = 25
+outputItems = 24
+
+cashflow:
+accepted = 30
+rejected = 5
+recoveredNumericRows = 0
+realLabelAcceptedRows = 30
+outputItems = 11
+
+
+------------------------------------------------------------
+LATEST RESULT
+------------------------------------------------------------
+
+تم حل المشكلة السابقة الخاصة بـ Row Extraction Failure.
+
+لم تعد المشكلة الحالية في:
+
+- اكتشاف profile
+- أو اكتشاف الأعمدة
+- أو fallback/recovery
+- أو ownership tables
+
+التحسن الواضح:
+
+1) لم يعد هناك flood من الصفوف المسترجعة بالقالب
+2) realLabelAcceptedRows أصبح مرتفعًا
+3) extraction layer أصبحت تعمل فعليًا
+4) distinct label-column detection خفف من فوز
+   الجداول RTL العامة ذات 3 أعمدة
 
 
 ------------------------------------------------------------
 CURRENT PROBLEM
 ------------------------------------------------------------
 
-Row Extraction Failure
+Semantic Page Selection Failure
 
-نتيجة الاستخراج:
+المشكلة الحالية لم تعد في استخراج الصفوف،
+بل أصبحت في اختيار الصفحة الصحيحة دلاليًا.
 
-acceptedRowsCount = 0  
-rejectedRowsCount = 61  
+المحرك ينجح الآن في استخراج الصفوف من الصفحة المختارة،
+لكن في بعض الحالات يختار صفحات إيضاحية رقمية قوية
+وليست القوائم المالية الأساسية نفسها.
 
-أغلب الصفوف تم رفضها بسبب:
+في اختبار SNB الحالي:
 
-reason = "no_label"
+balancePage = 95
+incomePage = 96
+cashFlowPage = 66
+
+لكن النتائج أظهرت أن هذه الصفحات ليست:
+
+- قائمة مركز مالي رئيسية
+- قائمة دخل رئيسية
+- قائمة تدفقات نقدية رئيسية
+
+بل صفحات من نوع:
+
+- جداول مخاطر / فجوات / حساسية
+- جداول أدوات دين / صكوك / سندات
+- جداول إيضاحية رقمية ذات كثافة عالية
 
 
-مثال صف مرفوض:
+------------------------------------------------------------
+EVIDENCE FROM TEST
+------------------------------------------------------------
 
-42,119,698 | 44,923,237 | 4
+1) balanceSheetLite احتوى بنودًا مثل:
+
+- الفجوة للبنود داخل قائمة المركز المالي
+- الفجوة للبنود خارج قائمة المركز المالي
+- إجمالي الفجوة الخاضعة لمخاطر أسعار العمولات
+
+وهذه ليست بنود قائمة مركز مالي أساسية.
+
+
+2) incomeStatementLite احتوى بنودًا تشبه
+صفحات الميزانية/المخاطر أكثر من قائمة دخل فعلية.
+
+
+3) cashFlowLite احتوى بنودًا مثل:
+
+- قروض لأجل مصدرة
+- سندات متوسطة الأجل
+- صكوك غير قابلة للاستبدال
+
+وهذا يؤكد أن الصفحة المختارة ليست
+Cash Flow Statement حقيقية.
 
 
 ------------------------------------------------------------
 ROOT CAUSE
 ------------------------------------------------------------
 
-السبب الرئيسي هو ترتيب الأعمدة في الجداول العربية.
+السبب الجذري الآن هو:
 
-في التقارير العربية غالبًا يكون ترتيب الأعمدة:
+Ranking Semantic Guardrails Gap
 
-2024 | 2025 | Note | Label
+بمعنى أن نظام الترتيب الحالي ما زال يعطي درجات
+مرتفعة لصفحات إيضاحية متقدمة لأنها تحتوي على:
 
-أو
+- أرقام كثيرة
+- أعمدة واضحة
+- label column حقيقي
+- كلمات مالية قوية
 
-Value | Value | Note | Label
+لكنها ليست القوائم الأساسية المطلوبة.
 
+بالتالي أصبح الخلل الحالي في:
 
-بينما المحرك يفترض غالبًا:
+Page Ranking Semantics
 
-Label | Note | Value | Value
-
-
-لذلك يفشل المحرك في اكتشاف عمود الوصف (label)
-ويتم رفض الصف بسبب عدم وجود label.
-
-
-------------------------------------------------------------
-SECONDARY ISSUE
-------------------------------------------------------------
-
-Multi-page Table Extension
-
-في بعض الحالات يقوم المحرك بدمج الصفحة التالية
-كجزء من نفس الجدول بدون تحقق كافٍ.
-
-مثال:
-
-tablesUsed = 2  
-sourcePages = [8,9]
-
-وقد تكون الصفحة الثانية قائمة مختلفة.
+وليس في Row Extraction.
 
 
 ------------------------------------------------------------
-NEXT STEP
+WHAT HAS BEEN FIXED IN 4B
 ------------------------------------------------------------
 
-الإصدار القادم:
+تم إنجاز ما يلي داخل هذه المرحلة:
 
-extract-financial-v5.4
+1) RTL label detection improved
+2) row-level label fallback added
+3) guarded template recovery added
+4) stronger multi-page extension guard added
+5) ownership-page detection added
+6) ownership-row rejection added
+7) distinct label-column guardrail added
+
+هذا يعني أن البنية الحالية أصبحت أقوى بكثير
+من مرحلة v5.3، ولم يعد الخلل في الطبقات الدنيا
+للاستخراج.
+
+
+------------------------------------------------------------
+REMAINING WORK TO FINISH 4B
+------------------------------------------------------------
+
+المتبقي الآن هو ضربة مركزة على ranking فقط.
+
+المطلوب في الإصدار القادم:
+
+extract-financial-v6.3
 
 التحسينات المخطط لها:
 
-1) RTL Label Detection
+1) Core Statement Boost
 
-تفضيل العمود النصي الأخير كـ label
-في الجداول العربية.
-
-
-2) Row-Level Label Fallback
-
-عند فشل اكتشاف label من header
-يتم البحث داخل الصف من اليمين إلى اليسار
-عن أول خلية نصية صالحة.
+إعطاء boost قوي جدًا فقط للصفحات التي تحتوي
+على بنية statement حقيقية.
 
 
-3) Stronger Multi-Page Guard
+2) Note-Table Penalty
 
-منع تمديد الجدول إلى صفحة أخرى
-إلا إذا كانت بنية الجدول متطابقة.
+إضافة penalty واضح للصفحات الإيضاحية التي تحتوي
+على جداول مخاطر، فجوات، صكوك، سندات، قروض مصدرة،
+عوائد ثابتة/متغيرة، أو جداول تفصيل أدوات مالية.
 
 
-4) Improved Row Validation
+3) Mandatory Core Anchors
 
-تحسين قواعد منع الصفوف غير المالية.
+عدم السماح بفوز صفحة balance / income / cashflow
+إلا إذا احتوت anchors أساسية كافية لكل نوع statement.
+
+
+4) Better Year Logic
+
+تحسين التعامل مع الحالات التي يظهر فيها:
+
+latest = 2025
+previous = 2025
+
+أو عندما تكون السنوات المستخرجة غير ممثلة
+لرأسي الأعمدة الفعلية للقائمة.
+
+
+5) Stronger Late-Note Rejection
+
+تشديد رفض الصفحات المتأخرة التي تبدو كإيضاحات
+حتى لو كانت غنية بالأرقام وذات label column صحيح.
 
 
 ------------------------------------------------------------
 CURRENT STATUS
 ------------------------------------------------------------
 
-Page Detection: Stable  
+Architecture: Stable  
+Pipeline: Stable  
 Statement Profile Detection: Stable  
-Ranking Engine: Stable  
-Structured Mapping: Stable  
+Header / Column Detection: Strong  
+Row Extraction: Strong  
+Guarded Recovery: Stable  
+Ownership Guardrails: Stable  
 
-Row Extraction:
-Needs RTL Fix
+Ranking Engine:
+Needs Semantic Hardening
 
 
 ------------------------------------------------------------
@@ -298,3 +425,11 @@ PROJECT STATUS
 
 STABLE ARCHITECTURE  
 EXTRACTION ENGINE HARDENING IN PROGRESS
+
+CURRENT ASSESSMENT:
+تم تجاوز مشكلة الاستخراج الأساسية،
+والمشكلة المتبقية الآن محصورة في
+Semantic Page Ranking.
+
+PHASE COMPLETION ESTIMATE:
+حوالي 80% إلى 85% من المرحلة 4B تم إنجازه.
