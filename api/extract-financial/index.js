@@ -2014,18 +2014,24 @@ module.exports = async function (context, req) {
     }
 
     function strongStatementTitleHit(pageCtx, cfg, kind) {
-      const semantic = SEMANTIC_RULES[kind] || {};
-      const titles = unique([...(cfg?.titles || []), ...(semantic.strongTitles || [])]);
-      const headerHits = keywordHits(pageCtx.headerText, titles);
-      if (headerHits > 0) return true;
+  const semantic = SEMANTIC_RULES[kind] || {};
+  const titles = unique([...(cfg?.titles || []), ...(semantic.strongTitles || [])]);
 
-      const firstRowsText = (pageCtx.mainRows || [])
-        .slice(0, 4)
-        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-        .join("\n");
+  const headerHits = keywordHits(pageCtx.headerText, titles);
+  if (headerHits > 0) return true;
 
-      return keywordHits(firstRowsText, titles) > 0;
-    }
+  const firstRowsText = (pageCtx.mainRows || [])
+    .slice(0, 6)
+    .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+    .join("\n");
+
+  if (keywordHits(firstRowsText, titles) > 0) return true;
+
+  const structuralHits = keywordHits(pageCtx.structuralText, titles);
+  if (structuralHits > 0 && pageCtx.positionRatio <= 0.2) return true;
+
+  return false;
+}
 
     function countDistinctPhraseHits(text, phrases) {
       const s = normalizeText(text);
