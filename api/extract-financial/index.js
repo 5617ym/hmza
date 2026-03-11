@@ -1070,6 +1070,11 @@ module.exports = async function (context, req) {
 
     const pageContexts = allPageNumbers.map((pageNumber) => buildPageContext(pageNumber, allPageNumbers));
 
+
+
+
+
+
     // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
@@ -1218,7 +1223,7 @@ module.exports = async function (context, req) {
     const profileDetection = detectStatementProfile();
     const statementProfile = profileDetection.statementProfile;
 
-       // =========================================================
+    // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
@@ -2067,20 +2072,50 @@ module.exports = async function (context, req) {
       const comboBHits = countDistinctPhraseHits(wholeText, rules.comboB || []);
       const comboCHits = countDistinctPhraseHits(wholeText, rules.comboC || []);
 
+      const balanceEquityAnchors = countDistinctPhraseHits(wholeText, [
+        "equity",
+        "total equity",
+        "total liabilities and equity",
+        "shareholders' equity",
+        "shareholders equity",
+        "share capital",
+        "retained earnings",
+        "حقوق الملكية",
+        "اجمالي حقوق الملكية",
+        "إجمالي حقوق الملكية",
+        "اجمالي المطلوبات وحقوق الملكية",
+        "إجمالي المطلوبات وحقوق الملكية",
+        "رأس المال",
+        "راس المال",
+        "الأرباح المبقاة",
+        "الارباح المبقاه"
+      ]);
+
       let eligible = false;
       let path = "none";
 
-      if (strongTitleHits.length > 0 && coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2)) {
-        eligible = true;
-        path = "strong_title_path";
-      } else if (kind === "balance") {
+      if (kind === "balance") {
         if (
+          strongTitleHits.length > 0 &&
+          coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2) &&
+          balanceEquityAnchors.length >= 1
+        ) {
+          eligible = true;
+          path = "strong_title_path";
+        } else if (
           comboAHits.length >= safeNumber(rules.mandatory?.comboAMin, 2) &&
-          comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 1)
+          comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 1) &&
+          balanceEquityAnchors.length >= 1
         ) {
           eligible = true;
           path = "core_anchor_path";
         }
+      } else if (
+        strongTitleHits.length > 0 &&
+        coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2)
+      ) {
+        eligible = true;
+        path = "strong_title_path";
       } else if (kind === "income") {
         if (
           comboAHits.length >= safeNumber(rules.mandatory?.comboAMin, 1) &&
@@ -2107,7 +2142,8 @@ module.exports = async function (context, req) {
         coreHits,
         comboAHits,
         comboBHits,
-        comboCHits
+        comboCHits,
+        balanceEquityAnchors
       };
     }
 
@@ -2394,7 +2430,8 @@ module.exports = async function (context, req) {
         coreHits: eligibility.coreHits,
         comboAHits: eligibility.comboAHits,
         comboBHits: eligibility.comboBHits,
-        comboCHits: eligibility.comboCHits
+        comboCHits: eligibility.comboCHits,
+        balanceEquityAnchors: eligibility.balanceEquityAnchors
       };
 
       if (titleHitsHeader > 0) {
@@ -2819,8 +2856,7 @@ module.exports = async function (context, req) {
       cashFlowPage: selectedPagesResult.cashFlowPage
     };
 
-
-    // =========================================================
+        // =========================================================
     // Layer 6: Row Extraction
     // =========================================================
 
@@ -3872,8 +3908,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v6.2",
-      phase: "4B_distinct_label_column_guardrail",
+      engine: "extract-financial-v6.3",
+      phase: "4B_semantic_ranking_hardening",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -3933,10 +3969,10 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v6.2 adds distinct label-column detection so generic 3-column RTL tables lose ranking power",
-          "v6.2 keeps ownership-page and ownership-row guardrails from v6.1",
-          "v6.2 penalizes pages that only contain current/previous/note columns without a true label column",
-          "v6.2 keeps guarded template recovery and multi-page extension architecture intact"
+          "v6.3 adds semantic ranking hardening with mandatory statement eligibility",
+          "v6.3 adds stronger balance eligibility by requiring an equity anchor",
+          "v6.3 adds note-table penalties for risk, gap, sukuk, bonds, debt and maturity-heavy pages",
+          "v6.3 improves year logic and keeps distinct label-column guardrails intact"
         ]
       },
 
@@ -3955,3 +3991,19 @@ module.exports = async function (context, req) {
     });
   }
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
