@@ -2567,7 +2567,7 @@ module.exports = async function (context, req) {
   kind === "income" &&
   pageCtx.positionRatio <= 0.12 &&
   yearSignals.usableTwoYears &&
-  containsAny(pageCtx.structuralText, [
+  containsAny(pageCtx.text, [
     "قائمة الدخل الموحدة",
     "قائمة الدخل",
     "statement of income",
