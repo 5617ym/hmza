@@ -450,7 +450,7 @@ module.exports = async function (context, req) {
       return hitCount >= 2 || (hitCount >= 1 && wordCount >= 10);
     }
 
-        function isLikelyOwnershipHeaderText(text) {
+    function isLikelyOwnershipHeaderText(text) {
       const s = normalizeText(text);
       return (
         s.includes("نسبة الملكية") ||
@@ -498,6 +498,49 @@ module.exports = async function (context, req) {
       if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return false;
 
       return /[A-Za-z\u0600-\u06FF]/.test(raw);
+    }
+
+    function countLikelyTextLabels(rows, limit = 24) {
+      let count = 0;
+      for (const row of (rows || []).slice(0, limit)) {
+        if (!Array.isArray(row)) continue;
+        for (const cell of row) {
+          if (isLikelyTextLabelCell(cell)) count += 1;
+        }
+      }
+      return count;
+    }
+
+    function compactFinancialShape(pageCtx) {
+      return (
+        pageCtx.mainRowCount >= 8 &&
+        pageCtx.mainRowCount <= 60 &&
+        pageCtx.mainColumnCount >= 3 &&
+        pageCtx.mainColumnCount <= 8 &&
+        pageCtx.numbersCount >= 24
+      );
+    }
+
+    function bankDenseCandidateSignals(pageCtx) {
+      const yearSignals = semanticYearSignals(pageCtx);
+      const labelCount = countLikelyTextLabels(pageCtx.mainRows, 24);
+      const compactShape = compactFinancialShape(pageCtx);
+      const earlyEnough = pageCtx.positionRatio <= 0.22;
+      const hasTitle = pageCtx.hasStatementTitle;
+      const hasSomeYears = yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 1;
+      const dense = pageCtx.numbersCount >= 28;
+      const structured = labelCount >= 6;
+
+      return {
+        compactShape,
+        earlyEnough,
+        hasTitle,
+        hasSomeYears,
+        dense,
+        structured,
+        labelCount,
+        qualifies: compactShape && earlyEnough && hasSomeYears && dense && structured
+      };
     }
 
     // =========================================================
@@ -871,7 +914,7 @@ module.exports = async function (context, req) {
       };
     }
 
-        function buildPageContext(pageNumber, orderedPageNumbers) {
+    function buildPageContext(pageNumber, orderedPageNumbers) {
       const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
       const pageTables = getTablesForPage(pageNumber);
       const mainTable = pickMainTable(pageTables);
@@ -1230,6 +1273,8 @@ module.exports = async function (context, req) {
             "ودائع العملاء",
             "نقد وارصده لدى البنوك المركزيه",
             "ارصده لدى البنوك والمؤسسات الماليه الاخرى",
+            "تمويل وسلف",
+            "استثمارات",
             "total assets",
             "total liabilities",
             "total equity",
@@ -1266,20 +1311,25 @@ module.exports = async function (context, req) {
           structure: [
             "الدخل من التمويل",
             "الدخل من التمويل والاستثمارات",
+            "صافي الدخل من التمويل والاستثمار",
+            "صافي دخل العمولات الخاصة",
+            "ايرادات العمولات الخاصة",
             "رسوم الخدمات المصرفية",
+            "صافي دخل الاتعاب والعمولات",
             "اجمالي دخل العمليات",
             "اجمالي مصاريف العمليات",
+            "دخل العمليات",
             "دخل السنة قبل الزكاة",
             "صافي دخل السنة",
             "ربحية السهم",
             "gross financing and investment income",
             "net financing and investment income",
             "fee from banking services",
-            "net income",
-            "revenue",
-            "sales",
+            "net special commission income",
+            "total operating income",
             "operating income",
             "operating profit",
+            "net income",
             "earnings"
           ],
           negatives: [
@@ -1308,6 +1358,7 @@ module.exports = async function (context, req) {
             "صافي النقد المستخدم في الانشطة الاستثمارية",
             "صافي النقد الناتج من الانشطة التمويلية",
             "النقد وشبه النقد",
+            "النقد وما في حكمه",
             "operating activities",
             "investing activities",
             "financing activities",
@@ -1419,11 +1470,6 @@ module.exports = async function (context, req) {
       }
     };
 
-        // ملاحظة:
-    // هنا نكمل بقية configs كما عندك بدون تغيير جوهري إن رغبت.
-    // ولأن سبب الكسر كان في Layer 3 و statementRankScore،
-    // هذا الجزء يحتوي القسم المصحح الأهم الذي يجب أن يكون موجودًا كما هو.
-
     const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.bank;
 
     const SEMANTIC_RULES = {
@@ -1509,6 +1555,7 @@ module.exports = async function (context, req) {
           "البنك المركزي",
           "البنوك المركزية",
           "قروض",
+          "تمويل وسلف",
           "استثمارات"
         ],
         mandatory: {
@@ -1551,14 +1598,25 @@ module.exports = async function (context, req) {
           "صافي الربح",
           "صافي الدخل",
           "الربح قبل الزكاة والضريبة",
-          "الربح قبل الزكاة وضريبة الدخل"
+          "الربح قبل الزكاة وضريبة الدخل",
+          "الدخل من التمويل",
+          "الدخل من التمويل والاستثمارات",
+          "صافي دخل العمولات الخاصة",
+          "ايرادات العمولات الخاصة",
+          "إيرادات العمولات الخاصة",
+          "اجمالي دخل العمليات",
+          "إجمالي دخل العمليات",
+          "رسوم الخدمات المصرفية"
         ],
         comboA: [
           "revenue",
           "sales",
           "الإيرادات",
           "الايرادات",
-          "المبيعات"
+          "المبيعات",
+          "الدخل من التمويل",
+          "الدخل من التمويل والاستثمارات",
+          "صافي دخل العمولات الخاصة"
         ],
         comboB: [
           "operating income",
@@ -1572,7 +1630,11 @@ module.exports = async function (context, req) {
           "صافي الربح",
           "صافي الدخل",
           "إجمالي الربح",
-          "اجمالي الربح"
+          "اجمالي الربح",
+          "اجمالي دخل العمليات",
+          "إجمالي دخل العمليات",
+          "رسوم الخدمات المصرفية",
+          "دخل السنة قبل الزكاة"
         ],
         bankBoost: [
           "special commission income",
@@ -1580,11 +1642,16 @@ module.exports = async function (context, req) {
           "net special commission income",
           "total operating income",
           "impairment charge",
+          "fee from banking services",
+          "gross financing and investment income",
+          "net financing and investment income",
           "إيرادات العمولات الخاصة",
           "ايرادات العمولات الخاصة",
           "صافي دخل العمولات الخاصة",
           "اجمالي دخل العمليات",
           "إجمالي دخل العمليات",
+          "الدخل من التمويل",
+          "الدخل من التمويل والاستثمارات",
           "خسائر الائتمان",
           "مخصص خسائر الائتمان"
         ],
@@ -1677,17 +1744,21 @@ module.exports = async function (context, req) {
       }
     };
 
-    const NOTE_PENALTY_ANCHORS = [
+    const NOTE_PENALTY_ANCHORS_GENERAL = [
       "risk", "risks", "market risk", "liquidity risk", "credit risk",
       "operational risk", "interest rate risk", "profit rate risk",
       "sensitivity", "sensitivities", "gap", "repricing", "repricing gap",
       "maturity", "maturities", "maturity gap", "fair value hierarchy",
-      "debt securities", "sukuk", "bonds", "medium term notes", "issued debt",
-      "subordinated debt", "derivatives", "hedging", "financial instruments",
+      "debt securities", "medium term notes", "issued debt",
+      "subordinated debt", "hedging", "financial instruments",
       "notes to the financial statements",
       "مخاطر", "مخاطر السوق", "مخاطر السيولة", "مخاطر الائتمان", "مخاطر التشغيل",
-      "حساسية", "فجوة", "استحقاق", "القيمة العادلة", "صكوك", "سندات",
-      "أدوات مالية", "ادوات مالية", "مشتقات", "تحوط", "إيضاحات القوائم المالية"
+      "حساسية", "فجوة", "استحقاق", "القيمة العادلة",
+      "أدوات مالية", "ادوات مالية", "تحوط", "إيضاحات القوائم المالية"
+    ];
+
+    const NOTE_PENALTY_ANCHORS_NON_BANK_ONLY = [
+      "sukuk", "bonds", "derivatives", "صكوك", "سندات", "مشتقات"
     ];
 
     function statementKindTitleAliases(kind) {
@@ -1794,6 +1865,9 @@ module.exports = async function (context, req) {
       const comboAHits = countDistinctPhraseHits(wholeText, rules.comboA || []);
       const comboBHits = countDistinctPhraseHits(wholeText, rules.comboB || []);
       const comboCHits = countDistinctPhraseHits(wholeText, rules.comboC || []);
+      const bankBoostHits = countDistinctPhraseHits(wholeText, rules.bankBoost || []);
+      const yearSignals = semanticYearSignals(pageCtx);
+      const denseBank = bankDenseCandidateSignals(pageCtx);
 
       const balanceEquityAnchors = countDistinctPhraseHits(wholeText, [
         "equity", "total equity", "total liabilities and equity",
@@ -1821,6 +1895,25 @@ module.exports = async function (context, req) {
         ) {
           eligible = true;
           path = "core_anchor_path";
+        } else if (
+          statementProfile === "bank" &&
+          strongTitleHits.length > 0 &&
+          (coreHits.length >= 1 || bankBoostHits.length >= 2) &&
+          denseBank.compactShape &&
+          denseBank.structured &&
+          (yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 1)
+        ) {
+          eligible = true;
+          path = "bank_relaxed_title_path";
+        } else if (
+          statementProfile === "bank" &&
+          comboAHits.length >= 2 &&
+          (comboBHits.length >= 1 || bankBoostHits.length >= 2) &&
+          denseBank.qualifies &&
+          balanceEquityAnchors.length >= 1
+        ) {
+          eligible = true;
+          path = "bank_relaxed_core_path";
         }
       } else if (
         strongTitleHits.length > 0 &&
@@ -1835,6 +1928,24 @@ module.exports = async function (context, req) {
         ) {
           eligible = true;
           path = "core_anchor_path";
+        } else if (
+          statementProfile === "bank" &&
+          strongTitleHits.length > 0 &&
+          (coreHits.length >= 1 || bankBoostHits.length >= 2) &&
+          denseBank.compactShape &&
+          denseBank.structured &&
+          (yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 1)
+        ) {
+          eligible = true;
+          path = "bank_relaxed_title_path";
+        } else if (
+          statementProfile === "bank" &&
+          comboAHits.length >= 1 &&
+          (comboBHits.length >= 1 || bankBoostHits.length >= 2) &&
+          denseBank.qualifies
+        ) {
+          eligible = true;
+          path = "bank_relaxed_core_path";
         }
       } else if (kind === "cashflow") {
         if (
@@ -1844,6 +1955,24 @@ module.exports = async function (context, req) {
         ) {
           eligible = true;
           path = "core_anchor_path";
+        } else if (
+          statementProfile === "bank" &&
+          strongTitleHits.length > 0 &&
+          denseBank.compactShape &&
+          denseBank.structured &&
+          (yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 1) &&
+          (coreHits.length >= 1 || comboAHits.length >= 1 || comboBHits.length >= 1)
+        ) {
+          eligible = true;
+          path = "bank_relaxed_title_path";
+        } else if (
+          statementProfile === "bank" &&
+          comboAHits.length >= 1 &&
+          comboBHits.length >= 1 &&
+          denseBank.qualifies
+        ) {
+          eligible = true;
+          path = "bank_relaxed_core_path";
         }
       }
 
@@ -1855,7 +1984,9 @@ module.exports = async function (context, req) {
         comboAHits,
         comboBHits,
         comboCHits,
-        balanceEquityAnchors
+        bankBoostHits,
+        balanceEquityAnchors,
+        denseBank
       };
     }
 
@@ -1871,6 +2002,7 @@ module.exports = async function (context, req) {
       const comboAHits = countDistinctPhraseHits(wholeText, rules.comboA || []);
       const comboBHits = countDistinctPhraseHits(wholeText, rules.comboB || []);
       const comboCHits = countDistinctPhraseHits(wholeText, rules.comboC || []);
+      const denseBank = bankDenseCandidateSignals(pageCtx);
 
       if (strongTitleHits.length > 0) {
         boost += 12;
@@ -1927,6 +2059,14 @@ module.exports = async function (context, req) {
         }
       }
 
+      if (statementProfile === "bank" && denseBank.qualifies) {
+        boost += 16;
+        reasons.push("bankDenseCandidateBoost:+16");
+      } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured && denseBank.hasSomeYears) {
+        boost += 8;
+        reasons.push("bankDenseCandidateSoftBoost:+8");
+      }
+
       return {
         boost,
         reasons,
@@ -1936,7 +2076,8 @@ module.exports = async function (context, req) {
           semanticBankBoostHits: bankBoostHits,
           semanticComboAHits: comboAHits,
           semanticComboBHits: comboBHits,
-          semanticComboCHits: comboCHits
+          semanticComboCHits: comboCHits,
+          denseBank
         }
       };
     }
@@ -1946,17 +2087,36 @@ module.exports = async function (context, req) {
       let penalty = 0;
       const reasons = [];
 
-      const noteHits = countDistinctPhraseHits(wholeText, NOTE_PENALTY_ANCHORS);
+      const baseAnchors = NOTE_PENALTY_ANCHORS_GENERAL.slice();
+      const anchors = statementProfile === "bank"
+        ? baseAnchors
+        : baseAnchors.concat(NOTE_PENALTY_ANCHORS_NON_BANK_ONLY);
+
+      const noteHits = countDistinctPhraseHits(wholeText, anchors);
+      const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, ACTIVE_STATEMENT_CONFIGS[kind], kind);
 
       if (noteHits.length > 0) {
-        const s = Math.min(noteHits.length, 8) * 4;
-        penalty += s;
-        reasons.push(`notePenalty:-${s}`);
+        let s = Math.min(noteHits.length, 8) * 4;
+
+        if (statementProfile === "bank" && hasStrongOwnTitle) {
+          s = Math.max(0, s - 8);
+        }
+
+        if (s > 0) {
+          penalty += s;
+          reasons.push(`notePenalty:-${s}`);
+        }
       }
 
       if (noteHits.length >= 3) {
-        penalty += 10;
-        reasons.push("heavyNotePenalty:-10");
+        let heavy = 10;
+        if (statementProfile === "bank" && hasStrongOwnTitle) {
+          heavy = 0;
+        }
+        if (heavy > 0) {
+          penalty += heavy;
+          reasons.push(`heavyNotePenalty:-${heavy}`);
+        }
       }
 
       if (pageCtx.positionRatio > 0.8) {
@@ -1970,7 +2130,7 @@ module.exports = async function (context, req) {
       if (
         pageCtx.positionRatio > 0.65 &&
         noteHits.length >= 2 &&
-        !strongStatementTitleHit(pageCtx, ACTIVE_STATEMENT_CONFIGS[kind], kind)
+        !hasStrongOwnTitle
       ) {
         penalty += 18;
         reasons.push("lateNoteRejectionPenalty:-18");
@@ -1979,7 +2139,7 @@ module.exports = async function (context, req) {
       if (
         pageCtx.mainColumnCount >= 6 &&
         noteHits.length >= 2 &&
-        !strongStatementTitleHit(pageCtx, ACTIVE_STATEMENT_CONFIGS[kind], kind)
+        !hasStrongOwnTitle
       ) {
         penalty += 12;
         reasons.push("wideNoteTablePenalty:-12");
@@ -2008,6 +2168,70 @@ module.exports = async function (context, req) {
       const hasTwoYears = yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 2;
       const compactCols = pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 5;
       const usableRows = pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60;
+
+      if (statementProfile === "bank") {
+        const relaxedBankShape =
+          pageCtx.positionRatio <= 0.22 &&
+          pageCtx.mainColumnCount >= 3 &&
+          pageCtx.mainColumnCount <= 8 &&
+          pageCtx.mainRowCount >= 8 &&
+          pageCtx.mainRowCount <= 60 &&
+          pageCtx.numbersCount >= 24 &&
+          (yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 1);
+
+        if (relaxedBankShape) {
+          if (kind === "balance") {
+            return (
+              structureHits >= 2 ||
+              containsAny(wholeText, [
+                "اجمالي الموجودات",
+                "اجمالي المطلوبات",
+                "حقوق الملكيه",
+                "ودائع العملاء",
+                "نقد وارصده لدى البنوك المركزيه",
+                "ارصده لدى البنوك والمؤسسات الماليه الاخرى",
+                "total assets",
+                "total liabilities",
+                "equity"
+              ])
+            );
+          }
+
+          if (kind === "income") {
+            return (
+              structureHits >= 1 ||
+              containsAny(wholeText, [
+                "الدخل من التمويل",
+                "الدخل من التمويل والاستثمارات",
+                "صافي دخل العمولات الخاصة",
+                "اجمالي دخل العمليات",
+                "دخل السنة قبل الزكاة",
+                "صافي دخل السنة",
+                "gross financing and investment income",
+                "net financing and investment income",
+                "net special commission income",
+                "total operating income",
+                "net income"
+              ])
+            );
+          }
+
+          return (
+            structureHits >= 1 ||
+            containsAny(wholeText, [
+              "صافي النقد الناتج من الانشطة التشغيلية",
+              "صافي النقد المستخدم في الانشطة الاستثمارية",
+              "صافي النقد الناتج من الانشطة التمويلية",
+              "النقد وشبه النقد",
+              "النقد وما في حكمه",
+              "operating activities",
+              "investing activities",
+              "financing activities",
+              "cash and cash equivalents"
+            ])
+          );
+        }
+      }
 
       if (!(isEarly && hasTwoYears && compactCols && usableRows)) {
         return false;
@@ -2097,6 +2321,7 @@ module.exports = async function (context, req) {
       const semanticBoost = semanticBoostScore(pageCtx, cfg, kind);
       const semanticPenalty = semanticPenaltyScore(pageCtx, kind);
       const eligibility = mandatoryEligibility(pageCtx, kind);
+      const denseBank = bankDenseCandidateSignals(pageCtx);
 
       let lateNoteDetail = false;
       if (
@@ -2127,6 +2352,7 @@ module.exports = async function (context, req) {
       signals.lateNoteDetail = lateNoteDetail;
       signals.earlyCoreShape = earlyCoreShape;
       signals.yearSignals = yearSignals;
+      signals.denseBank = denseBank;
       signals.eligibility = {
         eligible: eligibility.eligible,
         path: eligibility.path
@@ -2157,6 +2383,9 @@ module.exports = async function (context, req) {
       } else if (yearSignals.yearsFound.length >= 2) {
         score += 8;
         reasons.push("textYearsDetected:+8");
+      } else if (statementProfile === "bank" && yearSignals.yearsFound.length === 1) {
+        score += 6;
+        reasons.push("bankSingleYearDetected:+6");
       }
 
       if (structureHits > 0) {
@@ -2201,6 +2430,27 @@ module.exports = async function (context, req) {
       ) {
         score += 180;
         reasons.push("cashflowEarlyTitleBoost:+180");
+      }
+
+      if (
+        statementProfile === "bank" &&
+        denseBank.qualifies &&
+        !pageCtx.isLikelyComprehensiveIncome &&
+        !pageCtx.isLikelyEquityStatement
+      ) {
+        score += 22;
+        reasons.push("bankDenseEligibilityShape:+22");
+      }
+
+      if (
+        statementProfile === "bank" &&
+        hasStrongOwnTitle &&
+        denseBank.compactShape &&
+        denseBank.structured &&
+        yearSignals.yearsFound.length >= 1
+      ) {
+        score += 24;
+        reasons.push("bankTitleStructureSynergy:+24");
       }
 
       if (negativeHits > 0) {
@@ -2255,13 +2505,23 @@ module.exports = async function (context, req) {
       }
 
       if (!hasStrongOwnTitle && structureHits === 0) {
-        score -= 45;
-        reasons.push("noTitleNoStructurePenalty:-45");
+        let p = 45;
+        if (statementProfile === "bank" && denseBank.qualifies) {
+          p = 18;
+        } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured) {
+          p = 28;
+        }
+        score -= p;
+        reasons.push(`noTitleNoStructurePenalty:-${p}`);
       }
 
       if (pageCtx.mainColumnCount >= 5 && !pageCtx.isLikelyEquityStatement) {
-        score -= 12;
-        reasons.push("manyCols:-12");
+        let p = 12;
+        if (statementProfile === "bank" && pageCtx.mainColumnCount <= 7 && denseBank.compactShape) {
+          p = 4;
+        }
+        score -= p;
+        reasons.push(`manyCols:-${p}`);
       }
 
       if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
@@ -2287,11 +2547,18 @@ module.exports = async function (context, req) {
       };
 
       if (!eligibility.eligible) {
-        score -= 260;
-        reasons.push("mandatoryEligibilityFail:-260");
+        let failPenalty = 260;
+        if (statementProfile === "bank" && denseBank.qualifies) {
+          failPenalty = 140;
+        } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured) {
+          failPenalty = 180;
+        }
+        score -= failPenalty;
+        reasons.push(`mandatoryEligibilityFail:-${failPenalty}`);
       } else {
-        score += 18;
-        reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
+        const passBoost = statementProfile === "bank" ? 24 : 18;
+        score += passBoost;
+        reasons.push(`mandatoryEligibilityPass:+${passBoost}(${eligibility.path})`);
       }
 
       return {
@@ -2330,7 +2597,7 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v6.3",
+      engine: "extract-financial-v6.4",
       phase: "4B_semantic_ranking_hardening",
       fileName: body.fileName || normalized?.meta?.fileName || null,
       statementProfile,
@@ -2361,15 +2628,3 @@ module.exports = async function (context, req) {
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-  
