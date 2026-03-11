@@ -2557,6 +2557,38 @@ module.exports = async function (context, req) {
         reasons.push("index:-220");
       }
 
+            if (pageCtx.isLikelyIndexPage) {
+        const weakHeaderStructure =
+          !pageCtx.header?.latest &&
+          !pageCtx.header?.previous &&
+          !pageCtx.hasYearLikeHeader;
+
+        const weakTableShape =
+          pageCtx.mainColumnCount <= 3 ||
+          pageCtx.mainRowCount >= 35 ||
+          pageCtx.mainRowCount <= 6;
+
+        const lacksRealStatementBody =
+          structureHitsFirstRows <= 1 &&
+          !yearSignals.usableTwoYears &&
+          yearSignals.yearsFound.length < 2;
+
+        if (weakHeaderStructure) {
+          score -= 220;
+          reasons.push("indexHardRejectWeakHeader:-220");
+        }
+
+        if (weakTableShape) {
+          score -= 160;
+          reasons.push("indexHardRejectWeakShape:-160");
+        }
+
+        if (lacksRealStatementBody) {
+          score -= 180;
+          reasons.push("indexHardRejectNoRealBody:-180");
+        }
+      }
+
       if (pageCtx.isLikelyStandardsPage) {
         score -= 190;
         reasons.push("standards:-190");
