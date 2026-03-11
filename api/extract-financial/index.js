@@ -2823,7 +2823,7 @@ if (
     reasons.push("mandatoryEligibilityReducedForBankThreeColBalance:-80");
   } else if (
     kind === "income" &&
-    hasStrongOwnTitle &&
+    signals.hasStrongOwnTitle &&
     pageCtx.positionRatio <= 0.12 &&
     pageCtx.mainRowCount >= 20 &&
     pageCtx.numbersCount >= 60
@@ -2832,7 +2832,7 @@ if (
     reasons.push("mandatoryEligibilityReducedForEarlyIncomeTitlePage:-40");
   } else if (
     kind === "cashflow" &&
-    hasStrongOwnTitle &&
+    signals.hasStrongOwnTitle &&
     pageCtx.positionRatio <= 0.16 &&
     pageCtx.mainRowCount >= 20 &&
     pageCtx.numbersCount >= 60
@@ -2843,6 +2843,10 @@ if (
     score -= 260;
     reasons.push("mandatoryEligibilityFail:-260");
   }
+} else {
+  score += 18;
+  reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
+}
 } else {
   score += 18;
   reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
