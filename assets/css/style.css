@@ -135,43 +135,107 @@ body{
 .line-3{ top:39%; left:8%; width:128px; transform:rotate(-26deg); }
 .line-4{ top:19%; left:66%; width:80px; transform:rotate(-60deg); }
 
-/* SVG Chain */
-@keyframes chainFloatLeft {
+/* حركة السلسلة السابقة */
+@keyframes chainDriftLeft {
   0%   { transform: translateY(-50%) translateX(0); }
-  50%  { transform: translateY(-50%) translateX(-12px); }
+  50%  { transform: translateY(-50%) translateX(-14px); }
   100% { transform: translateY(-50%) translateX(0); }
 }
 
-@keyframes chainFloatRight {
+@keyframes chainDriftRight {
   0%   { transform: translateY(-50%) translateX(0); }
-  50%  { transform: translateY(-50%) translateX(12px); }
+  50%  { transform: translateY(-50%) translateX(14px); }
   100% { transform: translateY(-50%) translateX(0); }
 }
 
-.chain-svg-wrap{
+@keyframes chainGlowPulse {
+  0%   {
+    box-shadow:
+      0 0 0 1px rgba(117,255,213,0.12),
+      0 0 8px rgba(43,210,160,0.24),
+      0 0 18px rgba(43,210,160,0.14),
+      inset 0 0 6px rgba(167,255,225,0.05);
+  }
+  50%  {
+    box-shadow:
+      0 0 0 1px rgba(117,255,213,0.16),
+      0 0 12px rgba(43,210,160,0.32),
+      0 0 26px rgba(43,210,160,0.20),
+      inset 0 0 8px rgba(167,255,225,0.08);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(117,255,213,0.12),
+      0 0 8px rgba(43,210,160,0.24),
+      0 0 18px rgba(43,210,160,0.14),
+      inset 0 0 6px rgba(167,255,225,0.05);
+  }
+}
+
+/* السلسلة السابقة */
+.chain{
   position:absolute;
   top:54%;
-  width:620px;
-  height:180px;
-  opacity:0.95;
-  pointer-events:none;
+  display:flex;
+  align-items:center;
+  gap:0;
+  opacity:0.92;
   will-change:transform;
 }
 
-.chain-svg-left{
-  left:-150px;
-  animation: chainFloatLeft 10s ease-in-out infinite;
+.chain-left{
+  left:-58px;
+  animation: chainDriftLeft 9s ease-in-out infinite;
 }
 
-.chain-svg-right{
-  right:-150px;
-  animation: chainFloatRight 10s ease-in-out infinite;
+.chain-right{
+  right:-58px;
+  animation: chainDriftRight 9s ease-in-out infinite;
 }
 
-.chain-svg{
-  width:100%;
-  height:100%;
-  display:block;
+.chain-link{
+  position:relative;
+  width:88px;
+  height:42px;
+  margin-inline:-8px;
+  border-radius:999px;
+  border:5px solid rgba(16, 152, 117, 0.96);
+  background:transparent;
+  box-shadow:
+    0 0 0 1px rgba(117,255,213,0.12),
+    0 0 8px rgba(43,210,160,0.28),
+    0 0 20px rgba(43,210,160,0.18),
+    inset 0 0 6px rgba(167,255,225,0.06);
+  animation: chainGlowPulse 4.8s ease-in-out infinite;
+}
+
+.chain-link::before{
+  content:"";
+  position:absolute;
+  inset:7px 16px;
+  border-radius:999px;
+  background:#06110d;
+  box-shadow:
+    inset 0 0 6px rgba(0,0,0,0.38),
+    inset 0 0 1px rgba(138,255,222,0.08);
+}
+
+.chain-link::after{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  border-radius:999px;
+  box-shadow:0 0 16px rgba(69, 225, 177, 0.16);
+}
+
+.chain-left .chain-link:nth-child(odd),
+.chain-right .chain-link:nth-child(odd){
+  transform:rotate(21deg);
+}
+
+.chain-left .chain-link:nth-child(even),
+.chain-right .chain-link:nth-child(even){
+  transform:rotate(-21deg);
 }
 
 /* الحاوية */
@@ -577,8 +641,9 @@ body{
 }
 
 @media (max-width:1100px){
-  .chain-svg-wrap{
-    width:560px;
+  .chain-link{
+    width:76px;
+    height:38px;
   }
 }
 
@@ -605,13 +670,16 @@ body{
     font-size:14px;
   }
 
-  .chain-svg-wrap{
-    opacity:0.26;
-    width:480px;
+  .chain{
+    opacity:0.28;
   }
 
-  .chain-svg-left{ left:-120px; }
-  .chain-svg-right{ right:-120px; }
+  .chain-left{ left:-110px; }
+  .chain-right{ right:-110px; }
+
+  .panel-head{
+    align-items:flex-start;
+  }
 }
 
 @media (max-width:640px){
@@ -653,12 +721,4 @@ body{
   .btn{
     width:100%;
   }
-
-  .chain-svg-wrap{
-    opacity:0.18;
-    width:360px;
-  }
-
-  .chain-svg-left{ left:-120px; }
-  .chain-svg-right{ right:-120px; }
 }
