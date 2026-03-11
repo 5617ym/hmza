@@ -2578,7 +2578,21 @@ module.exports = async function (context, req) {
   score += 180;
   reasons.push("incomeEarlyTitleBoost:+180");
 }
-
+if (
+  kind === "cashflow" &&
+  pageCtx.positionRatio <= 0.16 &&
+  yearSignals.usableTwoYears &&
+  containsAny(pageCtx.structuralText, [
+    "قائمة التدفقات النقدية الموحدة",
+    "قائمة التدفقات النقدية",
+    "statement of cash flows",
+    "cash flow statement",
+    "consolidated statement of cash flows"
+  ])
+) {
+  score += 180;
+  reasons.push("cashflowEarlyTitleBoost:+180");
+}
   if (
     pageCtx.positionRatio > 0.6 &&
     structureHits > 0 &&
