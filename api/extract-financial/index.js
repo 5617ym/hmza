@@ -198,12 +198,6 @@ module.exports = async function (context, req) {
       return score;
     }
 
-    function normalizedContains(a, b) {
-      const x = normalizeText(a);
-      const y = normalizeText(b);
-      return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
-    }
-
     function isBlank(v) {
       return String(v == null ? "" : v).trim() === "";
     }
@@ -214,10 +208,6 @@ module.exports = async function (context, req) {
       s = s.replace(/^[\-\–\—•·*]+\s*/, "");
       s = s.replace(/\s*[:：]\s*$/, "");
       return s.trim();
-    }
-
-    function cleanupNote(note) {
-      return String(note || "").replace(/\s+/g, " ").trim() || null;
     }
 
     function pageNumFromObj(obj) {
@@ -374,12 +364,6 @@ module.exports = async function (context, req) {
       );
     }
 
-    function isNumericOnlyText(text) {
-      const s = toEnglishDigits(String(text || "").trim()).replace(/[(),\s]/g, "");
-      if (!s) return false;
-      return /^-?\d+(\.\d+)?$/.test(s);
-    }
-
     function isPureNumericSymbolCell(text) {
       const raw = toEnglishDigits(String(text || "").trim());
       if (!raw) return false;
@@ -521,6 +505,31 @@ module.exports = async function (context, req) {
       );
     }
 
+    function semanticYearSignals(pageCtx) {
+      const header = pageCtx.header || {};
+      const yearHits = extractYears(
+        `${pageCtx.headerText || ""}\n${pageCtx.mainTableText || ""}\n${pageCtx.text || ""}\n${pageCtx.structuralText || ""}`
+      );
+      const latest = header.latest;
+      const previous = header.previous;
+
+      const duplicateHeaderYears =
+        Number.isFinite(latest) &&
+        Number.isFinite(previous) &&
+        latest === previous;
+
+      const usableTwoYears =
+        Number.isFinite(latest) &&
+        Number.isFinite(previous) &&
+        latest !== previous;
+
+      return {
+        yearsFound: yearHits,
+        usableTwoYears,
+        duplicateHeaderYears
+      };
+    }
+
     function bankDenseCandidateSignals(pageCtx) {
       const yearSignals = semanticYearSignals(pageCtx);
       const labelCount = countLikelyTextLabels(pageCtx.mainRows, 24);
@@ -540,6 +549,40 @@ module.exports = async function (context, req) {
         structured,
         labelCount,
         qualifies: compactShape && earlyEnough && hasSomeYears && dense && structured
+      };
+    }
+
+    function truncatedRtlNumericStatementSignals(pageCtx) {
+      const yearSignals = semanticYearSignals(pageCtx);
+      const header = pageCtx.header || {};
+      const joinedMain = normalizeText(pageCtx.mainTableText || "");
+      const hasNoteCol = Number.isFinite(header.noteCol) || joinedMain.includes("ايضاح") || joinedMain.includes("notes");
+      const earlyEnough = pageCtx.positionRatio <= 0.12;
+      const threeCols = pageCtx.mainColumnCount === 3;
+      const noDistinctLabel = !header.hasDistinctLabelColumn;
+      const denseNumbers = pageCtx.numbersCount >= 40;
+      const enoughRows = pageCtx.mainRowCount >= 12;
+      const rtl = header.direction === "rtl";
+      const hasSomeYears = yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 1;
+
+      return {
+        earlyEnough,
+        threeCols,
+        noDistinctLabel,
+        hasNoteCol,
+        denseNumbers,
+        enoughRows,
+        rtl,
+        hasSomeYears,
+        qualifies:
+          earlyEnough &&
+          threeCols &&
+          noDistinctLabel &&
+          hasNoteCol &&
+          denseNumbers &&
+          enoughRows &&
+          rtl &&
+          hasSomeYears
       };
     }
 
@@ -921,11 +964,12 @@ module.exports = async function (context, req) {
       const mainRows = extractTableRows(mainTable);
       const header = detectHeaderColumns(mainRows);
 
+      const mainTableText = tableText(mainTable);
       const allText = pageTables.map(tableText).join("\n\n");
       const headerText = getHeaderRows(mainRows).map((r) => flattenValue(r)).join("\n");
       const firstRowsText = mainRows.slice(0, 10).map((r) => r.join(" | ")).join("\n");
       const lastRowsText = mainRows.slice(-10).map((r) => r.join(" | ")).join("\n");
-      const structuralText = `${headerText}\n${firstRowsText}\n${lastRowsText}\n${allText}`;
+      const structuralText = `${headerText}\n${firstRowsText}\n${lastRowsText}\n${mainTableText}\n${allText}`;
       const normalizedText = normalizeText(structuralText);
 
       const index = orderedPageNumbers.indexOf(pageNumber);
@@ -933,7 +977,7 @@ module.exports = async function (context, req) {
         ? index / (orderedPageNumbers.length - 1)
         : 0;
 
-      const hasStatementTitle = containsAny(headerText, [
+      const hasStatementTitle = containsAny(`${headerText}\n${mainTableText}\n${allText}`, [
         "قائمة المركز المالي",
         "قائمة الدخل",
         "قائمة الدخل الموحدة",
@@ -1060,6 +1104,7 @@ module.exports = async function (context, req) {
         pageMeta,
         tables: pageTables,
         mainTable,
+        mainTableText,
         mainRows,
         mainRowsMeta: rowsWithMeta(mainTable),
         mainColumnCount: getTableColumnCount(mainTable),
@@ -1355,8 +1400,13 @@ module.exports = async function (context, req) {
           ],
           structure: [
             "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد من الانشطة التشغيلية",
             "صافي النقد المستخدم في الانشطة الاستثمارية",
+            "صافي النقد من الانشطة الاستثمارية",
             "صافي النقد الناتج من الانشطة التمويلية",
+            "صافي النقد من الانشطة التمويلية",
+            "التغير في النقد",
+            "التغير في النقد وما في حكمه",
             "النقد وشبه النقد",
             "النقد وما في حكمه",
             "operating activities",
@@ -1454,6 +1504,13 @@ module.exports = async function (context, req) {
           ],
           structure: [
             "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد من الانشطة التشغيلية",
+            "صافي النقد المستخدم في الانشطة الاستثمارية",
+            "صافي النقد من الانشطة الاستثمارية",
+            "صافي النقد الناتج من الانشطة التمويلية",
+            "صافي النقد من الانشطة التمويلية",
+            "التغير في النقد",
+            "التغير في النقد وما في حكمه",
             "cash flows from operating activities",
             "cash and cash equivalents",
             "operating activities",
@@ -1687,6 +1744,11 @@ module.exports = async function (context, req) {
           "التدفقات النقدية من الأنشطة التشغيلية",
           "التدفقات النقدية من الأنشطة الاستثمارية",
           "التدفقات النقدية من الأنشطة التمويلية",
+          "صافي النقد من الانشطة التشغيلية",
+          "صافي النقد من الانشطة الاستثمارية",
+          "صافي النقد من الانشطة التمويلية",
+          "التغير في النقد",
+          "التغير في النقد وما في حكمه",
           "الأنشطة التشغيلية",
           "الأنشطة الاستثمارية",
           "الأنشطة التمويلية",
@@ -1704,7 +1766,8 @@ module.exports = async function (context, req) {
           "operating activities",
           "الأنشطة التشغيلية",
           "الانشطه التشغيليه",
-          "التدفقات النقدية من الأنشطة التشغيلية"
+          "التدفقات النقدية من الأنشطة التشغيلية",
+          "صافي النقد من الانشطة التشغيلية"
         ],
         comboB: [
           "cash flows from investing activities",
@@ -1716,7 +1779,9 @@ module.exports = async function (context, req) {
           "الأنشطة التمويلية",
           "الانشطه التمويليه",
           "التدفقات النقدية من الأنشطة الاستثمارية",
-          "التدفقات النقدية من الأنشطة التمويلية"
+          "التدفقات النقدية من الأنشطة التمويلية",
+          "صافي النقد من الانشطة الاستثمارية",
+          "صافي النقد من الانشطة التمويلية"
         ],
         comboC: [
           "cash and cash equivalents",
@@ -1730,6 +1795,8 @@ module.exports = async function (context, req) {
           "النقد وما في حكمه",
           "صافي الزيادة في النقد",
           "صافي النقص في النقد",
+          "التغير في النقد",
+          "التغير في النقد وما في حكمه",
           "في بداية الفترة",
           "في نهاية الفترة",
           "اول الفترة",
@@ -1798,14 +1865,20 @@ module.exports = async function (context, req) {
         .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
         .join("\n");
 
-      return `${pageCtx.headerText || ""}\n${firstRowsText}\n${pageCtx.structuralText || ""}`;
+      return [
+        pageCtx.headerText || "",
+        firstRowsText,
+        pageCtx.mainTableText || "",
+        pageCtx.text || "",
+        pageCtx.structuralText || ""
+      ].join("\n");
     }
 
     function strongStatementTitleHit(pageCtx, cfg, kind) {
       const semantic = SEMANTIC_RULES[kind] || {};
       const titles = unique([...(cfg?.titles || []), ...(semantic.strongTitles || [])]);
 
-      const headerHits = keywordHits(pageCtx.headerText, titles);
+      const headerHits = keywordHits(`${pageCtx.headerText}\n${pageCtx.mainTableText || ""}`, titles);
       if (headerHits > 0) return true;
 
       const firstRowsText = (pageCtx.mainRows || [])
@@ -1813,9 +1886,9 @@ module.exports = async function (context, req) {
         .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
         .join("\n");
 
-      if (keywordHits(firstRowsText, titles) > 0) return true;
+      if (keywordHits(`${firstRowsText}\n${pageCtx.mainTableText || ""}`, titles) > 0) return true;
 
-      const structuralHits = keywordHits(pageCtx.structuralText, titles);
+      const structuralHits = keywordHits(`${pageCtx.text || ""}\n${pageCtx.structuralText || ""}`, titles);
       if (structuralHits > 0 && pageCtx.positionRatio <= 0.2) return true;
 
       return false;
@@ -1832,30 +1905,6 @@ module.exports = async function (context, req) {
       return unique(hits);
     }
 
-    function semanticYearSignals(pageCtx) {
-      const header = pageCtx.header || {};
-      const wholeText = getPageStatementText(pageCtx);
-      const yearHits = extractYears(wholeText);
-      const latest = header.latest;
-      const previous = header.previous;
-
-      const duplicateHeaderYears =
-        Number.isFinite(latest) &&
-        Number.isFinite(previous) &&
-        latest === previous;
-
-      const usableTwoYears =
-        Number.isFinite(latest) &&
-        Number.isFinite(previous) &&
-        latest !== previous;
-
-      return {
-        yearsFound: yearHits,
-        usableTwoYears,
-        duplicateHeaderYears
-      };
-    }
-
     function mandatoryEligibility(pageCtx, kind) {
       const rules = SEMANTIC_RULES[kind] || {};
       const wholeText = getPageStatementText(pageCtx);
@@ -1868,6 +1917,7 @@ module.exports = async function (context, req) {
       const bankBoostHits = countDistinctPhraseHits(wholeText, rules.bankBoost || []);
       const yearSignals = semanticYearSignals(pageCtx);
       const denseBank = bankDenseCandidateSignals(pageCtx);
+      const truncatedRtl = truncatedRtlNumericStatementSignals(pageCtx);
 
       const balanceEquityAnchors = countDistinctPhraseHits(wholeText, [
         "equity", "total equity", "total liabilities and equity",
@@ -1973,6 +2023,12 @@ module.exports = async function (context, req) {
         ) {
           eligible = true;
           path = "bank_relaxed_core_path";
+        } else if (
+          statementProfile === "bank" &&
+          truncatedRtl.qualifies
+        ) {
+          eligible = true;
+          path = "bank_truncated_rtl_cashflow_path";
         }
       }
 
@@ -1986,7 +2042,8 @@ module.exports = async function (context, req) {
         comboCHits,
         bankBoostHits,
         balanceEquityAnchors,
-        denseBank
+        denseBank,
+        truncatedRtl
       };
     }
 
@@ -2003,6 +2060,7 @@ module.exports = async function (context, req) {
       const comboBHits = countDistinctPhraseHits(wholeText, rules.comboB || []);
       const comboCHits = countDistinctPhraseHits(wholeText, rules.comboC || []);
       const denseBank = bankDenseCandidateSignals(pageCtx);
+      const truncatedRtl = truncatedRtlNumericStatementSignals(pageCtx);
 
       if (strongTitleHits.length > 0) {
         boost += 12;
@@ -2057,6 +2115,10 @@ module.exports = async function (context, req) {
           boost += 4;
           reasons.push("cashEquivalentBoost:+4");
         }
+        if (statementProfile === "bank" && truncatedRtl.qualifies) {
+          boost += 24;
+          reasons.push("truncatedRtlCashflowBoost:+24");
+        }
       }
 
       if (statementProfile === "bank" && denseBank.qualifies) {
@@ -2077,7 +2139,8 @@ module.exports = async function (context, req) {
           semanticComboAHits: comboAHits,
           semanticComboBHits: comboBHits,
           semanticComboCHits: comboCHits,
-          denseBank
+          denseBank,
+          truncatedRtl
         }
       };
     }
@@ -2155,12 +2218,7 @@ module.exports = async function (context, req) {
     }
 
     function statementSpecificCoreShape(pageCtx, kind, cfg) {
-      const firstRowsText = (pageCtx.mainRows || [])
-        .slice(0, 8)
-        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-        .join("\n");
-
-      const wholeText = `${pageCtx.headerText || ""}\n${firstRowsText}\n${pageCtx.structuralText || ""}`;
+      const wholeText = getPageStatementText(pageCtx);
       const structureHits = keywordHits(wholeText, cfg.structure);
 
       const isEarly = pageCtx.positionRatio < 0.28;
@@ -2220,8 +2278,13 @@ module.exports = async function (context, req) {
             structureHits >= 1 ||
             containsAny(wholeText, [
               "صافي النقد الناتج من الانشطة التشغيلية",
+              "صافي النقد من الانشطة التشغيلية",
               "صافي النقد المستخدم في الانشطة الاستثمارية",
+              "صافي النقد من الانشطة الاستثمارية",
               "صافي النقد الناتج من الانشطة التمويلية",
+              "صافي النقد من الانشطة التمويلية",
+              "التغير في النقد",
+              "التغير في النقد وما في حكمه",
               "النقد وشبه النقد",
               "النقد وما في حكمه",
               "operating activities",
@@ -2283,8 +2346,13 @@ module.exports = async function (context, req) {
         structureHits >= 2 ||
         containsAny(wholeText, [
           "صافي النقد الناتج من الانشطة التشغيلية",
+          "صافي النقد من الانشطة التشغيلية",
           "صافي النقد المستخدم في الانشطة الاستثمارية",
+          "صافي النقد من الانشطة الاستثمارية",
           "صافي النقد الناتج من الانشطة التمويلية",
+          "صافي النقد من الانشطة التمويلية",
+          "التغير في النقد",
+          "التغير في النقد وما في حكمه",
           "النقد وشبه النقد",
           "operating activities",
           "investing activities",
@@ -2302,19 +2370,19 @@ module.exports = async function (context, req) {
       const reasons = [];
       const signals = {};
 
-      const titleHitsHeader = keywordHits(pageCtx.headerText, cfg.titles);
-      const titleHitsAll = keywordHits(pageCtx.structuralText, cfg.titles);
-      const structureHits = keywordHits(pageCtx.structuralText, cfg.structure);
-      const negativeHits = keywordHits(pageCtx.structuralText, cfg.negatives);
+      const titleHitsHeader = keywordHits(`${pageCtx.headerText}\n${pageCtx.mainTableText || ""}`, cfg.titles);
+      const titleHitsAll = keywordHits(`${pageCtx.text || ""}\n${pageCtx.structuralText || ""}`, cfg.titles);
+      const structureHits = keywordHits(`${pageCtx.text || ""}\n${pageCtx.structuralText || ""}`, cfg.structure);
+      const negativeHits = keywordHits(`${pageCtx.text || ""}\n${pageCtx.structuralText || ""}`, cfg.negatives);
 
       const firstRowsText = (pageCtx.mainRows || [])
         .slice(0, 6)
         .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
         .join("\n");
 
-      const titleHitsFirstRows = keywordHits(firstRowsText, cfg.titles);
-      const structureHitsFirstRows = keywordHits(firstRowsText, cfg.structure);
-      const crossStatementTitleHits = keywordHits(pageCtx.structuralText, otherStatementTitleAliases(kind));
+      const titleHitsFirstRows = keywordHits(`${firstRowsText}\n${pageCtx.mainTableText || ""}`, cfg.titles);
+      const structureHitsFirstRows = keywordHits(`${firstRowsText}\n${pageCtx.mainTableText || ""}`, cfg.structure);
+      const crossStatementTitleHits = keywordHits(`${pageCtx.text || ""}\n${pageCtx.structuralText || ""}`, otherStatementTitleAliases(kind));
       const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, cfg, kind);
 
       const yearSignals = semanticYearSignals(pageCtx);
@@ -2322,6 +2390,7 @@ module.exports = async function (context, req) {
       const semanticPenalty = semanticPenaltyScore(pageCtx, kind);
       const eligibility = mandatoryEligibility(pageCtx, kind);
       const denseBank = bankDenseCandidateSignals(pageCtx);
+      const truncatedRtl = truncatedRtlNumericStatementSignals(pageCtx);
 
       let lateNoteDetail = false;
       if (
@@ -2353,6 +2422,7 @@ module.exports = async function (context, req) {
       signals.earlyCoreShape = earlyCoreShape;
       signals.yearSignals = yearSignals;
       signals.denseBank = denseBank;
+      signals.truncatedRtl = truncatedRtl;
       signals.eligibility = {
         eligible: eligibility.eligible,
         path: eligibility.path
@@ -2420,7 +2490,7 @@ module.exports = async function (context, req) {
         kind === "cashflow" &&
         pageCtx.positionRatio <= 0.16 &&
         yearSignals.usableTwoYears &&
-        containsAny(pageCtx.structuralText, [
+        containsAny(`${pageCtx.mainTableText || ""}\n${pageCtx.text || ""}\n${pageCtx.structuralText || ""}`, [
           "قائمة التدفقات النقدية الموحدة",
           "قائمة التدفقات النقدية",
           "statement of cash flows",
@@ -2430,6 +2500,11 @@ module.exports = async function (context, req) {
       ) {
         score += 180;
         reasons.push("cashflowEarlyTitleBoost:+180");
+      }
+
+      if (kind === "cashflow" && statementProfile === "bank" && truncatedRtl.qualifies) {
+        score += 42;
+        reasons.push("truncatedRtlCashflowShape:+42");
       }
 
       if (
@@ -2506,11 +2581,15 @@ module.exports = async function (context, req) {
 
       if (!hasStrongOwnTitle && structureHits === 0) {
         let p = 45;
-        if (statementProfile === "bank" && denseBank.qualifies) {
+
+        if (kind === "cashflow" && statementProfile === "bank" && truncatedRtl.qualifies) {
+          p = 6;
+        } else if (statementProfile === "bank" && denseBank.qualifies) {
           p = 18;
         } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured) {
           p = 28;
         }
+
         score -= p;
         reasons.push(`noTitleNoStructurePenalty:-${p}`);
       }
@@ -2548,7 +2627,9 @@ module.exports = async function (context, req) {
 
       if (!eligibility.eligible) {
         let failPenalty = 260;
-        if (statementProfile === "bank" && denseBank.qualifies) {
+        if (kind === "cashflow" && statementProfile === "bank" && truncatedRtl.qualifies) {
+          failPenalty = 60;
+        } else if (statementProfile === "bank" && denseBank.qualifies) {
           failPenalty = 140;
         } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured) {
           failPenalty = 180;
@@ -2597,7 +2678,7 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v6.4",
+      engine: "extract-financial-v6.5",
       phase: "4B_semantic_ranking_hardening",
       fileName: body.fileName || normalized?.meta?.fileName || null,
       statementProfile,
