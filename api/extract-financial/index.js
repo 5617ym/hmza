@@ -2564,6 +2564,22 @@ module.exports = async function (context, req) {
   }
 
   if (
+  kind === "income" &&
+  pageCtx.positionRatio <= 0.12 &&
+  yearSignals.usableTwoYears &&
+  containsAny(pageCtx.structuralText, [
+    "قائمة الدخل الموحدة",
+    "قائمة الدخل",
+    "statement of income",
+    "income statement",
+    "statement of profit or loss"
+  ])
+) {
+  score += 180;
+  reasons.push("incomeEarlyTitleBoost:+180");
+}
+
+  if (
     pageCtx.positionRatio > 0.6 &&
     structureHits > 0 &&
     !hasStrongOwnTitle
