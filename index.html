@@ -38,20 +38,176 @@
     <span class="line line-3"></span>
     <span class="line line-4"></span>
 
-    <div class="chain chain-left">
-      <span class="chain-link"></span>
-      <span class="chain-link"></span>
-      <span class="chain-link"></span>
-      <span class="chain-link"></span>
-      <span class="chain-link"></span>
+    <!-- SVG Chain Left -->
+    <div class="chain-svg-wrap chain-svg-left">
+      <svg class="chain-svg" viewBox="0 0 640 180" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="chainStrokeL" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#7af7d1" stop-opacity="0.95" />
+            <stop offset="50%" stop-color="#35d9a8" stop-opacity="0.95" />
+            <stop offset="100%" stop-color="#8ffbea" stop-opacity="0.9" />
+          </linearGradient>
+
+          <linearGradient id="innerGlowL" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#7cf8d7" stop-opacity="0.03" />
+            <stop offset="50%" stop-color="#92fff0" stop-opacity="0.14" />
+            <stop offset="100%" stop-color="#7cf8d7" stop-opacity="0.03" />
+          </linearGradient>
+
+          <filter id="chainNeonL" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="2.5" result="blur1"/>
+            <feColorMatrix in="blur1" type="matrix"
+              values="1 0 0 0 0
+                      0 1 0 0 0.95
+                      0 0 1 0 0.75
+                      0 0 0 1 0" result="glow1"/>
+            <feGaussianBlur stdDeviation="7" result="blur2"/>
+            <feMerge>
+              <feMergeNode in="blur2"/>
+              <feMergeNode in="glow1"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        <g filter="url(#chainNeonL)" opacity="0.96">
+          <g transform="translate(32,90) rotate(-18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowL)" stroke="url(#chainStrokeL)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+
+          <g transform="translate(138,90) rotate(18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowL)" stroke="url(#chainStrokeL)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+
+          <g transform="translate(244,90) rotate(-18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowL)" stroke="url(#chainStrokeL)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+
+          <g transform="translate(350,90) rotate(18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowL)" stroke="url(#chainStrokeL)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+
+          <g transform="translate(456,90) rotate(-18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowL)" stroke="url(#chainStrokeL)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+        </g>
+      </svg>
     </div>
 
-    <div class="chain chain-right">
-      <span class="chain-link"></span>
-      <span class="chain-link"></span>
-      <span class="chain-link"></span>
-      <span class="chain-link"></span>
-      <span class="chain-link"></span>
+    <!-- SVG Chain Right -->
+    <div class="chain-svg-wrap chain-svg-right">
+      <svg class="chain-svg" viewBox="0 0 640 180" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="chainStrokeR" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#7af7d1" stop-opacity="0.95" />
+            <stop offset="50%" stop-color="#35d9a8" stop-opacity="0.95" />
+            <stop offset="100%" stop-color="#8ffbea" stop-opacity="0.9" />
+          </linearGradient>
+
+          <linearGradient id="innerGlowR" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#7cf8d7" stop-opacity="0.03" />
+            <stop offset="50%" stop-color="#92fff0" stop-opacity="0.14" />
+            <stop offset="100%" stop-color="#7cf8d7" stop-opacity="0.03" />
+          </linearGradient>
+
+          <filter id="chainNeonR" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="2.5" result="blur1"/>
+            <feColorMatrix in="blur1" type="matrix"
+              values="1 0 0 0 0
+                      0 1 0 0 0.95
+                      0 0 1 0 0.75
+                      0 0 0 1 0" result="glow1"/>
+            <feGaussianBlur stdDeviation="7" result="blur2"/>
+            <feMerge>
+              <feMergeNode in="blur2"/>
+              <feMergeNode in="glow1"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        <g filter="url(#chainNeonR)" opacity="0.96">
+          <g transform="translate(32,90) rotate(-18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowR)" stroke="url(#chainStrokeR)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+
+          <g transform="translate(138,90) rotate(18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowR)" stroke="url(#chainStrokeR)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+
+          <g transform="translate(244,90) rotate(-18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowR)" stroke="url(#chainStrokeR)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+
+          <g transform="translate(350,90) rotate(18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowR)" stroke="url(#chainStrokeR)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+
+          <g transform="translate(456,90) rotate(-18)">
+            <rect x="0" y="-24" rx="24" ry="24" width="108" height="48"
+                  fill="url(#innerGlowR)" stroke="url(#chainStrokeR)" stroke-width="5.5"/>
+            <rect x="18" y="-15" rx="16" ry="16" width="72" height="30"
+                  fill="#07120d"/>
+            <path d="M18,-3 C34,-10 54,-11 90,-6" stroke="#8dffee" stroke-opacity="0.18" stroke-width="1.8" fill="none"/>
+            <path d="M20,8 C44,1 60,1 88,8" stroke="#8dffee" stroke-opacity="0.12" stroke-width="1.4" fill="none"/>
+            <path d="M28,-10 L42,6 L58,-9 L76,4" stroke="#b9fff4" stroke-opacity="0.12" stroke-width="1.2" fill="none"/>
+          </g>
+        </g>
+      </svg>
     </div>
   </div>
 
