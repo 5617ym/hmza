@@ -621,6 +621,17 @@ module.exports = async function (context, req) {
       return headerState?.labelCol ?? 0;
     }
 
+    function hasDistinctLabelColumn(header) {
+      if (!header) return false;
+      if (!Number.isFinite(header.labelCol)) return false;
+
+      const reserved = new Set(
+        [header.currentCol, header.previousCol, header.noteCol].filter((x) => Number.isFinite(x))
+      );
+
+      return !reserved.has(header.labelCol);
+    }
+
     function detectHeaderColumns(rows) {
       const headerRows = getHeaderRows(rows);
       const language = detectTableLanguageDirection(rows);
@@ -806,6 +817,9 @@ module.exports = async function (context, req) {
         }
       }
 
+      const maxColCount = Math.max(0, ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0)));
+      const reservedCols = new Set([currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x)));
+
       labelCol = refineLabelColumnFromBody(rows, {
         currentCol,
         previousCol,
@@ -815,47 +829,44 @@ module.exports = async function (context, req) {
         direction: language.direction
       });
 
-      const maxColCount = Math.max(0, ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0)));
-      const reservedCols = new Set([currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x)));
+      if (Number.isFinite(labelCol) && reservedCols.has(labelCol)) {
+        labelCol = null;
+        mode = `${mode}_label_collision_cleared`;
+      }
 
-      if (language.direction === "rtl") {
-        const rightmostFreeCol = (() => {
-          for (let c = maxColCount - 1; c >= 0; c -= 1) {
-            if (!reservedCols.has(c)) return c;
-          }
-          return null;
-        })();
+      const freeCols = [];
+      for (let c = 0; c < maxColCount; c += 1) {
+        if (!reservedCols.has(c)) freeCols.push(c);
+      }
 
-        if (
-          rightmostFreeCol != null &&
-          (
-            labelCol == null ||
-            reservedCols.has(labelCol) ||
-            labelCol < rightmostFreeCol
-          )
-        ) {
-          labelCol = rightmostFreeCol;
-          mode = `${mode}_rtl_rightmost_free_col`;
-        }
-      } else {
-        const leftmostFreeCol = (() => {
-          for (let c = 0; c < maxColCount; c += 1) {
-            if (!reservedCols.has(c)) return c;
-          }
-          return null;
-        })();
+      if (labelCol == null && freeCols.length > 0) {
+        const candidate = language.direction === "rtl"
+          ? Math.max(...freeCols)
+          : Math.min(...freeCols);
 
-        if (
-          leftmostFreeCol != null &&
-          (
-            labelCol == null ||
-            reservedCols.has(labelCol)
-          )
-        ) {
-          labelCol = leftmostFreeCol;
-          mode = `${mode}_ltr_leftmost_free_col`;
+        const candidateHasText = (rows || []).slice(0, 30).some((row) => {
+          if (!Array.isArray(row)) return false;
+          const raw = String(row[candidate] || "").trim();
+          return raw && isLikelyTextLabelCell(raw);
+        });
+
+        if (candidateHasText) {
+          labelCol = candidate;
+          mode = `${mode}_${language.direction}_free_text_label_col`;
         }
       }
+
+      if (Number.isFinite(labelCol) && reservedCols.has(labelCol)) {
+        labelCol = null;
+        mode = `${mode}_label_collision_cleared_again`;
+      }
+
+      if (maxColCount <= 3 && reservedCols.size >= maxColCount) {
+        labelCol = null;
+        mode = `${mode}_no_distinct_label_col`;
+      }
+
+      const distinctLabel = Number.isFinite(labelCol) && !reservedCols.has(labelCol);
 
       return {
         latest,
@@ -863,7 +874,8 @@ module.exports = async function (context, req) {
         currentCol,
         previousCol,
         noteCol,
-        labelCol,
+        labelCol: distinctLabel ? labelCol : null,
+        hasDistinctLabelColumn: distinctLabel,
         headerRowIndex,
         resolutionMode: mode,
         direction: language.direction,
@@ -1035,6 +1047,7 @@ module.exports = async function (context, req) {
         numbersCount: countNumbers(allText),
         years: extractYears(allText),
         header,
+        hasDistinctLabelColumn: !!header?.hasDistinctLabelColumn,
         positionRatio,
         hasStatementTitle,
         hasYearLikeHeader,
@@ -1784,6 +1797,34 @@ module.exports = async function (context, req) {
       if (pageCtx.header?.currentCol != null && pageCtx.header?.labelCol != null) {
         score += 10;
         reasons.push("usableColumns:+10");
+      }
+
+      if (pageCtx.header?.hasDistinctLabelColumn) {
+        score += 10;
+        reasons.push("distinctLabelCol:+10");
+      }
+
+      if (
+        !pageCtx.header?.hasDistinctLabelColumn &&
+        pageCtx.mainColumnCount <= 3 &&
+        !hasStrongOwnTitle &&
+        structureHits === 0 &&
+        structureHitsFirstRows === 0
+      ) {
+        score -= 55;
+        reasons.push("genericNoDistinctLabelPenalty:-55");
+      }
+
+      if (
+        kind === "balance" &&
+        !pageCtx.header?.hasDistinctLabelColumn &&
+        pageCtx.mainColumnCount <= 3 &&
+        pageCtx.header?.noteCol != null &&
+        !hasStrongOwnTitle &&
+        structureHits === 0
+      ) {
+        score -= 45;
+        reasons.push("balanceThreeColRecoveredPenalty:-45");
       }
 
       if (structureHits > 0) {
@@ -2828,6 +2869,9 @@ module.exports = async function (context, req) {
           previousCol: primaryHeader.previousCol != null ? primaryHeader.previousCol : localHeader.previousCol,
           noteCol: primaryHeader.noteCol != null ? primaryHeader.noteCol : localHeader.noteCol,
           labelCol: primaryHeader.labelCol != null ? primaryHeader.labelCol : localHeader.labelCol,
+          hasDistinctLabelColumn: primaryHeader.hasDistinctLabelColumn != null
+            ? primaryHeader.hasDistinctLabelColumn
+            : localHeader.hasDistinctLabelColumn,
           headerRowIndex: localHeader.headerRowIndex != null ? localHeader.headerRowIndex : primaryHeader.headerRowIndex,
           resolutionMode: primaryHeader.resolutionMode || localHeader.resolutionMode,
           direction: primaryHeader.direction || localHeader.direction || "ltr",
@@ -2924,6 +2968,7 @@ module.exports = async function (context, req) {
           previousCol: primaryHeader.previousCol,
           noteCol: primaryHeader.noteCol,
           labelCol: primaryHeader.labelCol,
+          hasDistinctLabelColumn: !!primaryHeader.hasDistinctLabelColumn,
           headerResolutionMode: primaryHeader.resolutionMode || null,
           tableDirection: primaryHeader.direction || null,
           tablesUsed: statementTables.length,
@@ -3157,8 +3202,8 @@ module.exports = async function (context, req) {
 
     return send(200, {
       ok: true,
-      engine: "extract-financial-v6.1",
-      phase: "4B_ownership_page_guardrail_and_balance_cleanup",
+      engine: "extract-financial-v6.2",
+      phase: "4B_distinct_label_column_guardrail",
       fileName: body.fileName || normalized?.meta?.fileName || null,
 
       statementProfile,
@@ -3218,11 +3263,10 @@ module.exports = async function (context, req) {
           }
         },
         notes: [
-          "v6.1 adds ownership-page detection to stop subsidiary/entity tables from winning balance ranking",
-          "v6.1 rejects ownership-style rows during extraction even if such a page is selected accidentally",
-          "v6.1 keeps guarded template recovery from v6.0",
-          "v6.1 keeps ranking and statement-selection architecture intact",
-          "multi-page extension remains guarded against crossing into the next detected statement page"
+          "v6.2 adds distinct label-column detection so generic 3-column RTL tables lose ranking power",
+          "v6.2 keeps ownership-page and ownership-row guardrails from v6.1",
+          "v6.2 penalizes pages that only contain current/previous/note columns without a true label column",
+          "v6.2 keeps guarded template recovery and multi-page extension architecture intact"
         ]
       },
 
