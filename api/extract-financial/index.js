@@ -2675,7 +2675,27 @@ module.exports = async function (context, req) {
     const rankedBalance = rankPages("balance");
     const rankedIncome = rankPages("income");
     const rankedCashflow = rankPages("cashflow");
+    
+let incomePage = rankedIncome[0]?.pageNumber || null;
+let balancePage = rankedBalance[0]?.pageNumber || null;
+let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
 
+// prevent same page being selected for multiple statements
+if (incomePage && balancePage && incomePage === balancePage) {
+  const alt = rankedBalance.find(p => p.pageNumber !== incomePage);
+  if (alt) balancePage = alt.pageNumber;
+}
+
+if (incomePage && cashFlowPage && incomePage === cashFlowPage) {
+  const alt = rankedCashflow.find(p => p.pageNumber !== incomePage);
+  if (alt) cashFlowPage = alt.pageNumber;
+}
+
+if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
+  const alt = rankedCashflow.find(p => p.pageNumber !== balancePage);
+  if (alt) cashFlowPage = alt.pageNumber;
+}
+}
     return send(200, {
       ok: true,
       engine: "extract-financial-v6.5",
@@ -2683,10 +2703,10 @@ module.exports = async function (context, req) {
       fileName: body.fileName || normalized?.meta?.fileName || null,
       statementProfile,
       selectedPages: {
-        incomePage: rankedIncome[0]?.pageNumber || null,
-        balancePage: rankedBalance[0]?.pageNumber || null,
-        cashFlowPage: rankedCashflow[0]?.pageNumber || null
-      },
+  incomePage,
+  balancePage,
+  cashFlowPage
+},
       debug: {
         profileDetection,
         ranking: {
