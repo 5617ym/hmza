@@ -2599,9 +2599,17 @@ module.exports = async function (context, req) {
         reasons.push("narrative:-180");
       }
 
-      if (pageCtx.isLikelyOwnershipPage) {
+            if (pageCtx.isLikelyOwnershipPage) {
         score -= 320;
         reasons.push("ownershipPagePenalty:-320");
+
+        if (kind === "balance") {
+          score -= 260;
+          reasons.push("ownershipHardRejectForBalance:-260");
+        } else {
+          score -= 120;
+          reasons.push("ownershipHardRejectOtherStatements:-120");
+        }
       }
 
       if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
