@@ -586,7 +586,7 @@ module.exports = async function (context, req) {
       };
     }
 
-    // =========================================================
+        // =========================================================
     // Layer 2: Page / Table Context Builder
     // =========================================================
 
@@ -1142,7 +1142,7 @@ module.exports = async function (context, req) {
 
     const pageContexts = allPageNumbers.map((pageNumber) => buildPageContext(pageNumber, allPageNumbers));
 
-    // =========================================================
+        // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
 
@@ -1905,7 +1905,7 @@ module.exports = async function (context, req) {
       return unique(hits);
     }
 
-    function mandatoryEligibility(pageCtx, kind) {
+        function mandatoryEligibility(pageCtx, kind) {
       const rules = SEMANTIC_RULES[kind] || {};
       const wholeText = getPageStatementText(pageCtx);
 
@@ -2675,27 +2675,27 @@ module.exports = async function (context, req) {
     const rankedBalance = rankPages("balance");
     const rankedIncome = rankPages("income");
     const rankedCashflow = rankPages("cashflow");
-    
-let incomePage = rankedIncome[0]?.pageNumber || null;
-let balancePage = rankedBalance[0]?.pageNumber || null;
-let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
 
-// prevent same page being selected for multiple statements
-if (incomePage && balancePage && incomePage === balancePage) {
-  const alt = rankedBalance.find(p => p.pageNumber !== incomePage);
-  if (alt) balancePage = alt.pageNumber;
-}
+    let incomePage = rankedIncome[0]?.pageNumber || null;
+    let balancePage = rankedBalance[0]?.pageNumber || null;
+    let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
 
-if (incomePage && cashFlowPage && incomePage === cashFlowPage) {
-  const alt = rankedCashflow.find(p => p.pageNumber !== incomePage);
-  if (alt) cashFlowPage = alt.pageNumber;
-}
+    // prevent same page being selected for multiple statements
+    if (incomePage && balancePage && incomePage === balancePage) {
+      const alt = rankedBalance.find((p) => p.pageNumber !== incomePage);
+      if (alt) balancePage = alt.pageNumber;
+    }
 
-if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
-  const alt = rankedCashflow.find(p => p.pageNumber !== balancePage);
-  if (alt) cashFlowPage = alt.pageNumber;
-}
-}
+    if (incomePage && cashFlowPage && incomePage === cashFlowPage) {
+      const alt = rankedCashflow.find((p) => p.pageNumber !== incomePage);
+      if (alt) cashFlowPage = alt.pageNumber;
+    }
+
+    if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
+      const alt = rankedCashflow.find((p) => p.pageNumber !== balancePage);
+      if (alt) cashFlowPage = alt.pageNumber;
+    }
+
     return send(200, {
       ok: true,
       engine: "extract-financial-v6.5",
@@ -2703,10 +2703,10 @@ if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
       fileName: body.fileName || normalized?.meta?.fileName || null,
       statementProfile,
       selectedPages: {
-  incomePage,
-  balancePage,
-  cashFlowPage
-},
+        incomePage,
+        balancePage,
+        cashFlowPage
+      },
       debug: {
         profileDetection,
         ranking: {
@@ -2729,3 +2729,15 @@ if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
     });
   }
 };
+
+
+
+
+
+
+
+
+
+
+
+  
