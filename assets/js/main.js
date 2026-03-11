@@ -1,4 +1,4 @@
-console.log("MAIN_JS_VERSION = 3B_COMPARE_NORMALIZE_AND_2FILES_WITH_LASTNORMALIZED_2026-03-04");
+console.log("MAIN_JS_VERSION = 3B_COMPARE_NORMALIZE_AND_2FILES_WITH_LASTNORMALIZED_2026-03-04_UI_REFRESH");
 console.log("main.js loaded ✅");
 
 const fileInput = document.getElementById("fileInput");
@@ -32,6 +32,26 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (n < 1024) return `${n} bytes`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function getFileTypeLabel(file) {
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+
+  if (type.includes("pdf") || name.endsWith(".pdf")) return "PDF";
+  if (type.includes("sheet") || name.endsWith(".xlsx") || name.endsWith(".xls")) return "Excel";
+  if (type.includes("csv") || name.endsWith(".csv")) return "CSV";
+  if (type.includes("word") || name.endsWith(".docx") || name.endsWith(".doc")) return "Word";
+  if (type.startsWith("image/")) return "صورة";
+  return "ملف";
+}
+
 function clearUI() {
   selectedFiles = [];
   if (fileInput) fileInput.value = "";
@@ -41,7 +61,6 @@ function clearUI() {
   if (btnShow) btnShow.disabled = true;
   setStatus("");
 
-  // ✅ reset debug cache too
   window.lastAnalyzeA = null;
   window.lastAnalyzeB = null;
   window.lastNormalized = null;
@@ -53,14 +72,21 @@ function renderSelectedFiles() {
   if (!fileListEl) return;
 
   if (!selectedFiles.length) {
-    fileListEl.innerHTML = `<div>لم يتم اختيار أي ملف.</div>`;
+    fileListEl.innerHTML = `<div class="muted small">لم يتم اختيار أي ملف.</div>`;
     return;
   }
 
   fileListEl.innerHTML = selectedFiles
     .map((f) => {
-      const size = Number(f.size || 0).toLocaleString();
-      return `<div>${escapeHtml(f.name)} - ${size} bytes</div>`;
+      return `
+        <div class="file-item">
+          <div class="file-left">
+            <div class="file-name">${escapeHtml(f.name)}</div>
+            <div class="file-meta">${escapeHtml(formatBytes(f.size))}</div>
+          </div>
+          <span class="tag">${escapeHtml(getFileTypeLabel(f))}</span>
+        </div>
+      `;
     })
     .join("");
 }
@@ -81,10 +107,8 @@ async function safeJson(res) {
 }
 
 /* ==============================================
-   ✅ Normalize UI selections (period/compare)
-   - period: annual | quarterly | ttm
-   - compare: none | compare
-   ============================================== */
+   Normalize UI selections
+============================================== */
 
 function getUiSelection() {
   const periodRaw = (periodEl?.value || "").trim();
@@ -120,8 +144,8 @@ function getUiSelection() {
 }
 
 /* ==============================================
-   🚀 Upload -> PUT -> Ingest -> (Auto Follow Next)
-   ============================================== */
+   Upload -> PUT -> Ingest -> Auto Follow Next
+============================================== */
 
 async function analyzeSingleFile(file, ui) {
   const r1 = await fetch("/api/upload-url", {
@@ -203,8 +227,8 @@ async function analyzeSingleFile(file, ui) {
 }
 
 /* ==============================================
-   🧠 Extract Financial (supports 1 file or 2 files)
-   ============================================== */
+   Extract Financial
+============================================== */
 
 async function extractFinancial(payload) {
   const r = await fetch("/api/extract-financial", {
@@ -224,11 +248,8 @@ async function extractFinancial(payload) {
 }
 
 /* ==============================================
-   ✅ Debug helpers for Console (IMPORTANT)
-   بعد ما تضغط "عرض النتائج" تقدر تشغل:
-   window.runBalanceDiag()
-   window.runExtractAgain()
-   ============================================== */
+   Debug helpers
+============================================== */
 
 window.runBalanceDiag = async function () {
   const normA = window.lastNormalized;
@@ -273,8 +294,8 @@ window.runExtractAgain = async function () {
 };
 
 /* ==============================================
-   🎯 Events
-   ============================================== */
+   Events
+============================================== */
 
 fileInput?.addEventListener("change", () => {
   selectedFiles = Array.from(fileInput.files || []);
@@ -298,7 +319,7 @@ btnShow?.addEventListener("click", async () => {
   }
 
   const ui = getUiSelection();
-  window.lastUiSelection = ui; // ✅ cache
+  window.lastUiSelection = ui;
 
   if (ui.compare === "none" && selectedFiles.length > 1) {
     setStatus("تم اختيار أكثر من ملف مع (بدون مقارنة). سيتم تحليل أول ملف فقط.", "warn");
@@ -312,7 +333,6 @@ btnShow?.addEventListener("click", async () => {
 
     const dataA = await analyzeSingleFile(selectedFiles[0], ui);
 
-    // ✅ cache for console diagnostics
     window.lastAnalyzeA = dataA;
     window.lastNormalized = dataA?.normalized || null;
 
@@ -333,7 +353,6 @@ btnShow?.addEventListener("click", async () => {
       setStatus("تم تحليل الملف الأول ✅ — جاري تحليل الملف الثاني للمقارنة...", "info");
       dataB = await analyzeSingleFile(selectedFiles[1], ui);
 
-      // ✅ cache for console diagnostics
       window.lastAnalyzeB = dataB;
       window.lastNormalizedPrev = dataB?.normalized || null;
 
@@ -348,7 +367,6 @@ btnShow?.addEventListener("click", async () => {
       window.lastNormalizedPrev = null;
     }
 
-    // ✅ حط تنبيه واضح إذا tablesPreview صفر (هذا سبب ranked:[])
     if (!tablesPreviewCountA) {
       console.warn("⚠️ normalized.tablesPreview = 0. هذا يعني extract-financial لن يجد الجداول.");
     }
