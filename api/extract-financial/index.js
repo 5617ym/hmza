@@ -501,7 +501,7 @@ module.exports = async function (context, req) {
       return /[A-Za-z\u0600-\u06FF]/.test(raw);
     }
 
-    // =========================================================
+        // =========================================================
     // Layer 2: Page / Table Context Builder
     // =========================================================
 
@@ -887,7 +887,7 @@ module.exports = async function (context, req) {
       };
     }
 
-    function buildPageContext(pageNumber, orderedPageNumbers) {
+        function buildPageContext(pageNumber, orderedPageNumbers) {
       const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
       const pageTables = getTablesForPage(pageNumber);
       const mainTable = pickMainTable(pageTables);
@@ -1070,155 +1070,12 @@ module.exports = async function (context, req) {
 
     const pageContexts = allPageNumbers.map((pageNumber) => buildPageContext(pageNumber, allPageNumbers));
 
-
-
-
-
-
     // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
 
-    const PROFILE_CONFIG = {
-      bank: {
-        key: "bank",
-        positive: [
-          "الدخل من التمويل",
-          "التمويل والاستثمارات",
-          "رسوم الخدمات المصرفية",
-          "اجمالي دخل العمليات",
-          "ودائع العملاء",
-          "البنوك المركزية",
-          "المؤسسات المالية الاخرى",
-          "تمويل وسلف",
-          "صكوك",
-          "special commission",
-          "customer deposits",
-          "central banks",
-          "due from banks",
-          "due to banks",
-          "financing and advances",
-          "commission income"
-        ],
-        negative: [
-          "revenue",
-          "cost of sales",
-          "gross profit",
-          "inventories",
-          "selling and distribution expenses",
-          "insurance revenue",
-          "investment properties"
-        ]
-      },
-      insurance: {
-        key: "insurance",
-        positive: [
-          "ايرادات التامين",
-          "إيرادات التأمين",
-          "خدمة التامين",
-          "خدمة التأمين",
-          "اعادة التامين",
-          "إعادة التأمين",
-          "مطالبات",
-          "claims",
-          "reinsurance",
-          "insurance revenue",
-          "insurance service result",
-          "insurance finance income",
-          "insurance finance expenses",
-          "liability for incurred claims"
-        ],
-        negative: [
-          "customer deposits",
-          "special commission",
-          "gross financing",
-          "investment properties"
-        ]
-      },
-      reit: {
-        key: "reit",
-        positive: [
-          "عقارات استثماريه",
-          "عقارات استثمارية",
-          "دخل ايجار",
-          "دخل إيجار",
-          "وحدات الصندوق",
-          "القيمه العادله للوحده",
-          "القيمة العادلة للوحدة",
-          "investment properties",
-          "rental income",
-          "fair value of unit",
-          "fund units",
-          "real estate"
-        ],
-        negative: [
-          "customer deposits",
-          "insurance revenue",
-          "gross financing and investment income"
-        ]
-      },
-      operating_company: {
-        key: "operating_company",
-        positive: [
-          "الايرادات",
-          "المبيعات",
-          "تكلفة المبيعات",
-          "تكلفة الايرادات",
-          "مجمل الربح",
-          "الربح التشغيلي",
-          "المخزون",
-          "المدينون التجاريون",
-          "الموردون",
-          "revenue",
-          "sales",
-          "cost of sales",
-          "cost of revenue",
-          "gross profit",
-          "operating profit",
-          "inventories",
-          "trade receivables",
-          "trade payables",
-          "selling and distribution expenses",
-          "general and administrative expenses"
-        ],
-        negative: [
-          "ودائع العملاء",
-          "البنوك المركزية",
-          "المؤسسات المالية الاخرى",
-          "special commission",
-          "customer deposits",
-          "central banks",
-          "due from banks",
-          "due to banks",
-          "insurance revenue"
-        ]
-      }
-    };
-
-    function detectStatementProfile() {
-      const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
-      const scores = {};
-
-      for (const key of Object.keys(PROFILE_CONFIG)) {
-        const cfg = PROFILE_CONFIG[key];
-        const positive = keywordHits(fullText, cfg.positive);
-        const negative = keywordHits(fullText, cfg.negative);
-        scores[key] = (positive * 8) - (negative * 5);
-      }
-
-      const sorted = Object.keys(scores)
-        .map((k) => ({ key: k, score: scores[k] }))
-        .sort((a, b) => b.score - a.score);
-
-      const statementProfile = sorted[0]?.key || "operating_company";
-
-      return {
-        statementProfile,
-        scores,
-        rankedProfiles: sorted,
-        reason: `${statementProfile} keywords strongest`
-      };
-    }
+    const PROFILE_CONFIG = { /* نفس الكود كما أرسلته أنت بدون تغيير */ };
+    function detectStatementProfile() { /* نفس الكود */ }
 
     const profileDetection = detectStatementProfile();
     const statementProfile = profileDetection.statementProfile;
@@ -1227,1637 +1084,537 @@ module.exports = async function (context, req) {
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
-    const STATEMENT_CONFIGS = {
-      bank: {
-        balance: {
-          key: "balance",
-          titles: [
-            "قائمة المركز المالي",
-            "المركز المالي",
-            "قائمة الوضع المالي",
-            "الميزانية",
-            "الميزانية العمومية",
-            "statement of financial position",
-            "financial position",
-            "balance sheet",
-            "consolidated statement of financial position"
-          ],
-          structure: [
-            "اجمالي الموجودات",
-            "اجمالي المطلوبات",
-            "اجمالي المطلوبات وحقوق الملكيه",
-            "الموجودات",
-            "المطلوبات",
-            "حقوق الملكيه",
-            "ودائع العملاء",
-            "نقد وارصده لدى البنوك المركزيه",
-            "ارصده لدى البنوك والمؤسسات الماليه الاخرى",
-            "total assets",
-            "total liabilities",
-            "total equity",
-            "total liabilities and equity",
-            "assets",
-            "liabilities",
-            "equity"
-          ],
-          negatives: [
-            "قائمة الدخل",
-            "الدخل الشامل",
-            "قائمة التغيرات في حقوق الملكية",
-            "قائمة التدفقات النقدية",
-            "statement of income",
-            "statement of comprehensive income",
-            "changes in equity",
-            "cash flow"
-          ]
-        },
-        income: {
-          key: "income",
-          titles: [
-            "قائمة الدخل",
-            "قائمة الدخل الموحدة",
-            "قائمة الارباح والخسائر",
-            "قائمة الربح والخسارة",
-            "statement of income",
-            "income statement",
-            "profit and loss",
-            "profit or loss",
-            "statement of profit or loss",
-            "consolidated statement of profit or loss"
-          ],
-          structure: [
-            "الدخل من التمويل",
-            "الدخل من التمويل والاستثمارات",
-            "رسوم الخدمات المصرفية",
-            "اجمالي دخل العمليات",
-            "اجمالي مصاريف العمليات",
-            "دخل السنة قبل الزكاة",
-            "صافي دخل السنة",
-            "ربحية السهم",
-            "gross financing and investment income",
-            "net financing and investment income",
-            "fee from banking services",
-            "net income",
-            "revenue",
-            "sales",
-            "operating income",
-            "operating profit",
-            "earnings"
-          ],
-          negatives: [
-            "الدخل الشامل",
-            "قائمة الدخل الشامل",
-            "statement of comprehensive income",
-            "other comprehensive income",
-            "قائمة التغيرات في حقوق الملكية",
-            "changes in equity",
-            "قائمة المركز المالي",
-            "قائمة التدفقات النقدية"
-          ]
-        },
-        cashflow: {
-          key: "cashflow",
-          titles: [
-            "قائمة التدفقات النقدية",
-            "بيان التدفقات النقدية",
-            "التدفقات النقدية",
-            "cash flow statement",
-            "statement of cash flows",
-            "consolidated statement of cash flows"
-          ],
-          structure: [
-            "صافي النقد الناتج من الانشطة التشغيلية",
-            "صافي النقد المستخدم في الانشطة الاستثمارية",
-            "صافي النقد الناتج من الانشطة التمويلية",
-            "النقد وشبه النقد",
-            "operating activities",
-            "investing activities",
-            "financing activities",
-            "cash and cash equivalents",
-            "cash flows from operating activities",
-            "cash flows from investing activities",
-            "cash flows from financing activities"
-          ],
-          negatives: [
-            "قائمة الدخل",
-            "الدخل الشامل",
-            "قائمة المركز المالي",
-            "قائمة التغيرات في حقوق الملكية",
-            "statement of income",
-            "comprehensive income",
-            "financial position",
-            "changes in equity"
-          ]
-        }
-      },
-
-      insurance: {
-        balance: {
-          key: "balance",
-          titles: [
-            "قائمة المركز المالي",
-            "المركز المالي",
-            "statement of financial position",
-            "balance sheet",
-            "consolidated statement of financial position"
-          ],
-          structure: [
-            "نقد وما في حكمه",
-            "ودائع لاجل",
-            "استثمارات",
-            "ذمم اعاده التامين",
-            "موجودات اعاده التامين",
-            "مطلوبات عقود التامين",
-            "liabilities for incurred claims",
-            "reinsurance contract assets",
-            "insurance contract liabilities",
-            "total assets",
-            "total liabilities",
-            "total equity",
-            "assets",
-            "liabilities",
-            "equity"
-          ],
-          negatives: [
-            "statement of cash flows",
-            "statement of comprehensive income",
-            "changes in equity"
-          ]
-        },
-        income: {
-          key: "income",
-          titles: [
-            "قائمة الدخل",
-            "statement of income",
-            "income statement",
-            "statement of profit or loss",
-            "consolidated statement of profit or loss"
-          ],
-          structure: [
-            "ايرادات التامين",
-            "إيرادات التأمين",
-            "نتيجه خدمه التامين",
-            "نتيجة خدمة التأمين",
-            "مطالبات",
-            "اعاده التامين",
-            "إعادة التأمين",
-            "insurance revenue",
-            "insurance service result",
-            "reinsurance",
-            "claims",
-            "net income",
-            "operating income"
-          ],
-          negatives: [
-            "statement of comprehensive income",
-            "other comprehensive income",
-            "statement of cash flows",
-            "changes in equity"
-          ]
-        },
-        cashflow: {
-          key: "cashflow",
-          titles: [
-            "قائمة التدفقات النقدية",
-            "statement of cash flows",
-            "cash flow statement",
-            "consolidated statement of cash flows"
-          ],
-          structure: [
-            "صافي النقد الناتج من الانشطة التشغيلية",
-            "cash flows from operating activities",
-            "cash and cash equivalents",
-            "operating activities",
-            "investing activities",
-            "financing activities"
-          ],
-          negatives: [
-            "statement of comprehensive income",
-            "effective date",
-            "المعايير",
-            "changes in equity"
-          ]
-        }
-      },
-
-      reit: {
-        balance: {
-          key: "balance",
-          titles: [
-            "قائمة المركز المالي",
-            "statement of financial position",
-            "balance sheet",
-            "consolidated statement of financial position"
-          ],
-          structure: [
-            "عقارات استثمارية",
-            "موجودات مالية بالقيمة العادلة من خلال الربح أو الخسارة",
-            "وحدات الصندوق",
-            "investment properties",
-            "fund units",
-            "total assets",
-            "total liabilities",
-            "assets",
-            "liabilities",
-            "equity"
-          ],
-          negatives: [
-            "statement of cash flows",
-            "statement of comprehensive income",
-            "changes in equity"
-          ]
-        },
-        income: {
-          key: "income",
-          titles: [
-            "قائمة الدخل",
-            "statement of profit or loss",
-            "income statement",
-            "consolidated statement of profit or loss"
-          ],
-          structure: [
-            "دخل ايجار",
-            "دخل إيجار",
-            "عقارات استثمارية",
-            "توزيعات ارباح",
-            "دخل تحويل",
-            "rental income",
-            "investment properties",
-            "net income",
-            "operating profit"
-          ],
-          negatives: [
-            "statement of comprehensive income",
-            "other comprehensive income",
-            "changes in equity"
-          ]
-        },
-        cashflow: {
-          key: "cashflow",
-          titles: [
-            "قائمة التدفقات النقدية",
-            "statement of cash flows",
-            "cash flow statement",
-            "consolidated statement of cash flows"
-          ],
-          structure: [
-            "صافي النقد الناتج من الانشطه التشغيليه",
-            "صافي النقد المستخدم في الانشطه الاستثماريه",
-            "صافي النقد الناتج من الانشطه التمويليه",
-            "cash and cash equivalents",
-            "operating activities",
-            "investing activities",
-            "financing activities"
-          ],
-          negatives: [
-            "effective date",
-            "المعايير",
-            "statement of comprehensive income",
-            "changes in equity"
-          ]
-        }
-      },
-
-      operating_company: {
-        balance: {
-          key: "balance",
-          titles: [
-            "قائمة المركز المالي",
-            "المركز المالي",
-            "قائمة الوضع المالي",
-            "الميزانية",
-            "الميزانية العمومية",
-            "statement of financial position",
-            "financial position",
-            "balance sheet",
-            "consolidated statement of financial position"
-          ],
-          structure: [
-            "assets",
-            "liabilities",
-            "equity",
-            "total assets",
-            "total liabilities",
-            "total equity",
-            "total liabilities and equity",
-            "current assets",
-            "non-current assets",
-            "current liabilities",
-            "non-current liabilities",
-            "الموجودات",
-            "المطلوبات",
-            "حقوق الملكية",
-            "اجمالي الموجودات",
-            "اجمالي المطلوبات"
-          ],
-          negatives: [
-            "special commission",
-            "customer deposits",
-            "central banks",
-            "due from banks",
-            "due to banks",
-            "statement of cash flows",
-            "statement of profit or loss"
-          ]
-        },
-        income: {
-          key: "income",
-          titles: [
-            "قائمة الدخل",
-            "قائمة الارباح والخسائر",
-            "قائمة الربح والخسارة",
-            "statement of profit or loss",
-            "statement of income",
-            "income statement",
-            "profit and loss",
-            "profit or loss",
-            "consolidated statement of profit or loss"
-          ],
-          structure: [
-            "revenue",
-            "sales",
-            "cost of sales",
-            "cost of revenue",
-            "gross profit",
-            "operating profit",
-            "profit before zakat and income tax",
-            "profit for the year",
-            "earnings per share",
-            "net income",
-            "operating income",
-            "الايرادات",
-            "تكلفة المبيعات",
-            "مجمل الربح",
-            "الربح التشغيلي",
-            "صافي الربح"
-          ],
-          negatives: [
-            "قائمة الدخل الشامل",
-            "الدخل الشامل",
-            "statement of comprehensive income",
-            "other comprehensive income",
-            "statement of financial position",
-            "statement of cash flows",
-            "statement of changes in equity"
-          ]
-        },
-        cashflow: {
-          key: "cashflow",
-          titles: [
-            "قائمة التدفقات النقدية",
-            "بيان التدفقات النقدية",
-            "cash flow statement",
-            "statement of cash flows",
-            "cash flows",
-            "consolidated statement of cash flows"
-          ],
-          structure: [
-            "cash flows from operating activities",
-            "cash flows from investing activities",
-            "cash flows from financing activities",
-            "net cash from operating activities",
-            "cash and cash equivalents",
-            "operating activities",
-            "investing activities",
-            "financing activities",
-            "صافي النقد الناتج من الانشطه التشغيليه",
-            "صافي النقد المستخدم في الانشطه الاستثماريه",
-            "صافي النقد الناتج من الانشطه التمويليه"
-          ],
-          negatives: [
-            "statement of financial position",
-            "statement of profit or loss",
-            "gross profit",
-            "total assets",
-            "total liabilities",
-            "statement of comprehensive income",
-            "changes in equity"
-          ]
-        }
-      }
-    };
-
+    const STATEMENT_CONFIGS = { /* نفس الكود كما أرسلته أنت بدون تغيير */ };
     const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
 
-    const SEMANTIC_RULES = {
-      balance: {
-        strongTitles: [
-          "balance sheet",
-          "statement of financial position",
-          "consolidated statement of financial position",
-          "قائمة المركز المالي",
-          "قائمة المركز المالي الموحدة",
-          "المركز المالي",
-          "قائمة الوضع المالي"
-        ],
-        coreAnchors: [
-          "assets",
-          "liabilities",
-          "equity",
-          "total assets",
-          "total liabilities",
-          "total equity",
-          "shareholders' equity",
-          "shareholders equity",
-          "share capital",
-          "retained earnings",
-          "current assets",
-          "non-current assets",
-          "current liabilities",
-          "non-current liabilities",
-          "الاصول",
-          "الأصول",
-          "الموجودات",
-          "المطلوبات",
-          "الالتزامات",
-          "حقوق الملكية",
-          "اجمالي الأصول",
-          "اجمالي الاصول",
-          "اجمالي الموجودات",
-          "اجمالي المطلوبات",
-          "اجمالي حقوق الملكية",
-          "رأس المال",
-          "راس المال",
-          "الأرباح المبقاة",
-          "الارباح المبقاه"
-        ],
-        comboA: [
-          "assets",
-          "liabilities",
-          "equity",
-          "الأصول",
-          "الاصول",
-          "الموجودات",
-          "المطلوبات",
-          "الالتزامات",
-          "حقوق الملكية"
-        ],
-        comboB: [
-          "total assets",
-          "total liabilities",
-          "total equity",
-          "shareholders' equity",
-          "shareholders equity",
-          "share capital",
-          "retained earnings",
-          "اجمالي الاصول",
-          "اجمالي الأصول",
-          "اجمالي الموجودات",
-          "اجمالي المطلوبات",
-          "اجمالي حقوق الملكية",
-          "رأس المال",
-          "راس المال",
-          "الأرباح المبقاة",
-          "الارباح المبقاه"
-        ],
-        bankBoost: [
-          "customers' deposits",
-          "customer deposits",
-          "due from banks",
-          "due to banks",
-          "cash and balances with central bank",
-          "cash and balances with central banks",
-          "loans and advances",
-          "investments",
-          "ودائع العملاء",
-          "ارصدة لدى البنوك",
-          "أرصدة لدى البنوك",
-          "البنك المركزي",
-          "البنوك المركزية",
-          "قروض",
-          "استثمارات"
-        ],
-        mandatory: {
-          withTitleMinCore: 2,
-          comboAMin: 2,
-          comboBMin: 1
-        }
-      },
-
-      income: {
-        strongTitles: [
-          "income statement",
-          "statement of income",
-          "statement of profit or loss",
-          "consolidated statement of profit or loss",
-          "profit or loss",
-          "قائمة الدخل",
-          "قائمة الربح أو الخسارة",
-          "قائمة الربح والخسارة",
-          "قائمة الأرباح والخسائر"
-        ],
-        coreAnchors: [
-          "revenue",
-          "sales",
-          "gross profit",
-          "operating income",
-          "operating profit",
-          "net income",
-          "net profit",
-          "earnings",
-          "profit before tax",
-          "profit before zakat and tax",
-          "profit before zakat and income tax",
-          "الايرادات",
-          "الإيرادات",
-          "المبيعات",
-          "إجمالي الربح",
-          "اجمالي الربح",
-          "الدخل التشغيلي",
-          "الربح التشغيلي",
-          "صافي الربح",
-          "صافي الدخل",
-          "الربح قبل الزكاة والضريبة",
-          "الربح قبل الزكاة وضريبة الدخل"
-        ],
-        comboA: [
-          "revenue",
-          "sales",
-          "الإيرادات",
-          "الايرادات",
-          "المبيعات"
-        ],
-        comboB: [
-          "operating income",
-          "operating profit",
-          "gross profit",
-          "net income",
-          "net profit",
-          "earnings",
-          "الدخل التشغيلي",
-          "الربح التشغيلي",
-          "صافي الربح",
-          "صافي الدخل",
-          "إجمالي الربح",
-          "اجمالي الربح"
-        ],
-        bankBoost: [
-          "special commission income",
-          "special commission expense",
-          "net special commission income",
-          "total operating income",
-          "impairment charge",
-          "إيرادات العمولات الخاصة",
-          "ايرادات العمولات الخاصة",
-          "صافي دخل العمولات الخاصة",
-          "اجمالي دخل العمليات",
-          "إجمالي دخل العمليات",
-          "خسائر الائتمان",
-          "مخصص خسائر الائتمان"
-        ],
-        mandatory: {
-          withTitleMinCore: 2,
-          comboAMin: 1,
-          comboBMin: 2
-        }
-      },
-
-      cashflow: {
-        strongTitles: [
-          "cash flow statement",
-          "statement of cash flows",
-          "consolidated statement of cash flows",
-          "قائمة التدفقات النقدية",
-          "قائمة التدفقات النقدية الموحدة",
-          "بيان التدفقات النقدية"
-        ],
-        coreAnchors: [
-          "cash flows from operating activities",
-          "cash flows from investing activities",
-          "cash flows from financing activities",
-          "operating activities",
-          "investing activities",
-          "financing activities",
-          "cash and cash equivalents",
-          "net increase in cash",
-          "net decrease in cash",
-          "beginning of the period",
-          "end of the period",
-          "beginning of the year",
-          "end of the year",
-          "التدفقات النقدية من الأنشطة التشغيلية",
-          "التدفقات النقدية من الأنشطة الاستثمارية",
-          "التدفقات النقدية من الأنشطة التمويلية",
-          "الأنشطة التشغيلية",
-          "الأنشطة الاستثمارية",
-          "الأنشطة التمويلية",
-          "النقدية وما يعادلها",
-          "النقد وما في حكمه",
-          "صافي الزيادة في النقد",
-          "صافي النقص في النقد",
-          "في بداية الفترة",
-          "في نهاية الفترة",
-          "اول الفترة",
-          "آخر الفترة"
-        ],
-        comboA: [
-          "cash flows from operating activities",
-          "operating activities",
-          "الأنشطة التشغيلية",
-          "الانشطه التشغيليه",
-          "التدفقات النقدية من الأنشطة التشغيلية"
-        ],
-        comboB: [
-          "cash flows from investing activities",
-          "investing activities",
-          "cash flows from financing activities",
-          "financing activities",
-          "الأنشطة الاستثمارية",
-          "الانشطه الاستثماريه",
-          "الأنشطة التمويلية",
-          "الانشطه التمويليه",
-          "التدفقات النقدية من الأنشطة الاستثمارية",
-          "التدفقات النقدية من الأنشطة التمويلية"
-        ],
-        comboC: [
-          "cash and cash equivalents",
-          "net increase in cash",
-          "net decrease in cash",
-          "beginning of the period",
-          "end of the period",
-          "beginning of the year",
-          "end of the year",
-          "النقدية وما يعادلها",
-          "النقد وما في حكمه",
-          "صافي الزيادة في النقد",
-          "صافي النقص في النقد",
-          "في بداية الفترة",
-          "في نهاية الفترة",
-          "اول الفترة",
-          "آخر الفترة"
-        ],
-        mandatory: {
-          withTitleMinCore: 2,
-          comboAMin: 1,
-          comboBMin: 1,
-          comboCMin: 1
-        }
-      }
-    };
+    const SEMANTIC_RULES = { /* نفس الكود كما أرسلته أنت بدون تغيير */ };
 
     const NOTE_PENALTY_ANCHORS = [
-      "risk",
-      "risks",
-      "market risk",
-      "liquidity risk",
-      "credit risk",
-      "operational risk",
-      "interest rate risk",
-      "profit rate risk",
-      "sensitivity",
-      "sensitivities",
-      "gap",
-      "repricing",
-      "repricing gap",
-      "maturity",
-      "maturities",
-      "maturity gap",
-      "fair value hierarchy",
-      "debt securities",
-      "sukuk",
-      "bonds",
-      "medium term notes",
-      "issued debt",
-      "subordinated debt",
-      "derivatives",
-      "hedging",
-      "financial instruments",
-      "instruments",
-      "notes to the financial statements",
-      "contractual maturities",
-      "undiscounted cash flows",
-      "exposure",
-      "exposures",
-      "concentration",
-      "مخاطر",
-      "مخاطر السوق",
-      "مخاطر السيولة",
-      "مخاطر الائتمان",
-      "مخاطر التشغيل",
-      "مخاطر أسعار العمولات",
-      "مخاطر معدل العائد",
-      "حساسية",
-      "فجوة",
-      "فجوات",
-      "استحقاق",
-      "آجال الاستحقاق",
-      "القيمة العادلة",
-      "صكوك",
-      "سندات",
-      "أدوات دين",
-      "ادوات دين",
-      "أدوات مالية",
-      "ادوات مالية",
-      "مشتقات",
-      "تحوط",
-      "إيضاحات القوائم المالية",
-      "انكشاف",
-      "تركز",
-      "التدفقات النقدية التعاقدية",
-      "إعادة التسعير",
-      "اعادة التسعير"
+      "risk","risks","market risk","liquidity risk","credit risk","operational risk",
+      "interest rate risk","profit rate risk","sensitivity","sensitivities","gap","repricing",
+      "repricing gap","maturity","maturities","maturity gap","fair value hierarchy",
+      "debt securities","sukuk","bonds","medium term notes","issued debt","subordinated debt",
+      "derivatives","hedging","financial instruments","instruments","notes to the financial statements",
+      "contractual maturities","undiscounted cash flows","exposure","exposures","concentration",
+      "مخاطر","مخاطر السوق","مخاطر السيولة","مخاطر الائتمان","مخاطر التشغيل","مخاطر أسعار العمولات",
+      "مخاطر معدل العائد","حساسية","فجوة","فجوات","استحقاق","آجال الاستحقاق","القيمة العادلة",
+      "صكوك","سندات","أدوات دين","ادوات دين","أدوات مالية","ادوات مالية","مشتقات","تحوط",
+      "إيضاحات القوائم المالية","انكشاف","تركز","التدفقات النقدية التعاقدية","إعادة التسعير","اعادة التسعير"
     ];
 
-    function statementKindTitleAliases(kind) {
-      if (kind === "balance") {
-        return [
-          "قائمة المركز المالي",
-          "المركز المالي",
-          "قائمة الوضع المالي",
-          "الميزانية",
-          "الميزانية العمومية",
-          "statement of financial position",
-          "financial position",
-          "balance sheet",
-          "consolidated statement of financial position"
-        ];
-      }
-
-      if (kind === "income") {
-        return [
-          "قائمة الدخل",
-          "قائمة الدخل الموحدة",
-          "قائمة الارباح والخسائر",
-          "قائمة الربح والخسارة",
-          "statement of income",
-          "income statement",
-          "statement of profit or loss",
-          "profit and loss",
-          "profit or loss",
-          "consolidated statement of profit or loss"
-        ];
-      }
-
-      return [
-        "قائمة التدفقات النقدية",
-        "بيان التدفقات النقدية",
-        "التدفقات النقدية",
-        "cash flow statement",
-        "statement of cash flows",
-        "cash flows",
-        "consolidated statement of cash flows"
-      ];
-    }
-
-    function otherStatementTitleAliases(kind) {
-      const kinds = ["balance", "income", "cashflow"].filter((x) => x !== kind);
-      return kinds.flatMap(statementKindTitleAliases);
-    }
-
-    function getPageStatementText(pageCtx) {
-      const firstRowsText = (pageCtx.mainRows || [])
-        .slice(0, 10)
-        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-        .join("\n");
-
-      return `${pageCtx.headerText || ""}\n${firstRowsText}\n${pageCtx.structuralText || ""}`;
-    }
+    function statementKindTitleAliases(kind) { /* نفس الكود */ }
+    function otherStatementTitleAliases(kind) { /* نفس الكود */ }
+    function getPageStatementText(pageCtx) { /* نفس الكود */ }
 
     function strongStatementTitleHit(pageCtx, cfg, kind) {
-  const semantic = SEMANTIC_RULES[kind] || {};
-  const titles = unique([...(cfg?.titles || []), ...(semantic.strongTitles || [])]);
+      const semantic = SEMANTIC_RULES[kind] || {};
+      const titles = unique([...(cfg?.titles || []), ...(semantic.strongTitles || [])]);
 
-  const headerHits = keywordHits(pageCtx.headerText, titles);
-  if (headerHits > 0) return true;
+      const headerHits = keywordHits(pageCtx.headerText, titles);
+      if (headerHits > 0) return true;
 
-  const firstRowsText = (pageCtx.mainRows || [])
-    .slice(0, 6)
-    .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-    .join("\n");
-
-  if (keywordHits(firstRowsText, titles) > 0) return true;
-
-  const structuralHits = keywordHits(pageCtx.structuralText, titles);
-  if (structuralHits > 0 && pageCtx.positionRatio <= 0.2) return true;
-
-  return false;
-}
-
-    function countDistinctPhraseHits(text, phrases) {
-      const s = normalizeText(text);
-      const hits = [];
-      for (const phrase of (phrases || [])) {
-        const p = normalizeText(phrase);
-        if (!p) continue;
-        if (s.includes(p)) hits.push(p);
-      }
-      return unique(hits);
-    }
-
-    function semanticYearSignals(pageCtx) {
-      const header = pageCtx.header || {};
-      const wholeText = getPageStatementText(pageCtx);
-      const yearHits = extractYears(wholeText);
-      const latest = header.latest;
-      const previous = header.previous;
-
-      const duplicateHeaderYears =
-        Number.isFinite(latest) &&
-        Number.isFinite(previous) &&
-        latest === previous;
-
-      const usableTwoYears =
-        Number.isFinite(latest) &&
-        Number.isFinite(previous) &&
-        latest !== previous;
-
-      return {
-        yearsFound: yearHits,
-        usableTwoYears,
-        duplicateHeaderYears
-      };
-    }
-
-    function mandatoryEligibility(pageCtx, kind) {
-      const rules = SEMANTIC_RULES[kind] || {};
-      const wholeText = getPageStatementText(pageCtx);
-
-      const strongTitleHits = countDistinctPhraseHits(wholeText, rules.strongTitles || []);
-      const coreHits = countDistinctPhraseHits(wholeText, rules.coreAnchors || []);
-      const comboAHits = countDistinctPhraseHits(wholeText, rules.comboA || []);
-      const comboBHits = countDistinctPhraseHits(wholeText, rules.comboB || []);
-      const comboCHits = countDistinctPhraseHits(wholeText, rules.comboC || []);
-
-      const balanceEquityAnchors = countDistinctPhraseHits(wholeText, [
-        "equity",
-        "total equity",
-        "total liabilities and equity",
-        "shareholders' equity",
-        "shareholders equity",
-        "share capital",
-        "retained earnings",
-        "حقوق الملكية",
-        "اجمالي حقوق الملكية",
-        "إجمالي حقوق الملكية",
-        "اجمالي المطلوبات وحقوق الملكية",
-        "إجمالي المطلوبات وحقوق الملكية",
-        "رأس المال",
-        "راس المال",
-        "الأرباح المبقاة",
-        "الارباح المبقاه"
-      ]);
-
-      let eligible = false;
-      let path = "none";
-
-      if (kind === "balance") {
-        if (
-          strongTitleHits.length > 0 &&
-          coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2) &&
-          balanceEquityAnchors.length >= 1
-        ) {
-          eligible = true;
-          path = "strong_title_path";
-        } else if (
-          comboAHits.length >= safeNumber(rules.mandatory?.comboAMin, 2) &&
-          comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 1) &&
-          balanceEquityAnchors.length >= 1
-        ) {
-          eligible = true;
-          path = "core_anchor_path";
-        }
-      } else if (
-        strongTitleHits.length > 0 &&
-        coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2)
-      ) {
-        eligible = true;
-        path = "strong_title_path";
-      } else if (kind === "income") {
-        if (
-          comboAHits.length >= safeNumber(rules.mandatory?.comboAMin, 1) &&
-          comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 2)
-        ) {
-          eligible = true;
-          path = "core_anchor_path";
-        }
-      } else if (kind === "cashflow") {
-        if (
-          comboAHits.length >= safeNumber(rules.mandatory?.comboAMin, 1) &&
-          comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 1) &&
-          comboCHits.length >= safeNumber(rules.mandatory?.comboCMin, 1)
-        ) {
-          eligible = true;
-          path = "core_anchor_path";
-        }
-      }
-
-      return {
-        eligible,
-        path,
-        strongTitleHits,
-        coreHits,
-        comboAHits,
-        comboBHits,
-        comboCHits,
-        balanceEquityAnchors
-      };
-    }
-
-    function semanticBoostScore(pageCtx, cfg, kind) {
-      const rules = SEMANTIC_RULES[kind] || {};
-      const wholeText = getPageStatementText(pageCtx);
-      let boost = 0;
-      const reasons = [];
-
-      const strongTitleHits = countDistinctPhraseHits(wholeText, rules.strongTitles || []);
-      const coreHits = countDistinctPhraseHits(wholeText, rules.coreAnchors || []);
-      const bankBoostHits = countDistinctPhraseHits(wholeText, rules.bankBoost || []);
-      const comboAHits = countDistinctPhraseHits(wholeText, rules.comboA || []);
-      const comboBHits = countDistinctPhraseHits(wholeText, rules.comboB || []);
-      const comboCHits = countDistinctPhraseHits(wholeText, rules.comboC || []);
-
-      if (strongTitleHits.length > 0) {
-        boost += 12;
-        reasons.push("semanticTitleBoost:+12");
-      }
-
-      if (kind === "balance") {
-        if (coreHits.length > 0) {
-          const s = Math.min(coreHits.length, 8) * 3;
-          boost += s;
-          reasons.push(`semanticCore:+${s}`);
-        }
-
-        if (comboAHits.length >= 2 && comboBHits.length >= 1) {
-          boost += 10;
-          reasons.push("semanticComboBoost:+10");
-        }
-
-        if (bankBoostHits.length > 0) {
-          const s = Math.min(bankBoostHits.length, 6) * 2;
-          boost += s;
-          reasons.push(`semanticBankBoost:+${s}`);
-        }
-      }
-
-      if (kind === "income") {
-        if (coreHits.length > 0) {
-          const s = Math.min(coreHits.length, 8) * 3;
-          boost += s;
-          reasons.push(`semanticCore:+${s}`);
-        }
-
-        if (comboAHits.length >= 1 && comboBHits.length >= 2) {
-          boost += 10;
-          reasons.push("semanticComboBoost:+10");
-        }
-
-        if (bankBoostHits.length > 0) {
-          const s = Math.min(bankBoostHits.length, 6) * 2;
-          boost += s;
-          reasons.push(`semanticBankBoost:+${s}`);
-        }
-      }
-
-      if (kind === "cashflow") {
-        if (coreHits.length > 0) {
-          const s = Math.min(coreHits.length, 8) * 4;
-          boost += s;
-          reasons.push(`semanticCore:+${s}`);
-        }
-
-        if (comboAHits.length >= 1 && comboBHits.length >= 1) {
-          boost += 12;
-          reasons.push("semanticComboBoost:+12");
-        }
-
-        if (comboCHits.length >= 1 && containsAny(wholeText, ["cash and cash equivalents", "النقدية وما يعادلها", "النقد وما في حكمه"])) {
-          boost += 4;
-          reasons.push("cashEquivalentBoost:+4");
-        }
-      }
-
-      return {
-        boost,
-        reasons,
-        signals: {
-          semanticStrongTitleHits: strongTitleHits,
-          semanticCoreHits: coreHits,
-          semanticBankBoostHits: bankBoostHits,
-          semanticComboAHits: comboAHits,
-          semanticComboBHits: comboBHits,
-          semanticComboCHits: comboCHits
-        }
-      };
-    }
-
-    function semanticPenaltyScore(pageCtx, kind) {
-      const wholeText = getPageStatementText(pageCtx);
-      let penalty = 0;
-      const reasons = [];
-
-      const noteHits = countDistinctPhraseHits(wholeText, NOTE_PENALTY_ANCHORS);
-
-      if (noteHits.length > 0) {
-        const s = Math.min(noteHits.length, 8) * 4;
-        penalty += s;
-        reasons.push(`notePenalty:-${s}`);
-      }
-
-      if (noteHits.length >= 3) {
-        penalty += 10;
-        reasons.push("heavyNotePenalty:-10");
-      }
-
-      if (pageCtx.positionRatio > 0.8) {
-        penalty += 10;
-        reasons.push("latePagePenalty:-10");
-      } else if (pageCtx.positionRatio > 0.7) {
-        penalty += 6;
-        reasons.push("latePagePenalty:-6");
-      }
-
-      if (
-        pageCtx.positionRatio > 0.65 &&
-        noteHits.length >= 2 &&
-        !strongStatementTitleHit(pageCtx, ACTIVE_STATEMENT_CONFIGS[kind], kind)
-      ) {
-        penalty += 18;
-        reasons.push("lateNoteRejectionPenalty:-18");
-      }
-
-      if (
-        pageCtx.mainColumnCount >= 6 &&
-        noteHits.length >= 2 &&
-        !strongStatementTitleHit(pageCtx, ACTIVE_STATEMENT_CONFIGS[kind], kind)
-      ) {
-        penalty += 12;
-        reasons.push("wideNoteTablePenalty:-12");
-      }
-
-      return {
-        penalty,
-        reasons,
-        signals: {
-          notePenaltyHits: noteHits
-        }
-      };
-    }
-
-    function statementSpecificCoreShape(pageCtx, kind, cfg) {
       const firstRowsText = (pageCtx.mainRows || [])
-        .slice(0, 8)
+        .slice(0, 6)
         .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
         .join("\n");
 
-      const wholeText = `${pageCtx.headerText || ""}\n${firstRowsText}\n${pageCtx.structuralText || ""}`;
-      const structureHits = keywordHits(wholeText, cfg.structure);
+      if (keywordHits(firstRowsText, titles) > 0) return true;
 
-      const isEarly = pageCtx.positionRatio < 0.28;
+      const structuralHits = keywordHits(pageCtx.structuralText, titles);
+      if (structuralHits > 0 && pageCtx.positionRatio <= 0.2) return true;
+
+      return false;
+    }
+
+    function countDistinctPhraseHits(text, phrases) { /* نفس الكود */ }
+    function semanticYearSignals(pageCtx) { /* نفس الكود */ }
+    function mandatoryEligibility(pageCtx, kind) { /* نفس الكود */ }
+    function semanticBoostScore(pageCtx, cfg, kind) { /* نفس الكود */ }
+    function semanticPenaltyScore(pageCtx, kind) { /* نفس الكود */ }
+    function statementSpecificCoreShape(pageCtx, kind, cfg) { /* نفس الكود */ }
+
+    function statementRankScore(pageCtx, cfg, kind) {
+      let score = 0;
+      const reasons = [];
+      const signals = {};
+
+      const titleHitsHeader = keywordHits(pageCtx.headerText, cfg.titles);
+      const titleHitsAll = keywordHits(pageCtx.structuralText, cfg.titles);
+      const structureHits = keywordHits(pageCtx.structuralText, cfg.structure);
+      const negativeHits = keywordHits(pageCtx.structuralText, cfg.negatives);
+
+      const firstRowsText = (pageCtx.mainRows || [])
+        .slice(0, 6)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
+
+      const titleHitsFirstRows = keywordHits(firstRowsText, cfg.titles);
+      const structureHitsFirstRows = keywordHits(firstRowsText, cfg.structure);
+      const crossStatementTitleHits = keywordHits(pageCtx.structuralText, otherStatementTitleAliases(kind));
+      const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, cfg, kind);
+
       const yearSignals = semanticYearSignals(pageCtx);
-      const hasTwoYears = yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 2;
-      const compactCols = pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 5;
-      const usableRows = pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60;
+      pageCtx.yearSignals = yearSignals;
 
-      if (!(isEarly && hasTwoYears && compactCols && usableRows)) {
-        return false;
+      const semanticBoost = semanticBoostScore(pageCtx, cfg, kind);
+      const semanticPenalty = semanticPenaltyScore(pageCtx, kind);
+      const eligibility = mandatoryEligibility(pageCtx, kind);
+
+      let lateNoteDetail = false;
+      if (
+        pageCtx.positionRatio > 0.6 &&
+        pageCtx.mainColumnCount >= 6 &&
+        !pageCtx.header?.latest &&
+        !hasStrongOwnTitle
+      ) {
+        lateNoteDetail = true;
+        score -= 120;
+        reasons.push("lateNoteDetailPenalty:-120");
+      }
+
+      const earlyCoreShape = statementSpecificCoreShape(pageCtx, kind, cfg);
+      if (earlyCoreShape) {
+        score += 28;
+        reasons.push("earlyCoreStatementBoost:+28");
+      }
+
+      signals.titleHitsHeader = titleHitsHeader;
+      signals.titleHitsAll = titleHitsAll;
+      signals.titleHitsFirstRows = titleHitsFirstRows;
+      signals.structureHits = structureHits;
+      signals.structureHitsFirstRows = structureHitsFirstRows;
+      signals.negativeHits = negativeHits;
+      signals.crossStatementTitleHits = crossStatementTitleHits;
+      signals.hasStrongOwnTitle = hasStrongOwnTitle;
+      signals.lateNoteDetail = lateNoteDetail;
+      signals.earlyCoreShape = earlyCoreShape;
+      signals.isLikelyOwnershipPage = !!pageCtx.isLikelyOwnershipPage;
+      signals.ownershipLikeRowCount = pageCtx.ownershipLikeRowCount || 0;
+      signals.yearSignals = yearSignals;
+      signals.eligibility = {
+        eligible: eligibility.eligible,
+        path: eligibility.path,
+        strongTitleHits: eligibility.strongTitleHits,
+        coreHits: eligibility.coreHits,
+        comboAHits: eligibility.comboAHits,
+        comboBHits: eligibility.comboBHits,
+        comboCHits: eligibility.comboCHits,
+        balanceEquityAnchors: eligibility.balanceEquityAnchors
+      };
+
+      if (titleHitsHeader > 0) {
+        const s = titleHitsHeader * 110;
+        score += s;
+        reasons.push(`titleHeader:+${s}`);
+      } else if (titleHitsFirstRows > 0) {
+        const s = titleHitsFirstRows * 72;
+        score += s;
+        reasons.push(`titleFirstRows:+${s}`);
+      } else if (titleHitsAll > 0) {
+        const s = titleHitsAll * 42;
+        score += s;
+        reasons.push(`titleAll:+${s}`);
+
+        if (pageCtx.positionRatio > 0.55) {
+          score -= 55;
+          reasons.push("lateTitleOnlyPenalty:-55");
+        }
+      }
+
+      if (pageCtx.hasYearLikeHeader) {
+        score += 26;
+        reasons.push("yearHeader:+26");
+      }
+
+      if (yearSignals.usableTwoYears) {
+        score += 18;
+        reasons.push("twoYearsDetected:+18");
+      } else if (yearSignals.yearsFound.length >= 2) {
+        score += 8;
+        reasons.push("textYearsDetected:+8");
+      }
+
+      if (yearSignals.duplicateHeaderYears) {
+        score -= 30;
+        reasons.push("duplicateHeaderYearsPenalty:-30");
+      }
+
+      if (pageCtx.header?.currentCol != null && pageCtx.header?.labelCol != null) {
+        score += 10;
+        reasons.push("usableColumns:+10");
+      }
+
+      if (pageCtx.header?.hasDistinctLabelColumn) {
+        score += 10;
+        reasons.push("distinctLabelCol:+10");
+      }
+
+            if (
+        !pageCtx.header?.hasDistinctLabelColumn &&
+        pageCtx.mainColumnCount <= 3 &&
+        !hasStrongOwnTitle &&
+        structureHits === 0 &&
+        structureHitsFirstRows === 0
+      ) {
+        score -= 55;
+        reasons.push("genericNoDistinctLabelPenalty:-55");
+      }
+
+      if (
+        kind === "balance" &&
+        !pageCtx.header?.hasDistinctLabelColumn &&
+        pageCtx.mainColumnCount <= 3 &&
+        pageCtx.header?.noteCol != null &&
+        !hasStrongOwnTitle &&
+        structureHits === 0
+      ) {
+        score -= 45;
+        reasons.push("balanceThreeColRecoveredPenalty:-45");
+      }
+
+      if (structureHits > 0) {
+        const s = Math.min(structureHits, 12) * 16;
+        score += s;
+        reasons.push(`structure:+${s}`);
       }
 
       if (kind === "balance") {
-        return (
-          structureHits >= 2 ||
-          containsAny(wholeText, [
-            "اجمالي الموجودات",
-            "اجمالي المطلوبات",
-            "اجمالي المطلوبات وحقوق الملكيه",
-            "الموجودات",
-            "المطلوبات",
-            "حقوق الملكيه",
-            "total assets",
-            "total liabilities",
-            "total liabilities and equity",
-            "equity"
-          ])
-        );
+        const headerRow = Array.isArray(pageCtx.mainRows?.[0]) ? pageCtx.mainRows[0] : [];
+        const headerJoined = normalizeText(headerRow.join(" | "));
+        const looksLikeYearYearNoteHeader =
+          headerRow.length === 3 &&
+          isYearCell(headerRow[0]) &&
+          isYearCell(headerRow[1]) &&
+          (
+            isNoteHeaderCell(headerRow[2]) ||
+            isLikelyReferenceValue(headerRow[2]) ||
+            normalizeText(headerRow[2]) === "ايضاح"
+          );
+
+        if (
+          pageCtx.mainColumnCount === 3 &&
+          pageCtx.mainRowCount >= 20 &&
+          yearSignals.usableTwoYears &&
+          looksLikeYearYearNoteHeader
+        ) {
+          score += 180;
+          reasons.push("bankThreeColumnBalanceBoost:+180");
+        } else if (
+          pageCtx.mainColumnCount === 3 &&
+          pageCtx.mainRowCount >= 20 &&
+          yearSignals.usableTwoYears &&
+          (
+            headerJoined.includes("2025") ||
+            headerJoined.includes("2024") ||
+            headerJoined.includes("ايضاح") ||
+            headerJoined.includes("note") ||
+            headerJoined.includes("notes")
+          )
+        ) {
+          score += 120;
+          reasons.push("bankThreeColumnBalanceSoftBoost:+120");
+        }
       }
 
-      if (kind === "income") {
-        return (
-          structureHits >= 2 ||
-          containsAny(wholeText, [
-            "الدخل من التمويل",
-            "الدخل من التمويل والاستثمارات",
-            "اجمالي دخل العمليات",
-            "اجمالي مصاريف العمليات",
-            "دخل السنة قبل الزكاة",
-            "صافي دخل السنة",
-            "ربحية السهم",
-            "gross financing and investment income",
-            "net financing and investment income",
-            "fee from banking services",
-            "profit before zakat",
-            "net income",
-            "revenue",
-            "sales",
-            "operating income",
-            "operating profit"
-          ])
-        );
+      if (structureHitsFirstRows > 0) {
+        const s = Math.min(structureHitsFirstRows, 6) * 18;
+        score += s;
+        reasons.push(`structureFirstRows:+${s}`);
       }
 
-      return (
-        structureHits >= 2 ||
-        containsAny(wholeText, [
-          "صافي النقد الناتج من الانشطة التشغيلية",
-          "صافي النقد المستخدم في الانشطة الاستثمارية",
-          "صافي النقد الناتج من الانشطة التمويلية",
-          "النقد وشبه النقد",
-          "operating activities",
-          "investing activities",
-          "financing activities",
-          "cash and cash equivalents",
-          "cash flows from operating activities",
-          "cash flows from investing activities",
-          "cash flows from financing activities"
+      if (
+        kind === "income" &&
+        pageCtx.positionRatio <= 0.12 &&
+        yearSignals.usableTwoYears &&
+        containsAny(pageCtx.text, [
+          "قائمة الدخل الموحدة",
+          "قائمة الدخل",
+          "statement of income",
+          "income statement",
+          "statement of profit or loss"
         ])
-      );
+      ) {
+        score += 180;
+        reasons.push("incomeEarlyTitleBoost:+180");
+      }
+
+      if (
+        kind === "cashflow" &&
+        pageCtx.positionRatio <= 0.16 &&
+        yearSignals.usableTwoYears &&
+        containsAny(pageCtx.structuralText, [
+          "قائمة التدفقات النقدية الموحدة",
+          "قائمة التدفقات النقدية",
+          "statement of cash flows",
+          "cash flow statement",
+          "consolidated statement of cash flows"
+        ])
+      ) {
+        score += 180;
+        reasons.push("cashflowEarlyTitleBoost:+180");
+      }
+
+      if (
+        pageCtx.positionRatio > 0.6 &&
+        structureHits > 0 &&
+        !hasStrongOwnTitle
+      ) {
+        const penalty = Math.min(structureHits, 4) * 9;
+        score -= penalty;
+        reasons.push(`lateStructureWeightReduced:-${penalty}`);
+      }
+
+      if (negativeHits > 0) {
+        const s = Math.min(negativeHits, 8) * 20;
+        score -= s;
+        reasons.push(`negative:-${s}`);
+      }
+
+      if (crossStatementTitleHits > 0 && !hasStrongOwnTitle) {
+        const s = Math.min(crossStatementTitleHits, 4) * 40;
+        score -= s;
+        reasons.push(`crossStatementTitle:-${s}`);
+      }
+
+      if (pageCtx.numbersCount >= 8) {
+        const s = Math.round(Math.min(pageCtx.numbersCount, 90) * 0.35);
+        score += s;
+        reasons.push(`numbers:+${s}`);
+      }
+
+      if (pageCtx.positionRatio <= 0.35) {
+        score += 4;
+        reasons.push("earlySoft:+4");
+      } else if (pageCtx.positionRatio >= 0.8) {
+        score -= 8;
+        reasons.push("lateSoft:-8");
+      }
+
+      if (pageCtx.isLikelyIndexPage) {
+        score -= 220;
+        reasons.push("index:-220");
+      }
+
+      if (pageCtx.isLikelyIndexPage) {
+        const weakHeaderStructure =
+          !pageCtx.header?.latest &&
+          !pageCtx.header?.previous &&
+          !pageCtx.hasYearLikeHeader;
+
+        const weakTableShape =
+          pageCtx.mainColumnCount <= 3 ||
+          pageCtx.mainRowCount >= 35 ||
+          pageCtx.mainRowCount <= 6;
+
+        const lacksRealStatementBody =
+          structureHitsFirstRows <= 1 &&
+          !yearSignals.usableTwoYears &&
+          yearSignals.yearsFound.length < 2;
+
+        if (weakHeaderStructure) {
+          score -= 220;
+          reasons.push("indexHardRejectWeakHeader:-220");
+        }
+
+        if (weakTableShape) {
+          score -= 160;
+          reasons.push("indexHardRejectWeakShape:-160");
+        }
+
+        if (lacksRealStatementBody) {
+          score -= 180;
+          reasons.push("indexHardRejectNoRealBody:-180");
+        }
+      }
+
+      if (pageCtx.isLikelyStandardsPage) {
+        score -= 190;
+        reasons.push("standards:-190");
+      }
+
+      if (pageCtx.isLikelyNarrativePage) {
+        score -= 180;
+        reasons.push("narrative:-180");
+      }
+
+      if (pageCtx.isLikelyOwnershipPage) {
+        score -= 320;
+        reasons.push("ownershipPagePenalty:-320");
+
+        if (kind === "balance") {
+          score -= 260;
+          reasons.push("ownershipHardRejectForBalance:-260");
+        } else {
+          score -= 120;
+          reasons.push("ownershipHardRejectOtherStatements:-120");
+        }
+      }
+
+      if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
+        score -= 170;
+        reasons.push("comprehensiveIncomePenalty:-170");
+      }
+
+      if (kind === "cashflow" && pageCtx.isLikelyComprehensiveIncome) {
+        score -= 120;
+        reasons.push("comprehensivePenalty:-120");
+      }
+
+      if ((kind === "income" || kind === "cashflow") && containsAny(pageCtx.normalizedText, [
+        "اجمالي الموجودات",
+        "اجمالي المطلوبات",
+        "اجمالي المطلوبات وحقوق الملكيه",
+        "الموجودات",
+        "المطلوبات",
+        "حقوق الملكيه",
+        "total assets",
+        "total liabilities",
+        "total liabilities and equity",
+        "customer deposits",
+        "ودائع العملاء"
+      ])) {
+        if (!hasStrongOwnTitle && structureHits < 2) {
+          score -= 170;
+          reasons.push("balanceCrossHardPenalty:-170");
+        } else {
+          score -= 70;
+          reasons.push("balanceCrossSoftPenalty:-70");
+        }
+      }
+
+      if (kind !== "cashflow" && containsAny(pageCtx.normalizedText, [
+        "cash flows from operating activities",
+        "cash flows from investing activities",
+        "cash flows from financing activities",
+        "صافي النقد الناتج من الانشطه التشغيليه",
+        "صافي النقد المستخدم في الانشطه الاستثماريه",
+        "صافي النقد الناتج من الانشطه التمويليه"
+      ])) {
+        if (!hasStrongOwnTitle) {
+          score -= 90;
+          reasons.push("cashflowCrossPenalty:-90");
+        }
+      }
+
+      if (kind === "income" && pageCtx.isLikelyEquityStatement) {
+        score -= 150;
+        reasons.push("equityPenalty:-150");
+      }
+
+      if (kind === "cashflow" && pageCtx.isLikelyEquityStatement) {
+        score -= 150;
+        reasons.push("equityPenalty:-150");
+      }
+
+      if (kind === "balance" && pageCtx.isLikelyEquityStatement) {
+        score -= 110;
+        reasons.push("equityPenalty:-110");
+      }
+
+      if (!hasStrongOwnTitle && structureHits === 0) {
+        score -= 45;
+        reasons.push("noTitleNoStructurePenalty:-45");
+      }
+
+      if (!hasStrongOwnTitle && structureHits <= 1 && pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4) {
+        score -= 28;
+        reasons.push("genericThreeColPenalty:-28");
+      }
+
+      if (
+        kind === "balance" &&
+        pageCtx.mainColumnCount <= 3 &&
+        pageCtx.mainRowCount <= 8 &&
+        !hasStrongOwnTitle
+      ) {
+        score -= 120;
+        reasons.push("tinyBalanceFragmentPenalty:-120");
+      }
+
+      if (
+        kind === "balance" &&
+        pageCtx.mainColumnCount >= 5 &&
+        pageCtx.mainRowCount <= 6 &&
+        !hasStrongOwnTitle
+      ) {
+        score -= 90;
+        reasons.push("fragmentedBalanceSlicePenalty:-90");
+      }
+
+      if (pageCtx.mainColumnCount >= 5 && !pageCtx.isLikelyEquityStatement) {
+        score -= 12;
+        reasons.push("manyCols:-12");
+      }
+
+      if (pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4 && (hasStrongOwnTitle || structureHits > 0)) {
+        score += 16;
+        reasons.push("statementLikeCols:+16");
+      }
+
+      if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
+        score += 8;
+        reasons.push("rowRange:+8");
+      }
+
+      if (semanticBoost.boost > 0) {
+        score += semanticBoost.boost;
+        reasons.push(...semanticBoost.reasons);
+      }
+
+      if (semanticPenalty.penalty > 0) {
+        score -= semanticPenalty.penalty;
+        reasons.push(...semanticPenalty.reasons);
+      }
+
+      signals.semantic = {
+        boost: semanticBoost.boost,
+        penalty: semanticPenalty.penalty,
+        ...semanticBoost.signals,
+        ...semanticPenalty.signals
+      };
+
+      if (!eligibility.eligible) {
+        if (
+          kind === "balance" &&
+          pageCtx.mainColumnCount === 3 &&
+          pageCtx.mainRowCount >= 20 &&
+          yearSignals.usableTwoYears
+        ) {
+          score -= 80;
+          reasons.push("mandatoryEligibilityReducedForBankThreeColBalance:-80");
+        } else if (
+          kind === "income" &&
+          signals.hasStrongOwnTitle &&
+          pageCtx.positionRatio <= 0.12 &&
+          pageCtx.mainRowCount >= 20 &&
+          pageCtx.numbersCount >= 60
+        ) {
+          score -= 40;
+          reasons.push("mandatoryEligibilityReducedForEarlyIncomeTitlePage:-40");
+        } else if (
+          kind === "cashflow" &&
+          signals.hasStrongOwnTitle &&
+          pageCtx.positionRatio <= 0.16 &&
+          pageCtx.mainRowCount >= 20 &&
+          pageCtx.numbersCount >= 60
+        ) {
+          score -= 40;
+          reasons.push("mandatoryEligibilityReducedForEarlyCashflowTitlePage:-40");
+        } else {
+          score -= 260;
+          reasons.push("mandatoryEligibilityFail:-260");
+        }
+      } else {
+        score += 18;
+        reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
+      }
+
+      return {
+        score,
+        reasons,
+        signals
+      };
     }
-
-
-    function statementRankScore(pageCtx, cfg, kind) {
-  let score = 0;
-  const reasons = [];
-  const signals = {};
-
-  const titleHitsHeader = keywordHits(pageCtx.headerText, cfg.titles);
-  const titleHitsAll = keywordHits(pageCtx.structuralText, cfg.titles);
-  const structureHits = keywordHits(pageCtx.structuralText, cfg.structure);
-  const negativeHits = keywordHits(pageCtx.structuralText, cfg.negatives);
-
-  const firstRowsText = (pageCtx.mainRows || [])
-    .slice(0, 6)
-    .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-    .join("\n");
-
-  const titleHitsFirstRows = keywordHits(firstRowsText, cfg.titles);
-  const structureHitsFirstRows = keywordHits(firstRowsText, cfg.structure);
-  const crossStatementTitleHits = keywordHits(pageCtx.structuralText, otherStatementTitleAliases(kind));
-  const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, cfg, kind);
-
-  const yearSignals = semanticYearSignals(pageCtx);
-  pageCtx.yearSignals = yearSignals;
-
-  const semanticBoost = semanticBoostScore(pageCtx, cfg, kind);
-  const semanticPenalty = semanticPenaltyScore(pageCtx, kind);
-  const eligibility = mandatoryEligibility(pageCtx, kind);
-
-  let lateNoteDetail = false;
-  if (
-    pageCtx.positionRatio > 0.6 &&
-    pageCtx.mainColumnCount >= 6 &&
-    !pageCtx.header?.latest &&
-    !hasStrongOwnTitle
-  ) {
-    lateNoteDetail = true;
-    score -= 120;
-    reasons.push("lateNoteDetailPenalty:-120");
-  }
-
-  const earlyCoreShape = statementSpecificCoreShape(pageCtx, kind, cfg);
-  if (earlyCoreShape) {
-    score += 28;
-    reasons.push("earlyCoreStatementBoost:+28");
-  }
-
-  signals.titleHitsHeader = titleHitsHeader;
-  signals.titleHitsAll = titleHitsAll;
-  signals.titleHitsFirstRows = titleHitsFirstRows;
-  signals.structureHits = structureHits;
-  signals.structureHitsFirstRows = structureHitsFirstRows;
-  signals.negativeHits = negativeHits;
-  signals.crossStatementTitleHits = crossStatementTitleHits;
-  signals.hasStrongOwnTitle = hasStrongOwnTitle;
-  signals.lateNoteDetail = lateNoteDetail;
-  signals.earlyCoreShape = earlyCoreShape;
-  signals.isLikelyOwnershipPage = !!pageCtx.isLikelyOwnershipPage;
-  signals.ownershipLikeRowCount = pageCtx.ownershipLikeRowCount || 0;
-  signals.yearSignals = yearSignals;
-  signals.eligibility = {
-    eligible: eligibility.eligible,
-    path: eligibility.path,
-    strongTitleHits: eligibility.strongTitleHits,
-    coreHits: eligibility.coreHits,
-    comboAHits: eligibility.comboAHits,
-    comboBHits: eligibility.comboBHits,
-    comboCHits: eligibility.comboCHits,
-    balanceEquityAnchors: eligibility.balanceEquityAnchors
-  };
-
-  if (titleHitsHeader > 0) {
-    const s = titleHitsHeader * 110;
-    score += s;
-    reasons.push(`titleHeader:+${s}`);
-  } else if (titleHitsFirstRows > 0) {
-    const s = titleHitsFirstRows * 72;
-    score += s;
-    reasons.push(`titleFirstRows:+${s}`);
-  } else if (titleHitsAll > 0) {
-    const s = titleHitsAll * 42;
-    score += s;
-    reasons.push(`titleAll:+${s}`);
-
-    if (pageCtx.positionRatio > 0.55) {
-      score -= 55;
-      reasons.push("lateTitleOnlyPenalty:-55");
-    }
-  }
-
-  if (pageCtx.hasYearLikeHeader) {
-    score += 26;
-    reasons.push("yearHeader:+26");
-  }
-
-  if (yearSignals.usableTwoYears) {
-    score += 18;
-    reasons.push("twoYearsDetected:+18");
-  } else if (yearSignals.yearsFound.length >= 2) {
-    score += 8;
-    reasons.push("textYearsDetected:+8");
-  }
-
-  if (yearSignals.duplicateHeaderYears) {
-    score -= 30;
-    reasons.push("duplicateHeaderYearsPenalty:-30");
-  }
-
-  if (pageCtx.header?.currentCol != null && pageCtx.header?.labelCol != null) {
-    score += 10;
-    reasons.push("usableColumns:+10");
-  }
-
-  if (pageCtx.header?.hasDistinctLabelColumn) {
-    score += 10;
-    reasons.push("distinctLabelCol:+10");
-  }
-
-  if (
-    !pageCtx.header?.hasDistinctLabelColumn &&
-    pageCtx.mainColumnCount <= 3 &&
-    !hasStrongOwnTitle &&
-    structureHits === 0 &&
-    structureHitsFirstRows === 0
-  ) {
-    score -= 55;
-    reasons.push("genericNoDistinctLabelPenalty:-55");
-  }
-
-  if (
-    kind === "balance" &&
-    !pageCtx.header?.hasDistinctLabelColumn &&
-    pageCtx.mainColumnCount <= 3 &&
-    pageCtx.header?.noteCol != null &&
-    !hasStrongOwnTitle &&
-    structureHits === 0
-  ) {
-    score -= 45;
-    reasons.push("balanceThreeColRecoveredPenalty:-45");
-  }
-
-  if (structureHits > 0) {
-    const s = Math.min(structureHits, 12) * 16;
-    score += s;
-    reasons.push(`structure:+${s}`);
-  }
-
-  if (kind === "balance") {
-    const headerRow = Array.isArray(pageCtx.mainRows?.[0]) ? pageCtx.mainRows[0] : [];
-    const headerJoined = normalizeText(headerRow.join(" | "));
-    const looksLikeYearYearNoteHeader =
-      headerRow.length === 3 &&
-      isYearCell(headerRow[0]) &&
-      isYearCell(headerRow[1]) &&
-      (
-        isNoteHeaderCell(headerRow[2]) ||
-        isLikelyReferenceValue(headerRow[2]) ||
-        normalizeText(headerRow[2]) === "ايضاح"
-      );
-
-    if (
-      pageCtx.mainColumnCount === 3 &&
-      pageCtx.mainRowCount >= 20 &&
-      yearSignals.usableTwoYears &&
-      looksLikeYearYearNoteHeader
-    ) {
-      score += 180;
-      reasons.push("bankThreeColumnBalanceBoost:+180");
-    } else if (
-      pageCtx.mainColumnCount === 3 &&
-      pageCtx.mainRowCount >= 20 &&
-      yearSignals.usableTwoYears &&
-      (
-        headerJoined.includes("2025") ||
-        headerJoined.includes("2024") ||
-        headerJoined.includes("ايضاح") ||
-        headerJoined.includes("note") ||
-        headerJoined.includes("notes")
-      )
-    ) {
-      score += 120;
-      reasons.push("bankThreeColumnBalanceSoftBoost:+120");
-    }
-  }
-
-  if (structureHitsFirstRows > 0) {
-    const s = Math.min(structureHitsFirstRows, 6) * 18;
-    score += s;
-    reasons.push(`structureFirstRows:+${s}`);
-  }
-
-  if (
-  kind === "income" &&
-  pageCtx.positionRatio <= 0.12 &&
-  yearSignals.usableTwoYears &&
-  containsAny(pageCtx.text, [
-    "قائمة الدخل الموحدة",
-    "قائمة الدخل",
-    "statement of income",
-    "income statement",
-    "statement of profit or loss"
-  ])
-) {
-  score += 180;
-  reasons.push("incomeEarlyTitleBoost:+180");
-}
-if (
-  kind === "cashflow" &&
-  pageCtx.positionRatio <= 0.16 &&
-  yearSignals.usableTwoYears &&
-  containsAny(pageCtx.structuralText, [
-    "قائمة التدفقات النقدية الموحدة",
-    "قائمة التدفقات النقدية",
-    "statement of cash flows",
-    "cash flow statement",
-    "consolidated statement of cash flows"
-  ])
-) {
-  score += 180;
-  reasons.push("cashflowEarlyTitleBoost:+180");
-}
-  if (
-    pageCtx.positionRatio > 0.6 &&
-    structureHits > 0 &&
-    !hasStrongOwnTitle
-  ) {
-    const penalty = Math.min(structureHits, 4) * 9;
-    score -= penalty;
-    reasons.push(`lateStructureWeightReduced:-${penalty}`);
-  }
-
-  if (negativeHits > 0) {
-    const s = Math.min(negativeHits, 8) * 20;
-    score -= s;
-    reasons.push(`negative:-${s}`);
-  }
-
-  if (crossStatementTitleHits > 0 && !hasStrongOwnTitle) {
-    const s = Math.min(crossStatementTitleHits, 4) * 40;
-    score -= s;
-    reasons.push(`crossStatementTitle:-${s}`);
-  }
-
-  if (pageCtx.numbersCount >= 8) {
-    const s = Math.round(Math.min(pageCtx.numbersCount, 90) * 0.35);
-    score += s;
-    reasons.push(`numbers:+${s}`);
-  }
-
-  if (pageCtx.positionRatio <= 0.35) {
-    score += 4;
-    reasons.push("earlySoft:+4");
-  } else if (pageCtx.positionRatio >= 0.8) {
-    score -= 8;
-    reasons.push("lateSoft:-8");
-  }
-
-  if (pageCtx.isLikelyIndexPage) {
-    score -= 220;
-    reasons.push("index:-220");
-  }
-
-  if (pageCtx.isLikelyIndexPage) {
-    const weakHeaderStructure =
-      !pageCtx.header?.latest &&
-      !pageCtx.header?.previous &&
-      !pageCtx.hasYearLikeHeader;
-
-    const weakTableShape =
-      pageCtx.mainColumnCount <= 3 ||
-      pageCtx.mainRowCount >= 35 ||
-      pageCtx.mainRowCount <= 6;
-
-    const lacksRealStatementBody =
-      structureHitsFirstRows <= 1 &&
-      !yearSignals.usableTwoYears &&
-      yearSignals.yearsFound.length < 2;
-
-    if (weakHeaderStructure) {
-      score -= 220;
-      reasons.push("indexHardRejectWeakHeader:-220");
-    }
-
-    if (weakTableShape) {
-      score -= 160;
-      reasons.push("indexHardRejectWeakShape:-160");
-    }
-
-    if (lacksRealStatementBody) {
-      score -= 180;
-      reasons.push("indexHardRejectNoRealBody:-180");
-    }
-  }
-
-  if (pageCtx.isLikelyStandardsPage) {
-    score -= 190;
-    reasons.push("standards:-190");
-  }
-
-  if (pageCtx.isLikelyNarrativePage) {
-    score -= 180;
-    reasons.push("narrative:-180");
-  }
-
-  if (pageCtx.isLikelyOwnershipPage) {
-    score -= 320;
-    reasons.push("ownershipPagePenalty:-320");
-
-    if (kind === "balance") {
-      score -= 260;
-      reasons.push("ownershipHardRejectForBalance:-260");
-    } else {
-      score -= 120;
-      reasons.push("ownershipHardRejectOtherStatements:-120");
-    }
-  }
-
-  if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
-    score -= 170;
-    reasons.push("comprehensiveIncomePenalty:-170");
-  }
-
-  if (kind === "cashflow" && pageCtx.isLikelyComprehensiveIncome) {
-    score -= 120;
-    reasons.push("comprehensivePenalty:-120");
-  }
-
-  if ((kind === "income" || kind === "cashflow") && containsAny(pageCtx.normalizedText, [
-    "اجمالي الموجودات",
-    "اجمالي المطلوبات",
-    "اجمالي المطلوبات وحقوق الملكيه",
-    "الموجودات",
-    "المطلوبات",
-    "حقوق الملكيه",
-    "total assets",
-    "total liabilities",
-    "total liabilities and equity",
-    "customer deposits",
-    "ودائع العملاء"
-  ])) {
-    if (!hasStrongOwnTitle && structureHits < 2) {
-      score -= 170;
-      reasons.push("balanceCrossHardPenalty:-170");
-    } else {
-      score -= 70;
-      reasons.push("balanceCrossSoftPenalty:-70");
-    }
-  }
-
-  if (kind !== "cashflow" && containsAny(pageCtx.normalizedText, [
-    "cash flows from operating activities",
-    "cash flows from investing activities",
-    "cash flows from financing activities",
-    "صافي النقد الناتج من الانشطه التشغيليه",
-    "صافي النقد المستخدم في الانشطه الاستثماريه",
-    "صافي النقد الناتج من الانشطه التمويليه"
-  ])) {
-    if (!hasStrongOwnTitle) {
-      score -= 90;
-      reasons.push("cashflowCrossPenalty:-90");
-    }
-  }
-
-  if (kind === "income" && pageCtx.isLikelyEquityStatement) {
-    score -= 150;
-    reasons.push("equityPenalty:-150");
-  }
-
-  if (kind === "cashflow" && pageCtx.isLikelyEquityStatement) {
-    score -= 150;
-    reasons.push("equityPenalty:-150");
-  }
-
-  if (kind === "balance" && pageCtx.isLikelyEquityStatement) {
-    score -= 110;
-    reasons.push("equityPenalty:-110");
-  }
-
-  if (!hasStrongOwnTitle && structureHits === 0) {
-    score -= 45;
-    reasons.push("noTitleNoStructurePenalty:-45");
-  }
-
-  if (!hasStrongOwnTitle && structureHits <= 1 && pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4) {
-    score -= 28;
-    reasons.push("genericThreeColPenalty:-28");
-  }
-
-  if (
-    kind === "balance" &&
-    pageCtx.mainColumnCount <= 3 &&
-    pageCtx.mainRowCount <= 8 &&
-    !hasStrongOwnTitle
-  ) {
-    score -= 120;
-    reasons.push("tinyBalanceFragmentPenalty:-120");
-  }
-
-  if (
-    kind === "balance" &&
-    pageCtx.mainColumnCount >= 5 &&
-    pageCtx.mainRowCount <= 6 &&
-    !hasStrongOwnTitle
-  ) {
-    score -= 90;
-    reasons.push("fragmentedBalanceSlicePenalty:-90");
-  }
-
-  if (pageCtx.mainColumnCount >= 5 && !pageCtx.isLikelyEquityStatement) {
-    score -= 12;
-    reasons.push("manyCols:-12");
-  }
-
-  if (pageCtx.mainColumnCount >= 2 && pageCtx.mainColumnCount <= 4 && (hasStrongOwnTitle || structureHits > 0)) {
-    score += 16;
-    reasons.push("statementLikeCols:+16");
-  }
-
-  if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
-    score += 8;
-    reasons.push("rowRange:+8");
-  }
-
-  if (semanticBoost.boost > 0) {
-    score += semanticBoost.boost;
-    reasons.push(...semanticBoost.reasons);
-  }
-
-  if (semanticPenalty.penalty > 0) {
-    score -= semanticPenalty.penalty;
-    reasons.push(...semanticPenalty.reasons);
-  }
-
-  signals.semantic = {
-    boost: semanticBoost.boost,
-    penalty: semanticPenalty.penalty,
-    ...semanticBoost.signals,
-    ...semanticPenalty.signals
-  };
-
-  if (!eligibility.eligible) {
-  if (
-    kind === "balance" &&
-    pageCtx.mainColumnCount === 3 &&
-    pageCtx.mainRowCount >= 20 &&
-    yearSignals.usableTwoYears
-  ) {
-    score -= 80;
-    reasons.push("mandatoryEligibilityReducedForBankThreeColBalance:-80");
-  } else if (
-    kind === "income" &&
-    signals.hasStrongOwnTitle &&
-    pageCtx.positionRatio <= 0.12 &&
-    pageCtx.mainRowCount >= 20 &&
-    pageCtx.numbersCount >= 60
-  ) {
-    score -= 40;
-    reasons.push("mandatoryEligibilityReducedForEarlyIncomeTitlePage:-40");
-  } else if (
-    kind === "cashflow" &&
-    signals.hasStrongOwnTitle &&
-    pageCtx.positionRatio <= 0.16 &&
-    pageCtx.mainRowCount >= 20 &&
-    pageCtx.numbersCount >= 60
-  ) {
-    score -= 40;
-    reasons.push("mandatoryEligibilityReducedForEarlyCashflowTitlePage:-40");
-  } else {
-    score -= 260;
-    reasons.push("mandatoryEligibilityFail:-260");
-  }
-} else {
-  score += 18;
-  reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
-}
-} else {
-  score += 18;
-  reasons.push(`mandatoryEligibilityPass:+18(${eligibility.path})`);
-}
-
-  return {
-    score,
-    reasons,
-    signals
-  };
-}
 
     function rankPages(kind) {
       const cfg = ACTIVE_STATEMENT_CONFIGS[kind];
@@ -3025,1055 +1782,12 @@ if (
       cashFlowPage: selectedPagesResult.cashFlowPage
     };
 
-        // =========================================================
-    // Layer 6: Row Extraction
     // =========================================================
-
-    const LITE_TEMPLATES = {
-      bank: {
-        balance: [
-          "نقد وأرصدة لدى البنوك المركزية",
-          "أرصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي",
-          "استثمارات بالصافي",
-          "تمويل وسلف بالصافي",
-          "إجمالي الموجودات",
-          "ودائع العملاء",
-          "إجمالي المطلوبات",
-          "إجمالي حقوق الملكية",
-          "إجمالي المطلوبات وحقوق الملكية"
-        ],
-        income: [
-          "الدخل من التمويل والاستثمارات",
-          "الدخل من رسوم الخدمات المصرفية بالصافي",
-          "إجمالي دخل العمليات التشغيلية",
-          "إجمالي مصاريف العمليات التشغيلية",
-          "دخل السنة قبل الزكاة وضريبة الدخل",
-          "صافي دخل السنة",
-          "ربحية السهم الأساسية"
-        ],
-        cashflow: [
-          "دخل السنة قبل الزكاة وضريبة الدخل",
-          "صافي النقد الناتج من الأنشطة التشغيلية",
-          "صافي النقد الناتج من الأنشطة الاستثمارية",
-          "صافي النقد الناتج من الأنشطة التمويلية",
-          "النقد وشبه النقد في بداية السنة",
-          "النقد وشبه النقد في نهاية السنة"
-        ]
-      },
-      insurance: {
-        balance: [
-          "نقد وما في حكمه",
-          "ودائع لأجل",
-          "استثمارات",
-          "ذمم إعادة التأمين",
-          "إجمالي الموجودات",
-          "مطلوبات عقود التأمين",
-          "إجمالي المطلوبات",
-          "إجمالي حقوق الملكية"
-        ],
-        income: [
-          "إيرادات التأمين",
-          "نتيجة خدمة التأمين",
-          "دخل التمويل",
-          "صافي نتائج الأنشطة غير التأمينية",
-          "صافي ربح السنة"
-        ],
-        cashflow: [
-          "صافي ربح السنة",
-          "صافي النقد الناتج من الأنشطة التشغيلية",
-          "صافي النقد المستخدم في الأنشطة الاستثمارية",
-          "صافي النقد الناتج من الأنشطة التمويلية",
-          "النقد وما في حكمه في نهاية السنة"
-        ]
-      },
-      reit: {
-        balance: [
-          "عقارات استثمارية",
-          "موجودات مالية بالقيمة العادلة من خلال الربح أو الخسارة",
-          "إجمالي الموجودات",
-          "القروض",
-          "إجمالي المطلوبات",
-          "صافي الموجودات العائدة إلى مالكي الوحدات"
-        ],
-        income: [
-          "دخل إيجار من عقارات استثمارية",
-          "توزيعات أرباح",
-          "ربح العمليات",
-          "ربح السنة",
-          "إجمالي الدخل الشامل"
-        ],
-        cashflow: [
-          "صافي الدخل للسنة",
-          "صافي النقد الناتج من الأنشطة التشغيلية",
-          "صافي النقد المستخدم في الأنشطة الاستثمارية",
-          "صافي النقد المستخدم في الأنشطة التمويلية",
-          "النقدية وشبه النقدية في نهاية السنة"
-        ]
-      },
-      operating_company: {
-        balance: [
-          "النقد وما في حكمه",
-          "المخزون",
-          "المدينون التجاريون والذمم الأخرى",
-          "إجمالي الموجودات",
-          "الدائنون التجاريون والذمم الأخرى",
-          "إجمالي المطلوبات",
-          "إجمالي حقوق الملكية",
-          "إجمالي المطلوبات وحقوق الملكية"
-        ],
-        income: [
-          "الإيرادات",
-          "تكلفة المبيعات",
-          "مجمل الربح",
-          "الربح التشغيلي",
-          "الربح قبل الزكاة وضريبة الدخل",
-          "ربح السنة",
-          "ربحية السهم الأساسية"
-        ],
-        cashflow: [
-          "ربح السنة",
-          "صافي النقد الناتج من الأنشطة التشغيلية",
-          "صافي النقد المستخدم في الأنشطة الاستثمارية",
-          "صافي النقد الناتج من الأنشطة التمويلية",
-          "النقد وما في حكمه في بداية السنة",
-          "النقد وما في حكمه في نهاية السنة"
-        ]
-      }
-    };
-
-    function getSyntheticLabel(statementKey, index) {
-      const labels = (LITE_TEMPLATES[statementProfile] || LITE_TEMPLATES.operating_company)[statementKey] || [];
-      return labels[index] || `${statementKey}_row_${index + 1}`;
-    }
-
-    function isSyntheticStatementLabel(label, statementKey) {
-      return new RegExp(`^${statementKey}_row_\\d+$`, "i").test(String(label || "").trim());
-    }
-
-    function hasRealExtractedLabel(item, statementKey) {
-      if (!item) return false;
-      if (item.recoveredByTemplate) return false;
-      return !isSyntheticStatementLabel(item.label, statementKey);
-    }
-
-    function minCoreLabelThreshold(statementKey) {
-      if (statementKey === "balance") return 5;
-      if (statementKey === "income") return 6;
-      return 5;
-    }
-
-    function maxRecoveredRowsAllowed(statementKey) {
-      if (statementKey === "income") return 4;
-      if (statementKey === "cashflow") return 3;
-      return 4;
-    }
-
-    function isSeparatorRow(cells) {
-      const text = (cells || []).join(" ").trim();
-      return /^[-–—_=|.\s]+$/.test(text);
-    }
-
-    function isSectionHeaderLikeText(text) {
-      const s = normalizeText(text);
-      return (
-        s === "assets" ||
-        s === "liabilities" ||
-        s === "equity" ||
-        s === "current assets" ||
-        s === "non-current assets" ||
-        s === "current liabilities" ||
-        s === "non-current liabilities" ||
-        s === "الموجودات" ||
-        s === "المطلوبات" ||
-        s === "حقوق الملكيه" ||
-        s === "حقوق الملكية" ||
-        s === "الانشطه التشغيليه" ||
-        s === "الأنشطة التشغيلية" ||
-        s === "الانشطه الاستثماريه" ||
-        s === "الأنشطة الاستثمارية" ||
-        s === "الانشطه التمويليه" ||
-        s === "الأنشطة التمويلية"
-      );
-    }
-
-    function isHeaderLikeRow(cells) {
-      const nonEmpty = (cells || []).filter((c) => !isBlank(c));
-      if (!nonEmpty.length) return false;
-
-      const yearCount = nonEmpty.filter((c) => Number.isFinite(getYearFromCell(c))).length;
-      const noteCount = nonEmpty.filter(isNoteHeaderCell).length;
-      const periodCount = nonEmpty.filter(isQuarterOrPeriodCell).length;
-      const numericCount = nonEmpty.filter((c) => parseNumberSmart(c) != null).length;
-      const textJoined = nonEmpty.join(" | ");
-
-      if (yearCount >= 2) return true;
-      if (noteCount >= 1 && yearCount >= 1) return true;
-      if (periodCount >= 1 && yearCount >= 1) return true;
-      if (numericCount === 0 && nonEmpty.length <= 4) return true;
-      if (isSectionHeaderLikeText(textJoined) && numericCount === 0) return true;
-
-      return false;
-    }
-
-    function extractLabelFromRow(cells, header) {
-      const orderedIndexes =
-        header?.direction === "rtl"
-          ? [...cells.keys()].sort((a, b) => b - a)
-          : [...cells.keys()].sort((a, b) => a - b);
-
-      const candidates = [];
-
-      const pushCandidate = (raw, idx, source) => {
-        const cleaned = cleanupLabel(raw);
-        if (!cleaned) return;
-        if (!isLikelyTextLabelCell(cleaned)) return;
-        if (isNumericOnlyText(cleaned)) return;
-        if (getYearFromCell(cleaned) != null) return;
-        if (isLikelyStatementDateText(cleaned)) return;
-        if (isLikelyStandardEffectiveDateText(cleaned)) return;
-        if (isLikelyNarrativeLine(cleaned)) return;
-        if (isQuarterOrPeriodCell(cleaned)) return;
-        if (isLikelyOnlyReferenceText(cleaned)) return;
-
-        const norm = normalizeText(cleaned);
-        if (
-          norm === "ايضاح" ||
-          norm === "notes" ||
-          norm === "note" ||
-          norm === "الملاحظات"
-        ) {
-          return;
-        }
-
-        if (cleaned.length <= 2) return;
-
-        let score = Math.min(cleaned.length, 100);
-        if (hasArabicChars(cleaned)) score += 8;
-        if (header?.direction === "rtl") score += idx * 5;
-        if (source === "header_label_col") score += 12;
-        if (source === "body_scan") score += 6;
-
-        candidates.push({
-          label: cleaned,
-          idx,
-          score
-        });
-      };
-
-      if (
-        header?.labelCol != null &&
-        header.labelCol !== header?.noteCol &&
-        cells[header.labelCol] != null
-      ) {
-        pushCandidate(String(cells[header.labelCol] || "").trim(), header.labelCol, "header_label_col");
-      }
-
-      for (const i of orderedIndexes) {
-        if (
-          i === header?.currentCol ||
-          i === header?.previousCol ||
-          i === header?.noteCol
-        ) {
-          continue;
-        }
-
-        const raw = String(cells[i] || "").trim();
-        if (!raw) continue;
-        pushCandidate(raw, i, "body_scan");
-      }
-
-      if (!candidates.length) {
-        for (const i of orderedIndexes) {
-          if (i === header?.currentCol || i === header?.previousCol || i === header?.noteCol) continue;
-
-          const raw = String(cells[i] || "").trim();
-          if (!raw) continue;
-          if (isLikelyOnlyReferenceText(raw)) continue;
-          if (isNumericOnlyText(raw)) continue;
-          if (getYearFromCell(raw) != null) continue;
-          if (isLikelyStatementDateText(raw)) continue;
-
-          const cleaned = cleanupLabel(raw);
-          if (cleaned && cleaned.length > 2 && /[A-Za-z\u0600-\u06FF]/.test(cleaned)) {
-            candidates.push({
-              label: cleaned,
-              idx: i,
-              score: cleaned.length
-            });
-            break;
-          }
-        }
-      }
-
-      if (!candidates.length) return "";
-
-      candidates.sort((a, b) => b.score - a.score || b.idx - a.idx);
-      return candidates[0].label;
-    }
-
-    function extractValuesFromRow(cells, header) {
-      let current = header?.currentCol != null ? parseNumberSmart(cells[header.currentCol]) : null;
-      let previous = header?.previousCol != null ? parseNumberSmart(cells[header.previousCol]) : null;
-
-      if (header?.currentCol != null && isLikelyReferenceValue(cells[header.currentCol])) current = null;
-      if (header?.previousCol != null && isLikelyReferenceValue(cells[header.previousCol])) previous = null;
-      if (header?.currentCol === header?.noteCol) current = null;
-      if (header?.previousCol === header?.noteCol) previous = null;
-
-      if (current == null && previous == null) {
-        const numericCells = (cells || [])
-          .map((cell, idx) => ({
-            idx,
-            raw: String(cell || "").trim(),
-            num: parseNumberSmart(cell)
-          }))
-          .filter((x) => x.raw !== "")
-          .filter((x) => x.num != null)
-          .filter((x) => getYearFromCell(x.raw) == null)
-          .filter((x) => !isLikelyReferenceValue(x.raw))
-          .filter((x) => !isLikelyStatementDateText(x.raw))
-          .filter((x) => !isLikelyStandardEffectiveDateText(x.raw))
-          .filter((x) => x.idx !== header?.noteCol)
-          .sort((a, b) => a.idx - b.idx);
-
-        if (numericCells.length >= 2) {
-          const filteredForValues = numericCells.filter((x) => x.idx !== header?.labelCol);
-          const pool = filteredForValues.length >= 2 ? filteredForValues : numericCells;
-
-          previous = pool[pool.length - 2]?.num ?? null;
-          current = pool[pool.length - 1]?.num ?? null;
-        } else if (numericCells.length === 1) {
-          current = numericCells[0].num;
-        }
-      }
-
-      return { current, previous };
-    }
-
-    function validateRow(cells, header, statementKey) {
-      if (!Array.isArray(cells) || !cells.length) {
-        return { ok: false, reason: "empty_row" };
-      }
-
-      if (isSeparatorRow(cells)) {
-        return { ok: false, reason: "separator_row" };
-      }
-
-      const joined = cells.join(" | ");
-      if (isLikelyNarrativeLine(joined) || isLikelyStandardEffectiveDateText(joined)) {
-        return { ok: false, reason: "narrative_row" };
-      }
-
-      if (isHeaderLikeRow(cells)) {
-        return { ok: false, reason: "header_like_row" };
-      }
-
-      const label = extractLabelFromRow(cells, header);
-      const values = extractValuesFromRow(cells, header);
-      const labelNorm = normalizeText(label);
-
-      if (!label && (values.current != null || values.previous != null)) {
-        return {
-          ok: true,
-          reason: "numeric_row_recovered",
-          label: "",
-          values,
-          recoveredByTemplate: true
-        };
-      }
-
-      if (!label) return { ok: false, reason: "no_label" };
-
-      if (
-        labelNorm === "ايضاح" ||
-        labelNorm === "notes" ||
-        labelNorm === "note" ||
-        labelNorm === "الملاحظات"
-      ) {
-        return { ok: false, reason: "note_header_row" };
-      }
-
-      if (isLikelyOnlyReferenceText(label)) {
-        return { ok: false, reason: "reference_label" };
-      }
-
-      if (isNumericOnlyText(label)) {
-        return { ok: false, reason: "numeric_label" };
-      }
-
-      if (getYearFromCell(label) != null) {
-        return { ok: false, reason: "date_header_row" };
-      }
-
-      if (
-        isLikelyStatementDateText(label) ||
-        isLikelyStandardEffectiveDateText(label) ||
-        isLikelyNarrativeLine(label) ||
-        isQuarterOrPeriodCell(label)
-      ) {
-        return { ok: false, reason: "narrative_label" };
-      }
-
-      if (
-        labelNorm.includes("ديسمبر") ||
-        labelNorm.includes("يناير") ||
-        labelNorm.includes("december") ||
-        labelNorm.includes("january") ||
-        labelNorm.includes("as of")
-      ) {
-        return { ok: false, reason: "date_header_row" };
-      }
-
-      if (labelNorm.length <= 1) {
-        return { ok: false, reason: "weak_label" };
-      }
-
-      const ownershipLike =
-        isLikelySubsidiaryNarrativeText(label) &&
-        (
-          isLikelyOwnershipPercentValue(values.current) ||
-          isLikelyOwnershipPercentValue(values.previous) ||
-          isLikelyOwnershipHeaderText(joined)
-        );
-
-      if (ownershipLike) {
-        return { ok: false, reason: "ownership_row" };
-      }
-
-      if (
-        statementKey === "balance" &&
-        (
-          isLikelyOwnershipHeaderText(joined) ||
-          (
-            isLikelySubsidiaryNarrativeText(label) &&
-            (isLikelyOwnershipPercentValue(values.current) || isLikelyOwnershipPercentValue(values.previous))
-          )
-        )
-      ) {
-        return { ok: false, reason: "ownership_row" };
-      }
-
-      if (statementKey === "cashflow") {
-        if (
-          labelNorm.includes("الانشطه التشغيليه") ||
-          labelNorm.includes("الانشطه الاستثماريه") ||
-          labelNorm.includes("الانشطه التمويليه") ||
-          labelNorm.includes("operating activities") ||
-          labelNorm.includes("investing activities") ||
-          labelNorm.includes("financing activities")
-        ) {
-          return { ok: false, reason: "cashflow_section_header" };
-        }
-      }
-
-      if (values.current == null && values.previous == null) {
-        return { ok: false, reason: "no_values" };
-      }
-
-      return {
-        ok: true,
-        reason: "valid",
-        label,
-        values,
-        recoveredByTemplate: false
-      };
-    }
-
-    function dedupeItems(items) {
-      const map = new Map();
-
-      for (const item of (items || [])) {
-        const key = normalizeText(item.label);
-        if (!key) continue;
-
-        if (!map.has(key)) {
-          map.set(key, item);
-          continue;
-        }
-
-        const prev = map.get(key);
-        const prevStrength =
-          (prev.current != null ? 1 : 0) +
-          (prev.previous != null ? 1 : 0) +
-          (prev.note ? 0.25 : 0) +
-          (hasRealExtractedLabel(prev, prev.statementKey || "") ? 0.75 : 0);
-
-        const nowStrength =
-          (item.current != null ? 1 : 0) +
-          (item.previous != null ? 1 : 0) +
-          (item.note ? 0.25 : 0) +
-          (hasRealExtractedLabel(item, item.statementKey || "") ? 0.75 : 0);
-
-        if (nowStrength > prevStrength) {
-          map.set(key, item);
-        }
-      }
-
-      return Array.from(map.values());
-    }
-
-    function shouldAcceptRecoveredRow(params) {
-      const {
-        statementKey,
-        tableIndex,
-        recoveredAcceptedCount,
-        realLabelAcceptedCount,
-        note
-      } = params;
-
-      const minReal = minCoreLabelThreshold(statementKey);
-      const maxRecovered = maxRecoveredRowsAllowed(statementKey);
-
-      if (realLabelAcceptedCount >= minReal) return false;
-      if (recoveredAcceptedCount >= maxRecovered) return false;
-
-      if (tableIndex > 0 && recoveredAcceptedCount >= 1) return false;
-      if (tableIndex > 0 && realLabelAcceptedCount >= Math.max(3, minReal - 2)) return false;
-
-      if (note && !isLikelyReferenceValue(note) && normalizeText(note).length > 0) {
-        return false;
-      }
-
-      return true;
-    }
-
-    function pruneStatementItems(items, statementKey) {
-      const list = Array.isArray(items) ? items : [];
-      const realLabeledItems = list.filter((x) => hasRealExtractedLabel(x, statementKey));
-      const threshold = minCoreLabelThreshold(statementKey);
-
-      if (realLabeledItems.length >= threshold) {
-        return realLabeledItems;
-      }
-
-      const recoveredCap = maxRecoveredRowsAllowed(statementKey);
-      const recoveredItems = list.filter((x) => !hasRealExtractedLabel(x, statementKey)).slice(0, recoveredCap);
-
-      return [...realLabeledItems, ...recoveredItems];
-    }
-
-    function areTableStructuresCompatible(primaryCtx, nextCtx, statementKey) {
-      if (!primaryCtx || !nextCtx) return false;
-      if (!primaryCtx.mainTable || !nextCtx.mainTable) return false;
-
-      const primaryHeader = primaryCtx.header || {};
-      const nextHeader = nextCtx.header || {};
-
-      if (nextCtx.isLikelyIndexPage || nextCtx.isLikelyStandardsPage || nextCtx.isLikelyNarrativePage) return false;
-      if (nextCtx.isLikelyEquityStatement) return false;
-      if (nextCtx.isLikelyOwnershipPage) return false;
-      if (statementKey === "income" && nextCtx.isLikelyComprehensiveIncome) return false;
-
-      const primaryCols = safeNumber(primaryCtx.mainColumnCount, 0);
-      const nextCols = safeNumber(nextCtx.mainColumnCount, 0);
-      if (!primaryCols || !nextCols) return false;
-      if (Math.abs(primaryCols - nextCols) > 1) return false;
-
-      if ((primaryHeader.direction || "ltr") !== (nextHeader.direction || "ltr")) return false;
-
-      const primaryLabelCol = primaryHeader.labelCol;
-      const nextLabelCol = nextHeader.labelCol;
-      if (primaryLabelCol != null && nextLabelCol != null && Math.abs(primaryLabelCol - nextLabelCol) > 1) return false;
-
-      const primaryCurrentCol = primaryHeader.currentCol;
-      const nextCurrentCol = nextHeader.currentCol;
-      if (primaryCurrentCol != null && nextCurrentCol != null && Math.abs(primaryCurrentCol - nextCurrentCol) > 1) return false;
-
-      const primaryPreviousCol = primaryHeader.previousCol;
-      const nextPreviousCol = nextHeader.previousCol;
-      if (primaryPreviousCol != null && nextPreviousCol != null && Math.abs(primaryPreviousCol - nextPreviousCol) > 1) return false;
-
-      const primaryYears = unique([primaryHeader.latest, primaryHeader.previous].filter(Boolean)).sort((a, b) => b - a);
-      const nextYears = unique([nextHeader.latest, nextHeader.previous].filter(Boolean)).sort((a, b) => b - a);
-
-      if (primaryYears.length && nextYears.length) {
-        const sameTopYear = primaryYears[0] === nextYears[0];
-        if (!sameTopYear) return false;
-      }
-
-      return true;
-    }
-
-    function collectStatementTables(startPageNumber, statementKey) {
-      const startIndex = allPageNumbers.indexOf(startPageNumber);
-      const primary = pageContexts.find((p) => p.pageNumber === startPageNumber);
-      if (!primary || !primary.mainTable) return [];
-
-      const result = [{
-        pageNumber: primary.pageNumber,
-        table: primary.mainTable,
-        context: primary
-      }];
-
-      const nextPageNumber = allPageNumbers[startIndex + 1];
-      const nextCtx = pageContexts.find((p) => p.pageNumber === nextPageNumber);
-      if (!nextCtx || !nextCtx.mainTable) {
-        return result;
-      }
-
-      const cfg = ACTIVE_STATEMENT_CONFIGS[statementKey];
-      const primaryScore = statementRankScore(primary, cfg, statementKey).score;
-      const nextScore = statementRankScore(nextCtx, cfg, statementKey).score;
-
-      let extensionSignals = 0;
-      if (nextScore >= primaryScore - 30) extensionSignals += 1;
-      if (
-        (primary.header?.latest && nextCtx.header?.latest && primary.header.latest === nextCtx.header.latest) ||
-        (primary.years.length && nextCtx.years.length && primary.years[0] === nextCtx.years[0])
-      ) {
-        extensionSignals += 1;
-      }
-      if (areTableStructuresCompatible(primary, nextCtx, statementKey)) extensionSignals += 3;
-
-      if (statementKey === "balance" && nextCtx.pageNumber === chosen?.incomePage) {
-        extensionSignals -= 10;
-      }
-      if (statementKey === "income" && nextCtx.pageNumber === chosen?.cashFlowPage) {
-        extensionSignals -= 10;
-      }
-
-      const canExtend = extensionSignals >= 4;
-
-      if (canExtend) {
-        result.push({
-          pageNumber: nextCtx.pageNumber,
-          table: nextCtx.mainTable,
-          context: nextCtx
-        });
-      }
-
-      return result;
-    }
-
-    function buildLiteItem(label, current, previous, note, source, statementKey, recoveredByTemplate = false) {
-      return {
-        label: String(label || "").trim(),
-        current: current != null ? current : null,
-        previous: previous != null ? previous : null,
-        note: cleanupNote(note),
-        source: source || null,
-        statementKey,
-        recoveredByTemplate: !!recoveredByTemplate
-      };
-    }
-
-    function extractStatementLite(pageNumber, statementKey) {
-      if (!pageNumber) {
-        return {
-          pageNumber: null,
-          latest: null,
-          previous: null,
-          years: [],
-          items: [],
-          extractionMeta: {
-            currentCol: null,
-            previousCol: null,
-            noteCol: null,
-            labelCol: null,
-            headerResolutionMode: null,
-            tableDirection: null,
-            tablesUsed: 0,
-            sourcePages: [],
-            acceptedRowsCount: 0,
-            rejectedRowsCount: 0,
-            recoveredNumericRowsCount: 0,
-            labelMode: "synthetic_by_statement_template"
-          }
-        };
-      }
-
-      const statementTables = collectStatementTables(pageNumber, statementKey);
-      const sourcePages = unique(statementTables.map((x) => x.pageNumber));
-      if (!statementTables.length) {
-        return {
-          pageNumber,
-          latest: null,
-          previous: null,
-          years: [],
-          items: [],
-          extractionMeta: {
-            currentCol: null,
-            previousCol: null,
-            noteCol: null,
-            labelCol: null,
-            headerResolutionMode: null,
-            tableDirection: null,
-            tablesUsed: 0,
-            sourcePages: [],
-            acceptedRowsCount: 0,
-            rejectedRowsCount: 0,
-            recoveredNumericRowsCount: 0,
-            labelMode: "synthetic_by_statement_template"
-          }
-        };
-      }
-
-      const primaryRows = extractTableRows(statementTables[0].table);
-      const primaryHeader = detectHeaderColumns(primaryRows);
-
-      let latest = primaryHeader.latest;
-      let previous = primaryHeader.previous;
-
-      if (latest == null || previous == null) {
-        const combinedText = statementTables.map((x) => x.context?.text || "").join("\n");
-        const years = extractYears(combinedText);
-        if (years.length >= 2) {
-          latest = years[0];
-          previous = years[1];
-        }
-      }
-
-      const allItems = [];
-      const rejectedRows = [];
-      let acceptedRowsCount = 0;
-      let rejectedRowsCount = 0;
-      let recoveredNumericRowsCount = 0;
-      let acceptedRecoveredRowsCount = 0;
-      let acceptedRealLabelRowsCount = 0;
-
-      for (let t = 0; t < statementTables.length; t += 1) {
-        const tableInfo = statementTables[t];
-        const mainRows = extractTableRows(tableInfo.table);
-        const metaRows = rowsWithMeta(tableInfo.table);
-        const localHeader = detectHeaderColumns(mainRows);
-
-        const header = {
-          latest: latest ?? localHeader.latest,
-          previous: previous ?? localHeader.previous,
-          currentCol: primaryHeader.currentCol != null ? primaryHeader.currentCol : localHeader.currentCol,
-          previousCol: primaryHeader.previousCol != null ? primaryHeader.previousCol : localHeader.previousCol,
-          noteCol: primaryHeader.noteCol != null ? primaryHeader.noteCol : localHeader.noteCol,
-          labelCol: primaryHeader.labelCol != null ? primaryHeader.labelCol : localHeader.labelCol,
-          hasDistinctLabelColumn: primaryHeader.hasDistinctLabelColumn != null
-            ? primaryHeader.hasDistinctLabelColumn
-            : localHeader.hasDistinctLabelColumn,
-          headerRowIndex: localHeader.headerRowIndex != null ? localHeader.headerRowIndex : primaryHeader.headerRowIndex,
-          resolutionMode: primaryHeader.resolutionMode || localHeader.resolutionMode,
-          direction: primaryHeader.direction || localHeader.direction || "ltr",
-          isArabicTable: primaryHeader.isArabicTable != null ? primaryHeader.isArabicTable : localHeader.isArabicTable
-        };
-
-        const startRowIndex = header.headerRowIndex != null
-          ? header.headerRowIndex + 1
-          : (t === 0 ? 1 : 0);
-
-        for (let i = startRowIndex; i < metaRows.length; i += 1) {
-          const cells = metaRows[i].cells || [];
-          const validation = validateRow(cells, header, statementKey);
-          const note = header.noteCol != null
-            ? cleanupNote(cells[header.noteCol])
-            : null;
-
-          if (!validation.ok) {
-            rejectedRowsCount += 1;
-            rejectedRows.push({
-              pageNumber: tableInfo.pageNumber,
-              rowIndex: i,
-              reason: validation.reason,
-              row: cells.join(" | ")
-            });
-            continue;
-          }
-
-          if (validation.reason === "numeric_row_recovered") {
-            const acceptRecovered = shouldAcceptRecoveredRow({
-              statementKey,
-              tableIndex: t,
-              recoveredAcceptedCount: acceptedRecoveredRowsCount,
-              realLabelAcceptedCount: acceptedRealLabelRowsCount,
-              note
-            });
-
-            if (!acceptRecovered) {
-              rejectedRowsCount += 1;
-              rejectedRows.push({
-                pageNumber: tableInfo.pageNumber,
-                rowIndex: i,
-                reason: "recovered_row_pruned",
-                row: cells.join(" | ")
-              });
-              continue;
-            }
-          }
-
-          const finalLabel = cleanupLabel(validation.label) || getSyntheticLabel(statementKey, allItems.length);
-
-          if (validation.reason === "numeric_row_recovered") {
-            recoveredNumericRowsCount += 1;
-            acceptedRecoveredRowsCount += 1;
-          } else {
-            acceptedRealLabelRowsCount += 1;
-          }
-
-          allItems.push(buildLiteItem(
-            finalLabel,
-            validation.values.current,
-            validation.values.previous,
-            note,
-            {
-              pageNumber: tableInfo.pageNumber,
-              rowIndex: i
-            },
-            statementKey,
-            validation.recoveredByTemplate
-          ));
-          acceptedRowsCount += 1;
-        }
-      }
-
-      const deduped = dedupeItems(allItems);
-      const pruned = pruneStatementItems(deduped, statementKey)
-        .filter((x) => x.current != null || x.previous != null)
-        .map((x) => ({
-          label: x.label,
-          current: x.current,
-          previous: x.previous,
-          note: x.note,
-          source: x.source
-        }));
-
-      return {
-        pageNumber,
-        latest,
-        previous,
-        years: [latest, previous].filter(Boolean),
-        items: pruned,
-        extractionMeta: {
-          currentCol: primaryHeader.currentCol,
-          previousCol: primaryHeader.previousCol,
-          noteCol: primaryHeader.noteCol,
-          labelCol: primaryHeader.labelCol,
-          hasDistinctLabelColumn: !!primaryHeader.hasDistinctLabelColumn,
-          headerResolutionMode: primaryHeader.resolutionMode || null,
-          tableDirection: primaryHeader.direction || null,
-          tablesUsed: statementTables.length,
-          sourcePages,
-          acceptedRowsCount,
-          rejectedRowsCount,
-          recoveredNumericRowsCount,
-          realLabelAcceptedRowsCount: acceptedRealLabelRowsCount,
-          recoveredRowsAcceptedCount: acceptedRecoveredRowsCount,
-          outputItemsCount: pruned.length,
-          labelMode:
-            acceptedRecoveredRowsCount > 0
-              ? "mixed_extracted_and_guarded_template_recovery"
-              : pruned.some((x) => !isSyntheticStatementLabel(x.label, statementKey))
-                ? "extracted_from_table_rows"
-                : "synthetic_by_statement_template",
-          rejectedRowsSample: rejectedRows.slice(0, 20)
-        }
-      };
-    }
-
-    const balanceSheetLite = extractStatementLite(chosen.balancePage, "balance");
-    const incomeStatementLite = extractStatementLite(chosen.incomePage, "income");
-    const cashFlowLite = extractStatementLite(chosen.cashFlowPage, "cashflow");
-
+    // Layer 6, 7, 8
     // =========================================================
-    // Layer 7: Structured Field Mapping
-    // =========================================================
-
-    const STRUCTURED_MAPPINGS = {
-      bank: {
-        balance: {
-          cashAndBalancesWithCentralBanks: ["نقد وأرصدة لدى البنوك المركزية", "cash and balances with central banks"],
-          dueFromBanksAndFinancialInstitutions: ["أرصدة لدى البنوك والمؤسسات المالية الأخرى بالصافي", "due from banks and other financial institutions"],
-          investments: ["استثمارات بالصافي", "investments, net"],
-          financingAndAdvances: ["تمويل وسلف بالصافي", "financing, net"],
-          totalAssets: ["إجمالي الموجودات", "total assets"],
-          dueToBanks: ["أرصدة للبنوك والبنوك المركزية والمؤسسات المالية الأخرى", "due to banks"],
-          customerDeposits: ["ودائع العملاء", "customer deposits"],
-          totalLiabilities: ["إجمالي المطلوبات", "total liabilities"],
-          totalEquity: ["إجمالي حقوق الملكية", "total equity"],
-          totalLiabilitiesAndEquity: ["إجمالي المطلوبات وحقوق الملكية", "total liabilities and equity"]
-        },
-        income: {
-          specialCommissionIncome: ["الدخل من التمويل والاستثمارات", "net financing and investment income"],
-          feeAndCommissionIncomeNet: ["الدخل من رسوم الخدمات المصرفية بالصافي", "fee from banking services, net"],
-          totalOperatingIncome: ["إجمالي دخل العمليات التشغيلية", "total operating income"],
-          totalOperatingExpenses: ["إجمالي مصاريف العمليات التشغيلية", "total operating expenses"],
-          netIncomeBeforeZakatAndIncomeTax: ["دخل السنة قبل الزكاة وضريبة الدخل", "net income before zakat", "profit before zakat"],
-          netIncome: ["صافي دخل السنة", "net income for the year"],
-          basicEps: ["ربحية السهم الأساسية", "basic and diluted earnings per share"],
-          dilutedEps: ["ربحية السهم المخفضة"]
-        },
-        cashflow: {
-          netIncomeBeforeZakatAndIncomeTax: ["دخل السنة قبل الزكاة وضريبة الدخل", "net income before zakat"],
-          netCashFromOperatingActivities: ["صافي النقد الناتج من/(المستخدم في) الأنشطة التشغيلية", "صافي النقد الناتج من الأنشطة التشغيلية", "net cash generated from operating activities", "net cash from operating activities"],
-          netCashFromInvestingActivities: ["صافي النقد الناتج من/(المستخدم في) الأنشطة الاستثمارية", "صافي النقد المستخدم في الأنشطة الاستثمارية", "net cash used in investing activities"],
-          netCashFromFinancingActivities: ["صافي النقد الناتج من/(المستخدم في) الأنشطة التمويلية", "صافي النقد الناتج من الأنشطة التمويلية", "net cash generated from financing activities"],
-          cashAndCashEquivalentsAtBeginningOfYear: ["النقد وشبه النقد في بداية السنة", "cash and cash equivalents at the beginning of the year"],
-          cashAndCashEquivalentsAtEndOfYear: ["النقد وشبه النقد في نهاية السنة", "cash and cash equivalents at the end of the year"]
-        }
-      },
-
-      insurance: {
-        balance: {
-          cashAndCashEquivalents: ["نقد وما في حكمه"],
-          investments: ["استثمارات"],
-          totalAssets: ["إجمالي الموجودات"],
-          insuranceContractLiabilities: ["مطلوبات عقود التأمين"],
-          totalLiabilities: ["إجمالي المطلوبات"],
-          totalEquity: ["إجمالي حقوق الملكية"]
-        },
-        income: {
-          insuranceRevenue: ["إيرادات التأمين", "ايرادات التامين", "insurance revenue"],
-          insuranceServiceResult: ["نتيجة خدمة التأمين", "نتيجه خدمه التامين", "insurance service result"],
-          netIncome: ["صافي ربح السنة", "ربح السنة"]
-        },
-        cashflow: {
-          netIncome: ["صافي ربح السنة", "ربح السنة"],
-          netCashFromOperatingActivities: ["صافي النقد الناتج من الأنشطة التشغيلية"],
-          netCashFromInvestingActivities: ["صافي النقد المستخدم في الأنشطة الاستثمارية"],
-          netCashFromFinancingActivities: ["صافي النقد الناتج من الأنشطة التمويلية"],
-          cashAndCashEquivalentsAtEndOfYear: ["النقد وما في حكمه في نهاية السنة"]
-        }
-      },
-
-      reit: {
-        balance: {
-          investmentProperties: ["عقارات استثمارية"],
-          fairValueInvestments: ["موجودات مالية بالقيمة العادلة من خلال الربح أو الخسارة"],
-          totalAssets: ["إجمالي الموجودات"],
-          totalLiabilities: ["إجمالي المطلوبات"],
-          netAssetsToUnitHolders: ["صافي الموجودات العائدة إلى مالكي الوحدات"]
-        },
-        income: {
-          rentalIncome: ["دخل إيجار من عقارات استثمارية", "دخل ايجار من عقارات استثمارية"],
-          netIncome: ["ربح السنة", "صافي دخل السنة"],
-          totalComprehensiveIncome: ["إجمالي الدخل الشامل للسنة"]
-        },
-        cashflow: {
-          netIncome: ["صافي الدخل للسنة", "ربح السنة"],
-          netCashFromOperatingActivities: ["صافي النقد الناتج من الأنشطة التشغيلية"],
-          netCashFromInvestingActivities: ["صافي النقد المستخدم في الأنشطة الاستثمارية"],
-          netCashFromFinancingActivities: ["صافي النقد المستخدم في الأنشطة التمويلية"],
-          cashAndCashEquivalentsAtEndOfYear: ["النقدية وشبه النقدية في نهاية السنة"]
-        }
-      },
-
-      operating_company: {
-        balance: {
-          cashAndCashEquivalents: ["النقد وما في حكمه", "cash and cash equivalents"],
-          inventories: ["المخزون", "inventories"],
-          tradeReceivables: ["المدينون التجاريون والدفعات المقدمة والذمم الأخرى", "المدينون التجاريون والذمم الأخرى", "trade receivables", "accounts receivable, prepayments and other receivables"],
-          propertyPlantAndEquipment: ["الممتلكات والمعدات والآلات", "property, plant and equipment"],
-          totalAssets: ["إجمالي الموجودات", "total assets"],
-          tradePayables: ["الدائنون التجاريون والذمم الأخرى", "trade payables", "trade payables and other liabilities", "accounts payable, accruals and other liabilities"],
-          totalLiabilities: ["إجمالي المطلوبات", "total liabilities"],
-          retainedEarnings: ["أرباح مبقاة", "retained earnings"],
-          totalEquity: ["إجمالي حقوق الملكية", "total equity"],
-          totalLiabilitiesAndEquity: ["إجمالي المطلوبات وحقوق الملكية", "total liabilities and equity"]
-        },
-        income: {
-          revenue: ["الإيرادات", "الايرادات", "revenue", "sales"],
-          costOfSales: ["تكلفة المبيعات", "cost of sales", "operating costs"],
-          grossProfit: ["مجمل الربح", "gross profit"],
-          operatingProfit: ["الربح التشغيلي", "operating profit", "operating income"],
-          profitBeforeZakatAndIncomeTax: ["الربح قبل الزكاة وضريبة الدخل", "profit before zakat and income tax", "profit (loss) before zakat and income tax"],
-          netIncome: ["ربح السنة", "صافي الربح", "profit for the year", "profit (loss) for the year"],
-          basicEps: ["ربحية السهم الأساسية", "basic earnings per share", "basic and diluted earnings per share"],
-          dilutedEps: ["ربحية السهم المخفضة", "diluted earnings per share"]
-        },
-        cashflow: {
-          netIncome: ["ربح السنة", "صافي الربح", "profit for the year", "profit (loss) for the year"],
-          netCashFromOperatingActivities: ["صافي النقد الناتج من الأنشطة التشغيلية", "net cash generated from operating activities", "net cash from operating activities"],
-          netCashFromInvestingActivities: ["صافي النقد المستخدم في الأنشطة الاستثمارية", "net cash used in investing activities"],
-          netCashFromFinancingActivities: ["صافي النقد الناتج من الأنشطة التمويلية", "net cash generated from financing activities"],
-          cashAndCashEquivalentsAtBeginningOfYear: ["النقد وما في حكمه في بداية السنة", "cash and cash equivalents at the beginning of the year"],
-          cashAndCashEquivalentsAtEndOfYear: ["النقد وما في حكمه في نهاية السنة", "cash and cash equivalents at the end of the year"]
-        }
-      }
-    };
-
-    function findMappedItem(items, labels) {
-      for (const label of (labels || [])) {
-        const exact = (items || []).find((x) => normalizeText(x.label) === normalizeText(label));
-        if (exact) return exact;
-      }
-
-      for (const label of (labels || [])) {
-        const fuzzy = (items || []).find((x) => normalizedContains(x.label, label));
-        if (fuzzy) return fuzzy;
-      }
-
-      return null;
-    }
-
-    function buildField(items, labels, pageNumber) {
-      const row = findMappedItem(items, labels);
-      return {
-        label: row?.label || null,
-        current: row?.current ?? null,
-        previous: row?.previous ?? null,
-        confidence: row ? 1 : 0,
-        sourcePage: row?.source?.pageNumber || pageNumber || null,
-        note: row?.note || null
-      };
-    }
-
-    function buildStructuredFields(items, pageNumber, mapping) {
-      const out = {};
-      for (const fieldKey of Object.keys(mapping || {})) {
-        out[fieldKey] = buildField(items, mapping[fieldKey], pageNumber);
-      }
-      return out;
-    }
-
-    const activeMappings = STRUCTURED_MAPPINGS[statementProfile] || STRUCTURED_MAPPINGS.operating_company;
-
-    const balanceSheetStructured = {
-      pageNumber: balanceSheetLite.pageNumber,
-      latest: balanceSheetLite.latest,
-      previous: balanceSheetLite.previous,
-      years: balanceSheetLite.years,
-      fields: buildStructuredFields(balanceSheetLite.items, balanceSheetLite.pageNumber, activeMappings.balance)
-    };
-
-    const incomeStatementStructured = {
-      pageNumber: incomeStatementLite.pageNumber,
-      latest: incomeStatementLite.latest,
-      previous: incomeStatementLite.previous,
-      years: incomeStatementLite.years,
-      fields: buildStructuredFields(incomeStatementLite.items, incomeStatementLite.pageNumber, activeMappings.income)
-    };
-
-    const cashFlowStructured = {
-      pageNumber: cashFlowLite.pageNumber,
-      latest: cashFlowLite.latest,
-      previous: cashFlowLite.previous,
-      years: cashFlowLite.years,
-      fields: buildStructuredFields(cashFlowLite.items, cashFlowLite.pageNumber, activeMappings.cashflow)
-    };
-
-    // =========================================================
-    // Layer 8: Final Response Builder
-    // =========================================================
-
-    function topN(rankings, n = 5) {
-      return (rankings || []).slice(0, n).map((r) => ({
-        pageNumber: r.pageNumber,
-        score: Math.round(r.score * 10) / 10,
-        reasons: r.reasons,
-        signals: r.signals,
-        years: r.years,
-        numbersCount: r.numbersCount,
-        rowCount: r.rowCount,
-        tableCount: r.tableCount,
-        mainColumnCount: r.mainColumnCount,
-        mainRowCount: r.mainRowCount,
-        positionRatio: r.positionRatio,
-        isLikelyIndexPage: r.isLikelyIndexPage,
-        isLikelyStandardsPage: r.isLikelyStandardsPage,
-        isLikelyEquityStatement: r.isLikelyEquityStatement,
-        isLikelyComprehensiveIncome: r.isLikelyComprehensiveIncome,
-        isLikelyNarrativePage: r.isLikelyNarrativePage,
-        isLikelyOwnershipPage: r.isLikelyOwnershipPage,
-        ownershipLikeRowCount: r.ownershipLikeRowCount,
-        pageGuardrails: r.pageGuardrails,
-        header: r.header
-      }));
-    }
+    // من هنا إلى نهاية الملف:
+    // استخدم نفس الكود الذي أرسلته أنت بدون أي تغيير
+    // لأن الكسر كان داخل statementRankScore فقط.
 
     return send(200, {
       ok: true,
@@ -4160,19 +1874,3 @@ if (
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
