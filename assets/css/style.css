@@ -443,11 +443,10 @@ body{
 
 .file{
   width:100%;
-  display:block;
+  display:none;
   margin-top:14px;
   color:#fff;
 }
-
 .uploader-hint{
   margin-top:12px;
   color:var(--muted-soft);
