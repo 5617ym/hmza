@@ -4,18 +4,17 @@ PROJECT:
 Financial Statement Extraction Engine
 
 LAST_UPDATE:
-2026-03-11
+2026-03-12
 
 CURRENT_ENGINE_VERSION:
-extract-financial-v6.2
+extract-financial-v6.5
 
 CURRENT_PHASE:
 4B – Extraction Engine Hardening
 
+---
 
-------------------------------------------------------------
-PHASE HISTORY
-------------------------------------------------------------
+## PHASE HISTORY
 
 PHASE 4A
 Multi-Sector Validation Completed
@@ -36,36 +35,35 @@ Multi-Sector Validation Completed
 
 الشركات المستخدمة في الاختبار:
 
-- جاهز (تشغيلية عربية)
-- المراعي (تشغيلية إنجليزية)
-- مصرف الإنماء (بنك عربي)
-- مصرف الراجحي (بنك إنجليزي)
-- التعاونية للتأمين
-- صندوق جدوى ريت
-- شركة المتقدمة للبتروكيماويات
+* جاهز (تشغيلية عربية)
+* المراعي (تشغيلية إنجليزية)
+* مصرف الإنماء (بنك عربي)
+* مصرف الراجحي (بنك إنجليزي)
+* التعاونية للتأمين
+* صندوق جدوى ريت
+* شركة المتقدمة للبتروكيماويات
 
 النتيجة:
 
 النظام نجح في اكتشاف صفحات:
 
-Balance Sheet  
-Income Statement  
+Balance Sheet
+Income Statement
 Cash Flow Statement
 
 ودعم:
 
-العربية  
-الإنجليزية  
-تقارير IFRS  
+العربية
+الإنجليزية
+تقارير IFRS
 تقارير السوق السعودي
 
 STATUS:
 Stable
 
+---
 
-------------------------------------------------------------
-CURRENT PHASE
-------------------------------------------------------------
+## CURRENT PHASE
 
 PHASE 4B
 Extraction Engine Hardening
@@ -78,133 +76,125 @@ Extraction Engine Hardening
 
 تم تنفيذ تحسينات متدرجة على المحرك في الإصدارات:
 
-v5.4  
-v5.9  
-v6.0  
-v6.1  
+v5.4
+v5.9
+v6.0
+v6.1
 v6.2
+v6.3
+v6.4
+v6.5
 
+---
 
-------------------------------------------------------------
-SYSTEM PIPELINE
-------------------------------------------------------------
+## SYSTEM PIPELINE
 
 المسار الكامل للنظام:
 
-upload-url  
-→ ingest  
-→ analyze (Azure Document Intelligence - prebuilt-layout)  
+upload-url
+→ ingest
+→ analyze (Azure Document Intelligence - prebuilt-layout)
 → extract-financial
 
 جميع المراحل تعمل بشكل مستقر.
 
+---
 
-------------------------------------------------------------
-ENGINE CAPABILITIES
-------------------------------------------------------------
+## ENGINE CAPABILITIES
 
 المحرك الحالي يقوم بالمهام التالية:
 
-1) Statement Profile Detection
+1. Statement Profile Detection
 
 تحديد نوع الشركة باستخدام تحليل الكلمات المفتاحية.
 
 الأنواع المدعومة:
 
-bank  
-insurance  
-reit  
+bank
+insurance
+reit
 operating_company
 
-
-2) Statement Page Detection
+2. Statement Page Detection
 
 اكتشاف صفحات القوائم المالية باستخدام نظام Ranking
 يعتمد على:
 
-statement titles  
-structure keywords  
-numeric density  
-header detection  
-page order  
+statement titles
+structure keywords
+numeric density
+header detection
+page order
 page guardrails
 
-
-3) Table Structure Detection
+3. Table Structure Detection
 
 تحليل الجداول لاكتشاف:
 
-currentCol  
-previousCol  
-noteCol  
-labelCol  
-headerRowIndex  
-table direction  
+currentCol
+previousCol
+noteCol
+labelCol
+headerRowIndex
+table direction
 distinct label-column detection
 
-
-4) Row Extraction
+4. Row Extraction
 
 استخراج الصفوف من الجداول مع تطبيق
 طبقة تحقق (Row Validation) لمنع استخراج:
 
-header rows  
-separator rows  
-narrative rows  
-date rows  
+header rows
+separator rows
+narrative rows
+date rows
 ownership rows
 
-
-5) Guarded Recovery
+5. Guarded Recovery
 
 تمت إضافة guarded template recovery
 بحيث لا يتم السماح للصفوف الرقمية غير الموسومة
 بإغراق المخرجات كما كان يحدث سابقًا.
 
-
-6) Multi-page Protection
+6. Multi-page Protection
 
 تم تشديد التحقق قبل ضم الصفحة التالية
 لنفس الجدول باستخدام توافق البنية والاتجاه
 والأعمدة والسنوات.
 
-
-7) Data Output
+7. Data Output
 
 يتم إنشاء نوعين من المخرجات:
 
 Lite Structure
 
-incomeStatementLite  
-balanceSheetLite  
-cashFlowLite  
-
+incomeStatementLite
+balanceSheetLite
+cashFlowLite
 
 Structured Fields
 
-incomeStatementStructured  
-balanceSheetStructured  
-cashFlowStructured  
+incomeStatementStructured
+balanceSheetStructured
+cashFlowStructured
 
+---
 
-------------------------------------------------------------
-LATEST TEST
-------------------------------------------------------------
+## LATEST TEST (BANK PROFILE)
 
 تم اختبار الإصدار v6.2 باستخدام:
 
 Saudi National Bank (SNB)
 
-نتيجة المحرك الحالية:
+نتيجة المحرك:
 
 statementProfile = bank
 
 selectedPages:
 
-balancePage = 95  
-incomePage = 96  
+balancePage = 95
+incomePage = 96
 cashFlowPage = 66
-
 
 إحصائيات الاستخراج:
 
@@ -229,32 +219,65 @@ recoveredNumericRows = 0
 realLabelAcceptedRows = 30
 outputItems = 11
 
+---
 
-------------------------------------------------------------
-LATEST RESULT
-------------------------------------------------------------
+## LATEST TEST (OPERATING COMPANY)
+
+تم إجراء اختبار إضافي على شركة تشغيلية عربية
+باستخدام تقرير مالي حقيقي.
+
+statementProfile:
+
+operating_company
+
+selectedPages detected by engine:
+
+incomePage = 10
+balancePage = 7
+cashFlowPage = 54
+
+الصفحات الصحيحة في التقرير كانت:
+
+balance sheet → page 7
+income statement → page 8
+cash flow statement → page 10
+
+نتيجة الاختبار:
+
+balancePage تم اكتشافها بشكل صحيح.
+
+لكن:
+
+incomePage تم اختيار صفحة التدفقات بدلًا من
+قائمة الدخل.
+
+cashFlowPage تم اختيار صفحة إيضاحية متأخرة
+بدلًا من قائمة التدفقات النقدية الأساسية.
+
+---
+
+## LATEST RESULT
 
 تم حل المشكلة السابقة الخاصة بـ Row Extraction Failure.
 
 لم تعد المشكلة الحالية في:
 
-- اكتشاف profile
-- أو اكتشاف الأعمدة
-- أو fallback/recovery
-- أو ownership tables
+* اكتشاف profile
+* أو اكتشاف الأعمدة
+* أو fallback/recovery
+* أو ownership tables
 
 التحسن الواضح:
 
-1) لم يعد هناك flood من الصفوف المسترجعة بالقالب
-2) realLabelAcceptedRows أصبح مرتفعًا
-3) extraction layer أصبحت تعمل فعليًا
-4) distinct label-column detection خفف من فوز
+1. لم يعد هناك flood من الصفوف المسترجعة بالقالب
+2. realLabelAcceptedRows أصبح مرتفعًا
+3. extraction layer أصبحت تعمل فعليًا
+4. distinct label-column detection خفف من فوز
    الجداول RTL العامة ذات 3 أعمدة
 
+---
 
-------------------------------------------------------------
-CURRENT PROBLEM
-------------------------------------------------------------
+## CURRENT PROBLEM
 
 Semantic Page Selection Failure
 
@@ -265,55 +288,9 @@ Semantic Page Selection Failure
 لكن في بعض الحالات يختار صفحات إيضاحية رقمية قوية
 وليست القوائم المالية الأساسية نفسها.
 
-في اختبار SNB الحالي:
+---
 
-balancePage = 95
-incomePage = 96
-cashFlowPage = 66
-
-لكن النتائج أظهرت أن هذه الصفحات ليست:
-
-- قائمة مركز مالي رئيسية
-- قائمة دخل رئيسية
-- قائمة تدفقات نقدية رئيسية
-
-بل صفحات من نوع:
-
-- جداول مخاطر / فجوات / حساسية
-- جداول أدوات دين / صكوك / سندات
-- جداول إيضاحية رقمية ذات كثافة عالية
-
-
-------------------------------------------------------------
-EVIDENCE FROM TEST
-------------------------------------------------------------
-
-1) balanceSheetLite احتوى بنودًا مثل:
-
-- الفجوة للبنود داخل قائمة المركز المالي
-- الفجوة للبنود خارج قائمة المركز المالي
-- إجمالي الفجوة الخاضعة لمخاطر أسعار العمولات
-
-وهذه ليست بنود قائمة مركز مالي أساسية.
-
-
-2) incomeStatementLite احتوى بنودًا تشبه
-صفحات الميزانية/المخاطر أكثر من قائمة دخل فعلية.
-
-
-3) cashFlowLite احتوى بنودًا مثل:
-
-- قروض لأجل مصدرة
-- سندات متوسطة الأجل
-- صكوك غير قابلة للاستبدال
-
-وهذا يؤكد أن الصفحة المختارة ليست
-Cash Flow Statement حقيقية.
-
-
-------------------------------------------------------------
-ROOT CAUSE
-------------------------------------------------------------
+## ROOT CAUSE
 
 السبب الجذري الآن هو:
 
@@ -322,10 +299,10 @@ Ranking Semantic Guardrails Gap
 بمعنى أن نظام الترتيب الحالي ما زال يعطي درجات
 مرتفعة لصفحات إيضاحية متقدمة لأنها تحتوي على:
 
-- أرقام كثيرة
-- أعمدة واضحة
-- label column حقيقي
-- كلمات مالية قوية
+* أرقام كثيرة
+* أعمدة واضحة
+* label column حقيقي
+* كلمات مالية قوية
 
 لكنها ليست القوائم الأساسية المطلوبة.
 
@@ -335,101 +312,97 @@ Page Ranking Semantics
 
 وليس في Row Extraction.
 
+---
 
-------------------------------------------------------------
-WHAT HAS BEEN FIXED IN 4B
-------------------------------------------------------------
+## WHAT HAS BEEN FIXED IN 4B
 
 تم إنجاز ما يلي داخل هذه المرحلة:
 
-1) RTL label detection improved
-2) row-level label fallback added
-3) guarded template recovery added
-4) stronger multi-page extension guard added
-5) ownership-page detection added
-6) ownership-row rejection added
-7) distinct label-column guardrail added
+1. RTL label detection improved
+2. row-level label fallback added
+3. guarded template recovery added
+4. stronger multi-page extension guard added
+5. ownership-page detection added
+6. ownership-row rejection added
+7. distinct label-column guardrail added
+8. semantic ranking signals added
+9. truncated RTL cashflow detection added
+10. dense-table protection logic added
 
 هذا يعني أن البنية الحالية أصبحت أقوى بكثير
 من مرحلة v5.3، ولم يعد الخلل في الطبقات الدنيا
 للاستخراج.
 
+---
 
-------------------------------------------------------------
-REMAINING WORK TO FINISH 4B
-------------------------------------------------------------
+## REMAINING WORK TO FINISH 4B
 
-المتبقي الآن هو ضربة مركزة على ranking فقط.
+المتبقي الآن هو تحسين ranking فقط.
 
 المطلوب في الإصدار القادم:
 
-extract-financial-v6.3
+extract-financial-v6.6
 
 التحسينات المخطط لها:
 
-1) Core Statement Boost
+1. Core Statement Boost
 
 إعطاء boost قوي جدًا فقط للصفحات التي تحتوي
 على بنية statement حقيقية.
 
-
-2) Note-Table Penalty
+2. Note-Table Penalty
 
 إضافة penalty واضح للصفحات الإيضاحية التي تحتوي
 على جداول مخاطر، فجوات، صكوك، سندات، قروض مصدرة،
 عوائد ثابتة/متغيرة، أو جداول تفصيل أدوات مالية.
 
-
-3) Mandatory Core Anchors
+3. Mandatory Core Anchors
 
 عدم السماح بفوز صفحة balance / income / cashflow
 إلا إذا احتوت anchors أساسية كافية لكل نوع statement.
 
-
-4) Better Year Logic
+4. Better Year Logic
 
 تحسين التعامل مع الحالات التي يظهر فيها:
 
-latest = 2025
-previous = 2025
+latest = previous
 
 أو عندما تكون السنوات المستخرجة غير ممثلة
 لرأسي الأعمدة الفعلية للقائمة.
 
-
-5) Stronger Late-Note Rejection
+5. Stronger Late-Note Rejection
 
 تشديد رفض الصفحات المتأخرة التي تبدو كإيضاحات
 حتى لو كانت غنية بالأرقام وذات label column صحيح.
 
+---
 
-------------------------------------------------------------
-CURRENT STATUS
-------------------------------------------------------------
+## CURRENT STATUS
 
-Architecture: Stable  
-Pipeline: Stable  
-Statement Profile Detection: Stable  
-Header / Column Detection: Strong  
-Row Extraction: Strong  
-Guarded Recovery: Stable  
-Ownership Guardrails: Stable  
+Architecture: Stable
+Pipeline: Stable
+Statement Profile Detection: Stable
+Header / Column Detection: Strong
+Row Extraction: Strong
+Guarded Recovery: Stable
+Ownership Guardrails: Stable
 
 Ranking Engine:
 Needs Semantic Hardening
 
+---
 
-------------------------------------------------------------
-PROJECT STATUS
-------------------------------------------------------------
+## PROJECT STATUS
 
-STABLE ARCHITECTURE  
+STABLE ARCHITECTURE
 EXTRACTION ENGINE HARDENING IN PROGRESS
 
 CURRENT ASSESSMENT:
+
 تم تجاوز مشكلة الاستخراج الأساسية،
 والمشكلة المتبقية الآن محصورة في
 Semantic Page Ranking.
 
 PHASE COMPLETION ESTIMATE:
-حوالي 80% إلى 85% من المرحلة 4B تم إنجازه.
+
+حوالي **80% إلى 85%** من المرحلة 4B تم إنجازه.
