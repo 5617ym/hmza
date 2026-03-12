@@ -10,7 +10,19 @@ CURRENT_ENGINE_VERSION:
 extract-financial-v6.7
 
 CURRENT_PHASE:
-PHASE 4B — COMPLETED
+PHASE 5 – Financial Statement Intelligence Layer
+
+CURRENT_TASK:
+تصميم وبناء Sector Detection Layer
+لتحديد نوع الشركة قبل تطبيق Financial Mapping
+داخل extract-financial.
+
+القطاعات المستهدفة في البداية:
+
+1. bank
+2. insurance
+3. reit
+4. operating_company
 
 ------------------------------------------------------------
 PHASE HISTORY
@@ -120,16 +132,28 @@ Note Table Strong Penalty
 وذلك لمنعها من الفوز في
 Statement Page Ranking.
 
+STATUS:
+COMPLETED
+
 ------------------------------------------------------------
 
-SYSTEM PIPELINE
+SYSTEM PIPELINE (CURRENT)
 
 upload-url  
 → ingest  
 → analyze (Azure Document Intelligence)  
 → extract-financial  
 
-جميع المراحل تعمل بشكل مستقر.
+------------------------------------------------------------
+
+SYSTEM PIPELINE (NEXT ARCHITECTURE)
+
+upload  
+→ ingest  
+→ analyze  
+→ sector-detection  
+→ extract-financial  
+→ financial-analysis  
 
 ------------------------------------------------------------
 
@@ -176,22 +200,60 @@ Validated
 
 ------------------------------------------------------------
 
-PHASE 4B STATUS
-
-COMPLETED
-
-تم اختبار النظام على عدة تقارير مالية
-من قطاعات مختلفة ونجح في اختيار
-الصفحات الصحيحة للقوائم المالية.
-
-------------------------------------------------------------
-
-NEXT PHASE
+NEXT OBJECTIVE
 
 PHASE 5
 Financial Statement Intelligence Layer
 
 الهدف:
+
+إضافة طبقة ذكاء مالي للنظام بحيث يصبح
+قادرًا على فهم نوع الشركة أولاً
+ثم تطبيق Financial Mapping مناسب لكل قطاع.
+
+المرحلة ستشمل:
+
+1. Sector Detection Layer
+
+اكتشاف نوع الشركة تلقائيًا اعتمادًا على:
+
+- اسم الشركة
+- مصطلحات القوائم المالية
+- هيكل الميزانية
+- مصطلحات النشاط
+
+2. Financial Profiles
+
+إنشاء Profiles مالية لكل قطاع:
+
+profiles/
+
+- bankProfile.js
+- insuranceProfile.js
+- operatingProfile.js
+- reitProfile.js
+
+كل Profile سيحتوي:
+
+- financialMapping
+- statementStructure
+- keywordPatterns
+
+3. Sector-Specific Financial Mapping
+
+بدلاً من:
+
+Universal Financial Mapping
+
+سيصبح النظام يستخدم:
+
+Sector-Specific Mapping
+
+بناءً على القطاع المكتشف.
+
+------------------------------------------------------------
+
+LONG TERM VISION
 
 تحويل النظام من:
 
@@ -200,27 +262,3 @@ PDF Financial Extractor
 إلى:
 
 Financial Intelligence Engine
-
-الميزات المخطط لها:
-
-1. Sector Detection Layer
-
-2. Financial Statement Profiles
-
-   - Bank Profile
-   - Insurance Profile
-   - Operating Company Profile
-   - REIT Profile
-
-3. Sector-Specific Financial Mapping
-
-4. Financial Structure Awareness
-
-المسار المستقبلي للنظام:
-
-upload  
-→ ingest  
-→ analyze  
-→ sector-detection  
-→ extract-financial  
-→ financial-analysis
