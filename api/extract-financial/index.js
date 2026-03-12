@@ -24,20 +24,8 @@ if (!normalized || typeof normalized !== "object") {
 }
 
 const sectorInfo = detectSector(normalized);
-
-let detectedSector = sectorInfo.sector;
-
-// fallback إذا كان الكشف ضعيف
-if (
-  detectedSector === "operating_company" &&
-  statementProfile &&
-  sectorProfiles[statementProfile]
-) {
-  detectedSector = statementProfile;
-}
-
-const activeSectorProfile =
-  sectorProfiles[detectedSector] || sectorProfiles.operating_company;
+const detectedSector = sectorInfo.sector;
+const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.operating_company;
 
     const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
     const tablesPreview = Array.isArray(normalized.tablesPreview)
@@ -1280,34 +1268,45 @@ const activeSectorProfile =
       }
     };
 
-    function detectStatementProfile() {
-      const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
-      const scores = {};
+     function detectStatementProfile() {
+  const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
+  const scores = {};
 
-      for (const key of Object.keys(PROFILE_CONFIG)) {
-        const cfg = PROFILE_CONFIG[key];
-        const positive = keywordHits(fullText, cfg.positive);
-        const negative = keywordHits(fullText, cfg.negative);
-        scores[key] = (positive * 8) - (negative * 5);
-      }
+  for (const key of Object.keys(PROFILE_CONFIG)) {
+    const cfg = PROFILE_CONFIG[key];
+    const positive = keywordHits(fullText, cfg.positive);
+    const negative = keywordHits(fullText, cfg.negative);
+    scores[key] = (positive * 8) - (negative * 5);
+  }
 
-      const sorted = Object.keys(scores)
-        .map((k) => ({ key: k, score: scores[k] }))
-        .sort((a, b) => b.score - a.score);
+  const sorted = Object.keys(scores)
+    .map((k) => ({ key: k, score: scores[k] }))
+    .sort((a, b) => b.score - a.score);
 
-      const statementProfile = sorted[0]?.key || "operating_company";
+  const statementProfile = sorted[0]?.key || "operating_company";
 
-      return {
-        statementProfile,
-        scores,
-        rankedProfiles: sorted,
-        reason: `${statementProfile} keywords strongest`
-      };
-    }
+  return {
+    statementProfile,
+    scores,
+    rankedProfiles: sorted,
+    reason: `${statementProfile} keywords strongest`
+  };
+}
 
-    const profileDetection = detectStatementProfile();
-    const statementProfile = profileDetection.statementProfile;
+const profileDetection = detectStatementProfile();
+const statementProfile = profileDetection.statementProfile;
 
+let finalSector = detectedSector;
+if (
+  finalSector === "operating_company" &&
+  statementProfile &&
+  sectorProfiles[statementProfile]
+) {
+  finalSector = statementProfile;
+}
+
+const finalSectorProfile =
+  sectorProfiles[finalSector] || sectorProfiles.operating_company;
 
         // =========================================================
     // Layer 4: Statement Page Ranking and Selection
@@ -3345,10 +3344,36 @@ if (!eligibilityPassed) {
 
     return send(200, {
   ok: true,
+  sector: finalSector,
 
-  sector: detectedSector,
-  sectorInfo,
-  activeSectorProfile,
+  sectorInfo: {
+    ...sectorInfo,
+    sector: finalSector
+  },
+
+  activeSectorProfile: finalSectorProfile,
+
+  engine: "extract-financial-v6.6",
+  phase: "4B_semantic_ranking_hardening_plus_confidence",
+
+  fileName: body.fileName || normalized?.meta?.fileName || null,
+
+  statementProfile,
+
+  selectedPages: {
+    incomePage,
+    balancePage,
+    cashFlowPage
+  },
+
+  confidence,
+
+  debug: {
+    profileDetection
+  }
+});
+
+  
 
   engine: "extract-financial-v6.6",
   phase: "4B_semantic_ranking_hardening_plus_confidence",
