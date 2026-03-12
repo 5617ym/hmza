@@ -586,7 +586,7 @@ module.exports = async function (context, req) {
       };
     }
 
-        // =========================================================
+    // =========================================================
     // Layer 2: Page / Table Context Builder
     // =========================================================
 
@@ -1142,8 +1142,7 @@ module.exports = async function (context, req) {
 
     const pageContexts = allPageNumbers.map((pageNumber) => buildPageContext(pageNumber, allPageNumbers));
 
-
-        // =========================================================
+    // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
 
@@ -1290,7 +1289,8 @@ module.exports = async function (context, req) {
     const profileDetection = detectStatementProfile();
     const statementProfile = profileDetection.statementProfile;
 
-    // =========================================================
+
+        // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
@@ -1525,12 +1525,243 @@ module.exports = async function (context, req) {
             "changes in equity"
           ]
         }
+      },
+
+      reit: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "statement of financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "عقارات استثمارية",
+            "موجودات",
+            "مطلوبات",
+            "حقوق الملكية",
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات",
+            "اجمالي حقوق الملكية",
+            "investment properties",
+            "assets",
+            "liabilities",
+            "equity",
+            "total assets",
+            "total liabilities",
+            "total equity"
+          ],
+          negatives: [
+            "statement of cash flows",
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "statement of income",
+            "income statement",
+            "statement of profit or loss",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "دخل ايجار",
+            "دخل إيجار",
+            "صافي الربح",
+            "ربح التشغيل",
+            "ايرادات",
+            "investment properties",
+            "rental income",
+            "operating profit",
+            "net income",
+            "revenue"
+          ],
+          negatives: [
+            "statement of comprehensive income",
+            "other comprehensive income",
+            "statement of cash flows",
+            "changes in equity"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "statement of cash flows",
+            "cash flow statement",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد من الانشطة التشغيلية",
+            "صافي النقد من الانشطة الاستثمارية",
+            "صافي النقد من الانشطة التمويلية",
+            "التغير في النقد",
+            "النقد وما في حكمه",
+            "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities",
+            "cash and cash equivalents"
+          ],
+          negatives: [
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        }
+      },
+
+      operating_company: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "قائمة الوضع المالي",
+            "الميزانية",
+            "الميزانية العمومية",
+            "statement of financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "الموجودات",
+            "الأصول",
+            "الاصول",
+            "المطلوبات",
+            "الالتزامات",
+            "حقوق الملكية",
+            "إجمالي الموجودات",
+            "اجمالي الموجودات",
+            "إجمالي المطلوبات",
+            "اجمالي المطلوبات",
+            "إجمالي حقوق الملكية",
+            "اجمالي حقوق الملكية",
+            "الموجودات المتداولة",
+            "الموجودات غير المتداولة",
+            "المطلوبات المتداولة",
+            "المطلوبات غير المتداولة",
+            "assets",
+            "liabilities",
+            "equity",
+            "current assets",
+            "non-current assets",
+            "current liabilities",
+            "non-current liabilities",
+            "total assets",
+            "total liabilities",
+            "total equity"
+          ],
+          negatives: [
+            "قائمة الدخل",
+            "الدخل الشامل",
+            "قائمة التدفقات النقدية",
+            "قائمة التغيرات في حقوق الملكية",
+            "statement of income",
+            "statement of comprehensive income",
+            "statement of cash flows",
+            "changes in equity"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "قائمة الأرباح والخسائر",
+            "قائمة الارباح والخسائر",
+            "قائمة الربح والخسارة",
+            "statement of income",
+            "income statement",
+            "statement of profit or loss",
+            "profit or loss",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "الايرادات",
+            "الإيرادات",
+            "المبيعات",
+            "تكلفة المبيعات",
+            "تكلفة الايرادات",
+            "تكلفة الإيرادات",
+            "مجمل الربح",
+            "إجمالي الربح",
+            "اجمالي الربح",
+            "الربح التشغيلي",
+            "الدخل التشغيلي",
+            "صافي الربح",
+            "صافي الدخل",
+            "ربحية السهم",
+            "revenue",
+            "sales",
+            "cost of sales",
+            "cost of revenue",
+            "gross profit",
+            "operating profit",
+            "operating income",
+            "net profit",
+            "net income",
+            "earnings per share"
+          ],
+          negatives: [
+            "الدخل الشامل",
+            "قائمة الدخل الشامل",
+            "statement of comprehensive income",
+            "other comprehensive income",
+            "قائمة المركز المالي",
+            "قائمة التدفقات النقدية",
+            "changes in equity",
+            "statement of cash flows"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "بيان التدفقات النقدية",
+            "التدفقات النقدية",
+            "cash flow statement",
+            "statement of cash flows",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "التدفقات النقدية من الأنشطة التشغيلية",
+            "التدفقات النقدية من الأنشطة الاستثمارية",
+            "التدفقات النقدية من الأنشطة التمويلية",
+            "صافي النقد من الانشطة التشغيلية",
+            "صافي النقد من الانشطة الاستثمارية",
+            "صافي النقد من الانشطة التمويلية",
+            "التغير في النقد",
+            "التغير في النقد وما في حكمه",
+            "النقد وما في حكمه",
+            "النقدية وما يعادلها",
+            "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities",
+            "operating activities",
+            "investing activities",
+            "financing activities",
+            "cash and cash equivalents"
+          ],
+          negatives: [
+            "قائمة الدخل",
+            "الدخل الشامل",
+            "قائمة المركز المالي",
+            "قائمة التغيرات في حقوق الملكية",
+            "statement of income",
+            "comprehensive income",
+            "financial position",
+            "changes in equity"
+          ]
+        }
       }
     };
 
-    const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.bank;
+    const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
 
-        const SEMANTIC_RULES = {
+    const SEMANTIC_RULES = {
       balance: {
         strongTitles: [
           "balance sheet",
@@ -1906,7 +2137,167 @@ module.exports = async function (context, req) {
       return unique(hits);
     }
 
-    function mandatoryEligibility(pageCtx, kind) {
+    function rowPhraseCoverage(rows, phrases, limit = 16) {
+      const selectedRows = (rows || []).slice(0, limit);
+      let rowsWithHits = 0;
+      const distinctHits = new Set();
+
+      for (const row of selectedRows) {
+        if (!Array.isArray(row)) continue;
+        const joined = normalizeText(row.join(" | "));
+        let rowHit = false;
+
+        for (const phrase of (phrases || [])) {
+          const p = normalizeText(phrase);
+          if (!p) continue;
+          if (joined.includes(p)) {
+            rowHit = true;
+            distinctHits.add(p);
+          }
+        }
+
+        if (rowHit) rowsWithHits += 1;
+      }
+
+      return {
+        rowsWithHits,
+        distinctHits: Array.from(distinctHits)
+      };
+    }
+
+    function semanticAnchorCoverage(pageCtx, kind) {
+      const rules = SEMANTIC_RULES[kind] || {};
+      const wholeText = getPageStatementText(pageCtx);
+      const firstRowsText = (pageCtx.mainRows || [])
+        .slice(0, 12)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
+
+      const firstRowsCoreHits = countDistinctPhraseHits(firstRowsText, rules.coreAnchors || []);
+      const firstRowsComboAHits = countDistinctPhraseHits(firstRowsText, rules.comboA || []);
+      const firstRowsComboBHits = countDistinctPhraseHits(firstRowsText, rules.comboB || []);
+      const firstRowsComboCHits = countDistinctPhraseHits(firstRowsText, rules.comboC || []);
+
+      const rowCoreCoverage = rowPhraseCoverage(pageCtx.mainRows, rules.coreAnchors || [], 16);
+      const rowComboACoverage = rowPhraseCoverage(pageCtx.mainRows, rules.comboA || [], 16);
+      const rowComboBCoverage = rowPhraseCoverage(pageCtx.mainRows, rules.comboB || [], 16);
+      const rowComboCCoverage = rowPhraseCoverage(pageCtx.mainRows, rules.comboC || [], 16);
+
+      return {
+        firstRowsCoreHits,
+        firstRowsComboAHits,
+        firstRowsComboBHits,
+        firstRowsComboCHits,
+        rowCoreCoverage,
+        rowComboACoverage,
+        rowComboBCoverage,
+        rowComboCCoverage,
+        wholeCoreHits: countDistinctPhraseHits(wholeText, rules.coreAnchors || [])
+      };
+    }
+
+    function noteDetailSignals(pageCtx, kind) {
+      const wholeText = getPageStatementText(pageCtx);
+      const anchors = statementProfile === "bank"
+        ? NOTE_PENALTY_ANCHORS_GENERAL
+        : NOTE_PENALTY_ANCHORS_GENERAL.concat(NOTE_PENALTY_ANCHORS_NON_BANK_ONLY);
+
+      const noteHits = countDistinctPhraseHits(wholeText, anchors);
+      const noteRowCoverage = rowPhraseCoverage(pageCtx.mainRows, anchors, 18);
+      const ownTitleHits = countDistinctPhraseHits(wholeText, statementKindTitleAliases(kind));
+      const otherTitleHits = countDistinctPhraseHits(wholeText, otherStatementTitleAliases(kind));
+
+      const late = pageCtx.positionRatio > 0.55;
+      const veryLate = pageCtx.positionRatio > 0.7;
+      const wide = pageCtx.mainColumnCount >= 5;
+      const dense = pageCtx.numbersCount >= 20;
+
+      const noteLike =
+        noteHits.length >= 2 &&
+        noteRowCoverage.rowsWithHits >= 2 &&
+        late &&
+        wide &&
+        dense &&
+        ownTitleHits.length === 0;
+
+      const heavyNoteLike =
+        noteHits.length >= 4 &&
+        noteRowCoverage.rowsWithHits >= 3 &&
+        veryLate &&
+        wide &&
+        dense &&
+        otherTitleHits.length === 0 &&
+        ownTitleHits.length === 0;
+
+      return {
+        noteHits,
+        noteRowCoverage,
+        noteLike,
+        heavyNoteLike,
+        late,
+        veryLate,
+        wide,
+        dense
+      };
+    }
+
+    function crossStatementConflictSignals(pageCtx, kind) {
+      const wholeText = getPageStatementText(pageCtx);
+      const currentCoverage = semanticAnchorCoverage(pageCtx, kind);
+      const currentOwnTitleHits = countDistinctPhraseHits(wholeText, statementKindTitleAliases(kind)).length;
+
+      const otherKinds = ["balance", "income", "cashflow"].filter((x) => x !== kind);
+      const conflicts = otherKinds.map((otherKind) => {
+        const otherRules = SEMANTIC_RULES[otherKind] || {};
+        const firstRowsText = (pageCtx.mainRows || [])
+          .slice(0, 10)
+          .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+          .join("\n");
+
+        const otherTitleHits = countDistinctPhraseHits(wholeText, statementKindTitleAliases(otherKind)).length;
+        const otherCoreHits = countDistinctPhraseHits(wholeText, otherRules.coreAnchors || []).length;
+        const otherFirstRowsCoreHits = countDistinctPhraseHits(firstRowsText, otherRules.coreAnchors || []).length;
+
+        let conflictScore = 0;
+        conflictScore += otherTitleHits * 10;
+        conflictScore += otherFirstRowsCoreHits * 8;
+        conflictScore += Math.min(otherCoreHits, 6) * 3;
+
+        return {
+          otherKind,
+          otherTitleHits,
+          otherCoreHits,
+          otherFirstRowsCoreHits,
+          conflictScore
+        };
+      }).sort((a, b) => b.conflictScore - a.conflictScore);
+
+      const topConflict = conflicts[0] || {
+        otherKind: null,
+        otherTitleHits: 0,
+        otherCoreHits: 0,
+        otherFirstRowsCoreHits: 0,
+        conflictScore: 0
+      };
+
+      const ownStrength =
+        (currentOwnTitleHits * 12) +
+        (currentCoverage.firstRowsCoreHits.length * 8) +
+        (Math.min(currentCoverage.wholeCoreHits.length, 6) * 3);
+
+      const dominantConflict =
+        topConflict.conflictScore >= 16 &&
+        topConflict.conflictScore > ownStrength;
+
+      return {
+        ownStrength,
+        topConflict,
+        conflicts,
+        dominantConflict
+      };
+    }
+
+        function mandatoryEligibility(pageCtx, kind) {
       const rules = SEMANTIC_RULES[kind] || {};
       const wholeText = getPageStatementText(pageCtx);
 
@@ -1919,6 +2310,7 @@ module.exports = async function (context, req) {
       const yearSignals = semanticYearSignals(pageCtx);
       const denseBank = bankDenseCandidateSignals(pageCtx);
       const truncatedRtl = truncatedRtlNumericStatementSignals(pageCtx);
+      const coverage = semanticAnchorCoverage(pageCtx, kind);
 
       const balanceEquityAnchors = countDistinctPhraseHits(wholeText, [
         "equity", "total equity", "total liabilities and equity",
@@ -1935,21 +2327,23 @@ module.exports = async function (context, req) {
         if (
           strongTitleHits.length > 0 &&
           coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2) &&
-          balanceEquityAnchors.length >= 1
+          balanceEquityAnchors.length >= 1 &&
+          coverage.firstRowsCoreHits.length >= 1
         ) {
           eligible = true;
           path = "strong_title_path";
         } else if (
           comboAHits.length >= safeNumber(rules.mandatory?.comboAMin, 2) &&
           comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 1) &&
-          balanceEquityAnchors.length >= 1
+          balanceEquityAnchors.length >= 1 &&
+          coverage.rowCoreCoverage.rowsWithHits >= 2
         ) {
           eligible = true;
           path = "core_anchor_path";
         } else if (
           statementProfile === "bank" &&
           strongTitleHits.length > 0 &&
-          (coreHits.length >= 1 || bankBoostHits.length >= 2) &&
+          (coverage.firstRowsCoreHits.length >= 1 || coreHits.length >= 1 || bankBoostHits.length >= 2) &&
           denseBank.compactShape &&
           denseBank.structured &&
           (yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 1)
@@ -1961,28 +2355,31 @@ module.exports = async function (context, req) {
           comboAHits.length >= 2 &&
           (comboBHits.length >= 1 || bankBoostHits.length >= 2) &&
           denseBank.qualifies &&
-          balanceEquityAnchors.length >= 1
+          balanceEquityAnchors.length >= 1 &&
+          coverage.rowCoreCoverage.rowsWithHits >= 2
         ) {
           eligible = true;
           path = "bank_relaxed_core_path";
         }
-      } else if (
-        strongTitleHits.length > 0 &&
-        coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2)
-      ) {
-        eligible = true;
-        path = "strong_title_path";
       } else if (kind === "income") {
         if (
+          strongTitleHits.length > 0 &&
+          coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2) &&
+          coverage.firstRowsCoreHits.length >= 1
+        ) {
+          eligible = true;
+          path = "strong_title_path";
+        } else if (
           comboAHits.length >= safeNumber(rules.mandatory?.comboAMin, 1) &&
-          comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 2)
+          comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 2) &&
+          coverage.rowCoreCoverage.rowsWithHits >= 2
         ) {
           eligible = true;
           path = "core_anchor_path";
         } else if (
           statementProfile === "bank" &&
           strongTitleHits.length > 0 &&
-          (coreHits.length >= 1 || bankBoostHits.length >= 2) &&
+          (coverage.firstRowsCoreHits.length >= 1 || coreHits.length >= 1 || bankBoostHits.length >= 2) &&
           denseBank.compactShape &&
           denseBank.structured &&
           (yearSignals.usableTwoYears || yearSignals.yearsFound.length >= 1)
@@ -1993,16 +2390,29 @@ module.exports = async function (context, req) {
           statementProfile === "bank" &&
           comboAHits.length >= 1 &&
           (comboBHits.length >= 1 || bankBoostHits.length >= 2) &&
-          denseBank.qualifies
+          denseBank.qualifies &&
+          coverage.rowCoreCoverage.rowsWithHits >= 2
         ) {
           eligible = true;
           path = "bank_relaxed_core_path";
         }
       } else if (kind === "cashflow") {
         if (
+          strongTitleHits.length > 0 &&
+          coreHits.length >= safeNumber(rules.mandatory?.withTitleMinCore, 2) &&
+          coverage.firstRowsCoreHits.length >= 1
+        ) {
+          eligible = true;
+          path = "strong_title_path";
+        } else if (
           comboAHits.length >= safeNumber(rules.mandatory?.comboAMin, 1) &&
           comboBHits.length >= safeNumber(rules.mandatory?.comboBMin, 1) &&
-          comboCHits.length >= safeNumber(rules.mandatory?.comboCMin, 1)
+          comboCHits.length >= safeNumber(rules.mandatory?.comboCMin, 1) &&
+          (
+            coverage.rowComboACoverage.rowsWithHits >= 1 ||
+            coverage.rowComboBCoverage.rowsWithHits >= 1
+          ) &&
+          coverage.rowCoreCoverage.rowsWithHits >= 2
         ) {
           eligible = true;
           path = "core_anchor_path";
@@ -2044,7 +2454,8 @@ module.exports = async function (context, req) {
         bankBoostHits,
         balanceEquityAnchors,
         denseBank,
-        truncatedRtl
+        truncatedRtl,
+        coverage
       };
     }
 
@@ -2062,10 +2473,22 @@ module.exports = async function (context, req) {
       const comboCHits = countDistinctPhraseHits(wholeText, rules.comboC || []);
       const denseBank = bankDenseCandidateSignals(pageCtx);
       const truncatedRtl = truncatedRtlNumericStatementSignals(pageCtx);
+      const coverage = semanticAnchorCoverage(pageCtx, kind);
 
       if (strongTitleHits.length > 0) {
         boost += 12;
         reasons.push("semanticTitleBoost:+12");
+      }
+
+      if (coverage.firstRowsCoreHits.length > 0) {
+        const s = Math.min(coverage.firstRowsCoreHits.length, 4) * 5;
+        boost += s;
+        reasons.push(`firstRowsCoreBoost:+${s}`);
+      }
+
+      if (coverage.rowCoreCoverage.rowsWithHits >= 2) {
+        boost += 10;
+        reasons.push("rowCoreCoverageBoost:+10");
       }
 
       if (kind === "balance") {
@@ -2112,6 +2535,14 @@ module.exports = async function (context, req) {
           boost += 12;
           reasons.push("semanticComboBoost:+12");
         }
+        if (
+          coverage.rowComboACoverage.rowsWithHits >= 1 &&
+          coverage.rowComboBCoverage.rowsWithHits >= 1 &&
+          coverage.rowComboCCoverage.rowsWithHits >= 1
+        ) {
+          boost += 14;
+          reasons.push("cashflowTriadCoverageBoost:+14");
+        }
         if (comboCHits.length >= 1 && containsAny(wholeText, ["cash and cash equivalents", "النقدية وما يعادلها", "النقد وما في حكمه"])) {
           boost += 4;
           reasons.push("cashEquivalentBoost:+4");
@@ -2141,12 +2572,13 @@ module.exports = async function (context, req) {
           semanticComboBHits: comboBHits,
           semanticComboCHits: comboCHits,
           denseBank,
-          truncatedRtl
+          truncatedRtl,
+          coverage
         }
       };
     }
 
-        function semanticPenaltyScore(pageCtx, kind) {
+    function semanticPenaltyScore(pageCtx, kind) {
       const wholeText = getPageStatementText(pageCtx);
       let penalty = 0;
       const reasons = [];
@@ -2158,6 +2590,9 @@ module.exports = async function (context, req) {
 
       const noteHits = countDistinctPhraseHits(wholeText, anchors);
       const hasStrongOwnTitle = strongStatementTitleHit(pageCtx, ACTIVE_STATEMENT_CONFIGS[kind], kind);
+      const yearSignals = semanticYearSignals(pageCtx);
+      const coverage = semanticAnchorCoverage(pageCtx, kind);
+      const noteSignals = noteDetailSignals(pageCtx, kind);
 
       if (noteHits.length > 0) {
         let s = Math.min(noteHits.length, 8) * 4;
@@ -2181,6 +2616,11 @@ module.exports = async function (context, req) {
           penalty += heavy;
           reasons.push(`heavyNotePenalty:-${heavy}`);
         }
+      }
+
+      if (yearSignals.duplicateHeaderYears && !hasStrongOwnTitle) {
+        penalty += 18;
+        reasons.push("duplicateHeaderYearsPenalty:-18");
       }
 
       if (pageCtx.positionRatio > 0.8) {
@@ -2209,11 +2649,33 @@ module.exports = async function (context, req) {
         reasons.push("wideNoteTablePenalty:-12");
       }
 
+      if (
+        pageCtx.positionRatio > 0.5 &&
+        coverage.firstRowsCoreHits.length === 0 &&
+        !hasStrongOwnTitle
+      ) {
+        penalty += 20;
+        reasons.push("lateWithoutFirstRowsCorePenalty:-20");
+      }
+
+      if (noteSignals.noteLike) {
+        penalty += 36;
+        reasons.push("noteDetailTablePenalty:-36");
+      }
+
+      if (noteSignals.heavyNoteLike) {
+        penalty += 72;
+        reasons.push("heavyNoteDetailTablePenalty:-72");
+      }
+
       return {
         penalty,
         reasons,
         signals: {
-          notePenaltyHits: noteHits
+          notePenaltyHits: noteHits,
+          coverage,
+          noteSignals,
+          yearSignals
         }
       };
     }
@@ -2366,7 +2828,7 @@ module.exports = async function (context, req) {
       );
     }
 
-    function statementRankScore(pageCtx, cfg, kind) {
+        function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
       const signals = {};
@@ -2392,6 +2854,9 @@ module.exports = async function (context, req) {
       const eligibility = mandatoryEligibility(pageCtx, kind);
       const denseBank = bankDenseCandidateSignals(pageCtx);
       const truncatedRtl = truncatedRtlNumericStatementSignals(pageCtx);
+      const anchorCoverage = semanticAnchorCoverage(pageCtx, kind);
+      const noteSignals = noteDetailSignals(pageCtx, kind);
+      const crossConflict = crossStatementConflictSignals(pageCtx, kind);
 
       let lateNoteDetail = false;
       if (
@@ -2424,6 +2889,9 @@ module.exports = async function (context, req) {
       signals.yearSignals = yearSignals;
       signals.denseBank = denseBank;
       signals.truncatedRtl = truncatedRtl;
+      signals.anchorCoverage = anchorCoverage;
+      signals.noteSignals = noteSignals;
+      signals.crossConflict = crossConflict;
       signals.eligibility = {
         eligible: eligibility.eligible,
         path: eligibility.path
@@ -2529,6 +2997,28 @@ module.exports = async function (context, req) {
         reasons.push("bankTitleStructureSynergy:+24");
       }
 
+      if (anchorCoverage.firstRowsCoreHits.length > 0) {
+        const s = Math.min(anchorCoverage.firstRowsCoreHits.length, 4) * 8;
+        score += s;
+        reasons.push(`firstRowsCoreEvidence:+${s}`);
+      }
+
+      if (anchorCoverage.rowCoreCoverage.rowsWithHits >= 2) {
+        score += 14;
+        reasons.push("rowCoreEvidence:+14");
+      }
+
+      if (kind === "cashflow") {
+        if (
+          anchorCoverage.rowComboACoverage.rowsWithHits >= 1 &&
+          anchorCoverage.rowComboBCoverage.rowsWithHits >= 1 &&
+          anchorCoverage.rowComboCCoverage.rowsWithHits >= 1
+        ) {
+          score += 16;
+          reasons.push("cashflowRowTriadEvidence:+16");
+        }
+      }
+
       if (negativeHits > 0) {
         const s = Math.min(negativeHits, 8) * 20;
         score -= s;
@@ -2539,6 +3029,12 @@ module.exports = async function (context, req) {
         const s = Math.min(crossStatementTitleHits, 4) * 40;
         score -= s;
         reasons.push(`crossStatementTitle:-${s}`);
+      }
+
+      if (crossConflict.dominantConflict && !hasStrongOwnTitle) {
+        const s = Math.min(160, 70 + (crossConflict.topConflict.conflictScore * 4));
+        score -= s;
+        reasons.push(`dominantCrossStatementConflict:-${s}(${crossConflict.topConflict.otherKind})`);
       }
 
       if (pageCtx.numbersCount >= 8) {
@@ -2580,6 +3076,11 @@ module.exports = async function (context, req) {
         reasons.push("comprehensivePenalty:-120");
       }
 
+      if (pageCtx.isLikelyOwnershipPage) {
+        score -= 240;
+        reasons.push("ownershipPagePenalty:-240");
+      }
+
       if (!hasStrongOwnTitle && structureHits === 0) {
         let p = 45;
 
@@ -2599,6 +3100,9 @@ module.exports = async function (context, req) {
         let p = 12;
         if (statementProfile === "bank" && pageCtx.mainColumnCount <= 7 && denseBank.compactShape) {
           p = 4;
+        }
+        if (noteSignals.noteLike || noteSignals.heavyNoteLike) {
+          p += 12;
         }
         score -= p;
         reasons.push(`manyCols:-${p}`);
@@ -2734,6 +3238,7 @@ module.exports = async function (context, req) {
 
     const strongIncomePages = new Set(topPages(rankedIncome, 3));
     const strongBalancePages = new Set(topPages(rankedBalance, 3));
+    const strongCashflowPages = new Set(topPages(rankedCashflow, 3));
 
     function findAlternative(list, blockedPages) {
       return (list || []).find((p) => !blockedPages.has(p.pageNumber))?.pageNumber || null;
@@ -2767,6 +3272,28 @@ module.exports = async function (context, req) {
       cashFlowPage = findAlternative(
         rankedCashflow,
         new Set([balancePage, incomePage, ...strongBalancePages].filter(Boolean))
+      ) || cashFlowPage;
+    }
+
+    if (
+      incomePage &&
+      strongCashflowPages.has(incomePage) &&
+      !strongIncomePages.has(incomePage)
+    ) {
+      incomePage = findAlternative(
+        rankedIncome,
+        new Set([balancePage, cashFlowPage, ...strongCashflowPages].filter(Boolean))
+      ) || incomePage;
+    }
+
+    if (
+      cashFlowPage &&
+      strongIncomePages.has(cashFlowPage) &&
+      !strongCashflowPages.has(cashFlowPage)
+    ) {
+      cashFlowPage = findAlternative(
+        rankedCashflow,
+        new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
       ) || cashFlowPage;
     }
 
@@ -2804,3 +3331,14 @@ module.exports = async function (context, req) {
     });
   }
 };
+
+
+
+
+
+
+
+
+
+
+  
