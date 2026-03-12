@@ -2612,6 +2612,12 @@ module.exports = async function (context, req) {
         if (statementProfile === "bank" && hasStrongOwnTitle) {
           heavy = 0;
         }
+        // Strong rejection for financial note tables
+if (noteHits.length >= 5 && !hasStrongOwnTitle) {
+  const strongNotePenalty = 40;
+  penalty += strongNotePenalty;
+  reasons.push(`noteTableStrongPenalty:-${strongNotePenalty}`);
+}
         if (heavy > 0) {
           penalty += heavy;
           reasons.push(`heavyNotePenalty:-${heavy}`);
