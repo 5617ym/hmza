@@ -1,3 +1,5 @@
+const { detectSector } = require("../_lib/sector-detection");
+
 // api/extract-financial/index.js
 module.exports = async function (context, req) {
   const send = (status, payload) => {
@@ -11,14 +13,17 @@ module.exports = async function (context, req) {
   try {
     const body = req.body || {};
     const normalized = body.normalized || {};
-    const normalizedPrev = body.normalizedPrev || null;
+const normalizedPrev = body.normalizedPrev || null;
 
-    if (!normalized || typeof normalized !== "object") {
-      return send(400, {
-        ok: false,
-        error: "normalized payload is required"
-      });
-    }
+if (!normalized || typeof normalized !== "object") {
+  return send(400, {
+    ok: false,
+    error: "normalized payload is required"
+  });
+}
+
+const sectorInfo = detectSector(normalized);
+const detectedSector = sectorInfo.sector;
 
     const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
     const tablesPreview = Array.isArray(normalized.tablesPreview)
@@ -3325,16 +3330,22 @@ if (!eligibilityPassed) {
     }
 
     return send(200, {
-      ok: true,
-      engine: "extract-financial-v6.6",
-      phase: "4B_semantic_ranking_hardening_plus_confidence",
-      fileName: body.fileName || normalized?.meta?.fileName || null,
-      statementProfile,
-      selectedPages: {
-        incomePage,
-        balancePage,
-        cashFlowPage
-      },
+  ok: true,
+
+  sector: detectedSector,
+  sectorInfo,
+
+  engine: "extract-financial-v6.6",
+  phase: "4B_semantic_ranking_hardening_plus_confidence",
+  fileName: body.fileName || normalized?.meta?.fileName || null,
+  statementProfile,
+
+  selectedPages: {
+    incomePage,
+    balancePage,
+    cashFlowPage
+  },
+      
       confidence,
       debug: {
         profileDetection,
