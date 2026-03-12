@@ -24,8 +24,20 @@ if (!normalized || typeof normalized !== "object") {
 }
 
 const sectorInfo = detectSector(normalized);
-const detectedSector = sectorInfo.sector;
-const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.operating_company;
+
+let detectedSector = sectorInfo.sector;
+
+// fallback إذا كان الكشف ضعيف
+if (
+  detectedSector === "operating_company" &&
+  statementProfile &&
+  sectorProfiles[statementProfile]
+) {
+  detectedSector = statementProfile;
+}
+
+const activeSectorProfile =
+  sectorProfiles[detectedSector] || sectorProfiles.operating_company;
 
     const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
     const tablesPreview = Array.isArray(normalized.tablesPreview)
