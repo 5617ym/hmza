@@ -3130,22 +3130,43 @@ module.exports = async function (context, req) {
         ...semanticPenalty.signals
       };
 
-      if (!eligibility.eligible) {
-        let failPenalty = 260;
-        if (kind === "cashflow" && statementProfile === "bank" && truncatedRtl.qualifies) {
-          failPenalty = 60;
-        } else if (statementProfile === "bank" && denseBank.qualifies) {
-          failPenalty = 140;
-        } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured) {
-          failPenalty = 180;
-        }
-        score -= failPenalty;
-        reasons.push(`mandatoryEligibilityFail:-${failPenalty}`);
-      } else {
-        const passBoost = statementProfile === "bank" ? 24 : 18;
-        score += passBoost;
-        reasons.push(`mandatoryEligibilityPass:+${passBoost}(${eligibility.path})`);
-      }
+      let eligibilityPassed = eligibility.eligible;
+let eligibilityPath = eligibility.path;
+
+const bankTitleDensePath =
+  statementProfile === "bank" &&
+  !eligibilityPassed &&
+  hasStrongOwnTitle &&
+  denseBank.compactShape &&
+  denseBank.dense &&
+  pageCtx.numbersCount >= 80 &&
+  !pageCtx.isLikelyOwnershipPage &&
+  !pageCtx.isLikelyIndexPage &&
+  !pageCtx.isLikelyStandardsPage &&
+  !pageCtx.isLikelyNarrativePage;
+
+if (bankTitleDensePath) {
+  eligibilityPassed = true;
+  eligibilityPath = "bank_title_dense_path";
+}
+
+if (!eligibilityPassed) {
+  let failPenalty = 260;
+  if (kind === "cashflow" && statementProfile === "bank" && truncatedRtl.qualifies) {
+    failPenalty = 60;
+  } else if (statementProfile === "bank" && denseBank.qualifies) {
+    failPenalty = 140;
+  } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured) {
+    failPenalty = 180;
+  }
+  score -= failPenalty;
+  reasons.push(`mandatoryEligibilityFail:-${failPenalty}`);
+} else {
+  const passBoost = statementProfile === "bank" ? 24 : 18;
+  score += passBoost;
+  reasons.push(`mandatoryEligibilityPass:+${passBoost}(${eligibilityPath})`);
+}
+      
 
       return {
         score,
