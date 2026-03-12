@@ -957,40 +957,6 @@ module.exports = async function (context, req) {
       };
     }
 
-    function isLikelyOnlyComprehensivePage(text) {
-      const s = normalizeText(text);
-      if (!s) return false;
-
-      const comprehensiveHits = keywordHits(s, [
-        "قائمة الدخل الشامل",
-        "الدخل الشامل",
-        "statement of comprehensive income",
-        "other comprehensive income",
-        "total comprehensive income",
-        "بنود الدخل الشامل الاخر",
-        "اجمالي الدخل الشامل"
-      ]);
-
-      const incomeCoreHits = keywordHits(s, [
-        "revenue",
-        "sales",
-        "gross profit",
-        "operating income",
-        "profit before tax",
-        "income taxes and zakat",
-        "الايرادات",
-        "الإيرادات",
-        "المبيعات",
-        "اجمالي الربح",
-        "الربح التشغيلي",
-        "الربح قبل الزكاة",
-        "الزكاة",
-        "ضريبة الدخل"
-      ]);
-
-      return comprehensiveHits >= 2 && incomeCoreHits === 0;
-    }
-
     function buildPageContext(pageNumber, orderedPageNumbers) {
       const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
       const pageTables = getTablesForPage(pageNumber);
@@ -1100,8 +1066,6 @@ module.exports = async function (context, req) {
           "other comprehensive"
         ]);
 
-      const isLikelyOnlyComprehensiveIncomePage = isLikelyOnlyComprehensivePage(normalizedText);
-
       const isLikelyNarrativePage =
         isLikelyNarrativeLine(normalizedText) ||
         isLikelyStandardEffectiveDateText(normalizedText);
@@ -1132,7 +1096,6 @@ module.exports = async function (context, req) {
         rejectAsNarrative: isLikelyNarrativePage,
         rejectAsEquity: isLikelyEquityStatement,
         rejectAsComprehensive: isLikelyComprehensiveIncome,
-        rejectAsOnlyComprehensive: isLikelyOnlyComprehensiveIncomePage,
         rejectAsOwnership: isLikelyOwnershipPage
       };
 
@@ -1164,7 +1127,6 @@ module.exports = async function (context, req) {
         isLikelyStandardsPage,
         isLikelyEquityStatement,
         isLikelyComprehensiveIncome,
-        isLikelyOnlyComprehensiveIncomePage,
         isLikelyNarrativePage,
         isLikelyOwnershipPage,
         ownershipLikeRowCount,
@@ -1180,7 +1142,8 @@ module.exports = async function (context, req) {
 
     const pageContexts = allPageNumbers.map((pageNumber) => buildPageContext(pageNumber, allPageNumbers));
 
-    // =========================================================
+
+        // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
 
@@ -1327,8 +1290,7 @@ module.exports = async function (context, req) {
     const profileDetection = detectStatementProfile();
     const statementProfile = profileDetection.statementProfile;
 
-
-        // =========================================================
+    // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
@@ -1563,213 +1525,12 @@ module.exports = async function (context, req) {
             "changes in equity"
           ]
         }
-      },
-
-      reit: {
-        balance: {
-          key: "balance",
-          titles: [
-            "قائمة المركز المالي",
-            "المركز المالي",
-            "قائمة الوضع المالي",
-            "statement of financial position",
-            "balance sheet"
-          ],
-          structure: [
-            "عقارات استثمارية",
-            "الموجودات",
-            "المطلوبات",
-            "حقوق الملكيه",
-            "حقوق الملكية",
-            "اجمالي الموجودات",
-            "اجمالي المطلوبات",
-            "اجمالي حقوق الملكية",
-            "investment properties",
-            "total assets",
-            "total liabilities",
-            "equity",
-            "fund units"
-          ],
-          negatives: [
-            "قائمة الدخل",
-            "قائمة التدفقات النقدية",
-            "statement of income",
-            "statement of cash flows",
-            "changes in equity"
-          ]
-        },
-        income: {
-          key: "income",
-          titles: [
-            "قائمة الدخل",
-            "قائمة الربح والخسارة",
-            "statement of income",
-            "income statement",
-            "statement of profit or loss"
-          ],
-          structure: [
-            "دخل ايجار",
-            "دخل إيجار",
-            "ايرادات",
-            "ربح العمليات",
-            "ربح السنة",
-            "توزيعات ارباح",
-            "عقارات استثمارية",
-            "rental income",
-            "revenue",
-            "net income",
-            "fair value"
-          ],
-          negatives: [
-            "قائمة التدفقات النقدية",
-            "قائمة المركز المالي",
-            "statement of cash flows",
-            "statement of financial position",
-            "changes in equity"
-          ]
-        },
-        cashflow: {
-          key: "cashflow",
-          titles: [
-            "قائمة التدفقات النقدية",
-            "بيان التدفقات النقدية",
-            "statement of cash flows",
-            "cash flow statement"
-          ],
-          structure: [
-            "صافي النقد الناتج من الانشطة التشغيلية",
-            "صافي النقد من الانشطة التشغيلية",
-            "صافي النقد المستخدم في الانشطة الاستثمارية",
-            "صافي النقد من الانشطة الاستثمارية",
-            "صافي النقد الناتج من الانشطة التمويلية",
-            "صافي النقد من الانشطة التمويلية",
-            "التغير في النقد",
-            "النقد وما في حكمه",
-            "cash flows from operating activities",
-            "cash flows from investing activities",
-            "cash flows from financing activities",
-            "cash and cash equivalents"
-          ],
-          negatives: [
-            "قائمة المركز المالي",
-            "قائمة الدخل",
-            "statement of financial position",
-            "statement of income",
-            "changes in equity"
-          ]
-        }
-      },
-
-      operating_company: {
-        balance: {
-          key: "balance",
-          titles: [
-            "قائمة المركز المالي",
-            "المركز المالي",
-            "قائمة الوضع المالي",
-            "statement of financial position",
-            "balance sheet"
-          ],
-          structure: [
-            "الموجودات",
-            "المطلوبات",
-            "حقوق الملكيه",
-            "حقوق الملكية",
-            "اجمالي الموجودات",
-            "اجمالي المطلوبات",
-            "اجمالي حقوق الملكية",
-            "المخزون",
-            "المدينون التجاريون",
-            "الموردون",
-            "total assets",
-            "total liabilities",
-            "total equity",
-            "inventories",
-            "trade receivables",
-            "trade payables"
-          ],
-          negatives: [
-            "قائمة الدخل",
-            "قائمة التدفقات النقدية",
-            "statement of income",
-            "statement of cash flows",
-            "changes in equity"
-          ]
-        },
-        income: {
-          key: "income",
-          titles: [
-            "قائمة الدخل",
-            "قائمة الربح والخسارة",
-            "statement of income",
-            "income statement",
-            "statement of profit or loss",
-            "consolidated statement of income"
-          ],
-          structure: [
-            "الايرادات",
-            "الإيرادات",
-            "المبيعات",
-            "تكلفة المبيعات",
-            "تكلفة الايرادات",
-            "مجمل الربح",
-            "الربح التشغيلي",
-            "صافي الربح",
-            "revenue",
-            "sales",
-            "cost of sales",
-            "cost of revenue",
-            "gross profit",
-            "operating income",
-            "operating profit",
-            "net income"
-          ],
-          negatives: [
-            "قائمة التدفقات النقدية",
-            "قائمة المركز المالي",
-            "statement of cash flows",
-            "statement of financial position",
-            "changes in equity"
-          ]
-        },
-        cashflow: {
-          key: "cashflow",
-          titles: [
-            "قائمة التدفقات النقدية",
-            "بيان التدفقات النقدية",
-            "statement of cash flows",
-            "cash flow statement",
-            "consolidated statement of cash flows"
-          ],
-          structure: [
-            "صافي النقد الناتج من الانشطة التشغيلية",
-            "صافي النقد من الانشطة التشغيلية",
-            "صافي النقد المستخدم في الانشطة الاستثمارية",
-            "صافي النقد من الانشطة الاستثمارية",
-            "صافي النقد الناتج من الانشطة التمويلية",
-            "صافي النقد من الانشطة التمويلية",
-            "التغير في النقد",
-            "التغير في النقد وما في حكمه",
-            "النقد وما في حكمه",
-            "cash flows from operating activities",
-            "cash flows from investing activities",
-            "cash flows from financing activities",
-            "cash and cash equivalents"
-          ],
-          negatives: [
-            "قائمة المركز المالي",
-            "قائمة الدخل",
-            "statement of financial position",
-            "statement of income",
-            "changes in equity"
-          ]
-        }
       }
     };
 
-    const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
+    const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.bank;
 
-    const SEMANTIC_RULES = {
+        const SEMANTIC_RULES = {
       balance: {
         strongTitles: [
           "balance sheet",
@@ -2145,7 +1906,7 @@ module.exports = async function (context, req) {
       return unique(hits);
     }
 
-        function mandatoryEligibility(pageCtx, kind) {
+    function mandatoryEligibility(pageCtx, kind) {
       const rules = SEMANTIC_RULES[kind] || {};
       const wholeText = getPageStatementText(pageCtx);
 
@@ -2385,7 +2146,7 @@ module.exports = async function (context, req) {
       };
     }
 
-    function semanticPenaltyScore(pageCtx, kind) {
+        function semanticPenaltyScore(pageCtx, kind) {
       const wholeText = getPageStatementText(pageCtx);
       let penalty = 0;
       const reasons = [];
@@ -2814,11 +2575,6 @@ module.exports = async function (context, req) {
         reasons.push("comprehensiveIncomePenalty:-170");
       }
 
-      if (kind === "income" && pageCtx.isLikelyOnlyComprehensiveIncomePage) {
-        score -= 220;
-        reasons.push("onlyComprehensivePagePenalty:-220");
-      }
-
       if (kind === "cashflow" && pageCtx.isLikelyComprehensiveIncome) {
         score -= 120;
         reasons.push("comprehensivePenalty:-120");
@@ -2921,6 +2677,53 @@ module.exports = async function (context, req) {
     const rankedIncome = rankPages("income");
     const rankedCashflow = rankPages("cashflow");
 
+    // =========================================================
+    // Score Calibration Layer (v6.6)
+    // =========================================================
+
+    function normalizeRankingScores(list) {
+      if (!Array.isArray(list) || !list.length) return [];
+
+      const maxScore = Math.max(...list.map((x) => x.score));
+      const minScore = Math.min(...list.map((x) => x.score));
+      const range = Math.max(1, maxScore - minScore);
+
+      return list.map((item) => ({
+        ...item,
+        normalizedScore: Math.round(((item.score - minScore) / range) * 100)
+      }));
+    }
+
+    const calibratedIncome = normalizeRankingScores(rankedIncome);
+    const calibratedBalance = normalizeRankingScores(rankedBalance);
+    const calibratedCashflow = normalizeRankingScores(rankedCashflow);
+
+    // =========================================================
+    // Confidence Score
+    // =========================================================
+
+    function computeConfidence(rankList) {
+      if (!rankList || rankList.length < 2) return 0.5;
+
+      const top = rankList[0].score;
+      const second = rankList[1].score;
+      const diff = top - second;
+
+      if (diff > 200) return 0.95;
+      if (diff > 120) return 0.9;
+      if (diff > 60) return 0.8;
+      if (diff > 30) return 0.7;
+      if (diff > 10) return 0.6;
+
+      return 0.5;
+    }
+
+    const confidence = {
+      income: computeConfidence(rankedIncome),
+      balance: computeConfidence(rankedBalance),
+      cashflow: computeConfidence(rankedCashflow)
+    };
+
     let incomePage = rankedIncome[0]?.pageNumber || null;
     let balancePage = rankedBalance[0]?.pageNumber || null;
     let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
@@ -2970,7 +2773,7 @@ module.exports = async function (context, req) {
     return send(200, {
       ok: true,
       engine: "extract-financial-v6.6",
-      phase: "4B_profile_and_selection_hardening",
+      phase: "4B_semantic_ranking_hardening_plus_confidence",
       fileName: body.fileName || normalized?.meta?.fileName || null,
       statementProfile,
       selectedPages: {
@@ -2978,12 +2781,13 @@ module.exports = async function (context, req) {
         balancePage,
         cashFlowPage
       },
+      confidence,
       debug: {
         profileDetection,
         ranking: {
-          balanceTop: rankedBalance.slice(0, 5),
-          incomeTop: rankedIncome.slice(0, 5),
-          cashFlowTop: rankedCashflow.slice(0, 5)
+          balanceTop: calibratedBalance.slice(0, 5),
+          incomeTop: calibratedIncome.slice(0, 5),
+          cashFlowTop: calibratedCashflow.slice(0, 5)
         }
       },
       meta: {
