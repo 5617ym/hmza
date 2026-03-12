@@ -2672,7 +2672,7 @@ module.exports = async function (context, req) {
         .sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
     }
 
-    const rankedBalance = rankPages("balance");
+        const rankedBalance = rankPages("balance");
     const rankedIncome = rankPages("income");
     const rankedCashflow = rankPages("cashflow");
 
@@ -2680,20 +2680,46 @@ module.exports = async function (context, req) {
     let balancePage = rankedBalance[0]?.pageNumber || null;
     let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
 
-    // prevent same page being selected for multiple statements
+    function topPages(list, limit = 3) {
+      return (list || []).slice(0, limit).map((x) => x.pageNumber);
+    }
+
+    const strongIncomePages = new Set(topPages(rankedIncome, 3));
+    const strongBalancePages = new Set(topPages(rankedBalance, 3));
+
+    function findAlternative(list, blockedPages) {
+      return (list || []).find((p) => !blockedPages.has(p.pageNumber))?.pageNumber || null;
+    }
+
     if (incomePage && balancePage && incomePage === balancePage) {
-      const alt = rankedBalance.find((p) => p.pageNumber !== incomePage);
-      if (alt) balancePage = alt.pageNumber;
+      const incomeScore = rankedIncome.find((p) => p.pageNumber === incomePage)?.score ?? -999999;
+      const balanceScore = rankedBalance.find((p) => p.pageNumber === balancePage)?.score ?? -999999;
+
+      if (balanceScore >= incomeScore) {
+        incomePage = findAlternative(
+          rankedIncome,
+          new Set([balancePage, ...strongBalancePages, cashFlowPage].filter(Boolean))
+        ) || incomePage;
+      } else {
+        balancePage = findAlternative(
+          rankedBalance,
+          new Set([incomePage, ...strongIncomePages, cashFlowPage].filter(Boolean))
+        ) || balancePage;
+      }
     }
 
     if (incomePage && cashFlowPage && incomePage === cashFlowPage) {
-      const alt = rankedCashflow.find((p) => p.pageNumber !== incomePage);
-      if (alt) cashFlowPage = alt.pageNumber;
+      cashFlowPage = findAlternative(
+        rankedCashflow,
+        new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
+      ) || cashFlowPage;
     }
 
     if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
-      const alt = rankedCashflow.find((p) => p.pageNumber !== balancePage);
-      if (alt) cashFlowPage = alt.pageNumber;
+      cashFlowPage = findAlternative(
+        rankedCashflow,
+        new Set([balancePage, incomePage, ...strongBalancePages].filter(Boolean))
+      ) || cashFlowPage;
     }
 
     return send(200, {
