@@ -1,4 +1,5 @@
 const { detectSector } = require("../_lib/sector-detection");
+const sectorProfiles = require("../_lib/sector-profiles");
 
 // api/extract-financial/index.js
 module.exports = async function (context, req) {
@@ -24,6 +25,7 @@ if (!normalized || typeof normalized !== "object") {
 
 const sectorInfo = detectSector(normalized);
 const detectedSector = sectorInfo.sector;
+const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.operating_company;
 
     const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
     const tablesPreview = Array.isArray(normalized.tablesPreview)
@@ -3334,6 +3336,7 @@ if (!eligibilityPassed) {
 
   sector: detectedSector,
   sectorInfo,
+  activeSectorProfile,
 
   engine: "extract-financial-v6.6",
   phase: "4B_semantic_ranking_hardening_plus_confidence",
