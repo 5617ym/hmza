@@ -1295,8 +1295,8 @@ const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.ope
 
 const profileDetection = detectStatementProfile();
 const statementProfile = profileDetection.statementProfile;
-
 let finalSector = detectedSector;
+
 if (
   finalSector === "operating_company" &&
   statementProfile &&
@@ -1307,6 +1307,9 @@ if (
 
 const finalSectorProfile =
   sectorProfiles[finalSector] || sectorProfiles.operating_company;
+
+
+
 
         // =========================================================
     // Layer 4: Statement Page Ranking and Selection
