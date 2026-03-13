@@ -3414,7 +3414,7 @@ debug: {
   ranking: {
     balanceTop: calibratedBalance.slice(0, 5),
     incomeTop: calibratedIncome.slice(0, 5),
-    cashFlowTop: calibratedCashflow.slice(0, 5)
+    cashflow: cashflowKeywords.slice(0, 12)
   }
 },
 
