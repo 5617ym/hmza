@@ -1823,10 +1823,12 @@ if (
   nextCtx &&
   nextEval.score >= 55 &&
   !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
-  looksLikeSameStatement(baseCtx, nextCtx)
-) {
-  pages.push(nextCtx.pageNumber);
-}
+  (
+    looksLikeSameStatement(baseCtx, nextCtx) ||
+    nextEval.score >= 200
+  )
+)
+
 
 
 
