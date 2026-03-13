@@ -1,10 +1,10 @@
-# PROJECT_STATE.md
+PROJECT_STATE.md
 
 PROJECT:
 Financial Statement Extraction Engine
 
 LAST_UPDATE:
-2026-03-12
+2026-03-13
 
 CURRENT_ENGINE_VERSION:
 extract-financial-v6.7
@@ -19,14 +19,15 @@ CURRENT_TASK:
 
 القطاعات المستهدفة في البداية:
 
-1. bank
-2. insurance
-3. reit
-4. operating_company
+bank
 
-------------------------------------------------------------
+insurance
+
+reit
+
+operating_company
+
 PHASE HISTORY
-------------------------------------------------------------
 
 PHASE 4A
 Multi-Sector Validation
@@ -37,47 +38,59 @@ Multi-Sector Validation
 
 القطاعات التي تم اختبارها:
 
-1. شركة تشغيلية عربية
-2. شركة تشغيلية إنجليزية
-3. بنك عربي
-4. بنك إنجليزي
-5. شركة تأمين
-6. صندوق REIT
-7. شركة صناعية
+شركة تشغيلية عربية
+
+شركة تشغيلية إنجليزية
+
+بنك عربي
+
+بنك إنجليزي
+
+شركة تأمين
+
+صندوق REIT
+
+شركة صناعية
 
 الشركات المستخدمة في الاختبار:
 
-- جاهز
-- المراعي
-- مصرف الإنماء
-- مصرف الراجحي
-- التعاونية للتأمين
-- جدوى ريت
-- المتقدمة للبتروكيماويات
+جاهز
+
+المراعي
+
+مصرف الإنماء
+
+مصرف الراجحي
+
+التعاونية للتأمين
+
+جدوى ريت
+
+المتقدمة للبتروكيماويات
 
 النتيجة:
 
 النظام نجح في اكتشاف صفحات:
 
-Balance Sheet  
-Income Statement  
-Cash Flow Statement  
+Balance Sheet
+Income Statement
+Cash Flow Statement
 
 ودعم:
 
-- العربية
-- الإنجليزية
-- تقارير IFRS
-- تقارير السوق السعودي
+العربية
+
+الإنجليزية
+
+تقارير IFRS
+
+تقارير السوق السعودي
 
 STATUS:
 Stable
 
-
-------------------------------------------------------------
 PHASE 4B
 Extraction Engine Hardening
-------------------------------------------------------------
 
 هدف المرحلة:
 
@@ -87,26 +100,41 @@ Extraction Engine Hardening
 
 المشاكل التي تم حلها في هذه المرحلة:
 
-1. Ranking instability
-2. Ownership tables interference
-3. Dense RTL table confusion
-4. Row extraction instability
-5. Recovery flooding
-6. Bank eligibility failure
-7. Note tables winning
+Ranking instability
+
+Ownership tables interference
+
+Dense RTL table confusion
+
+Row extraction instability
+
+Recovery flooding
+
+Bank eligibility failure
+
+Note tables winning
 
 التحسينات التي تمت إضافتها:
 
-- Guarded template recovery
-- Ownership table detection
-- RTL label detection improvements
-- Dense table protection logic
-- Distinct label-column detection
-- Bank relaxed eligibility path
-- Strong semantic ranking signals
-- Note table rejection penalty
-- Multi-page merge protection
-- Cross-statement ranking hardening
+Guarded template recovery
+
+Ownership table detection
+
+RTL label detection improvements
+
+Dense table protection logic
+
+Distinct label-column detection
+
+Bank relaxed eligibility path
+
+Strong semantic ranking signals
+
+Note table rejection penalty
+
+Multi-page merge protection
+
+Cross-statement ranking hardening
 
 أهم الإضافات المعمارية:
 
@@ -115,19 +143,24 @@ Bank Title Dense Eligibility Path
 يسمح بقبول صفحات القوائم البنكية
 حتى عند ضعف anchor coverage إذا كانت:
 
-- تحتوي عنوان قائمة قوي
-- بنية جدول بنكي واضحة
-- كثافة أرقام عالية
+تحتوي عنوان قائمة قوي
+
+بنية جدول بنكي واضحة
+
+كثافة أرقام عالية
 
 Note Table Strong Penalty
 
 تمت إضافة عقوبة قوية للصفحات
 التي تمثل جداول إيضاحات مالية مثل:
 
-- Sensitivity tables
-- Interest rate gaps
-- Debt maturity schedules
-- Bond / Sukuk tables
+Sensitivity tables
+
+Interest rate gaps
+
+Debt maturity schedules
+
+Bond / Sukuk tables
 
 وذلك لمنعها من الفوز في
 Statement Page Ranking.
@@ -135,51 +168,142 @@ Statement Page Ranking.
 STATUS:
 COMPLETED
 
-------------------------------------------------------------
+PHASE 4C
+Sector Detection Stabilization
+
+تم إضافة طبقة اكتشاف القطاع داخل النظام
+لتمكين المحرك من فهم نوع الشركة قبل
+تطبيق منطق التحليل المالي.
+
+الإضافات التي تمت:
+
+Sector Detection Engine
+
+تم إنشاء وحدة:
+
+api/_lib/sector-detection.js
+
+تعتمد على:
+
+keyword scoring
+
+sector profiles
+
+semantic signals داخل النص
+
+القطاعات المدعومة حالياً:
+
+bank
+
+insurance
+
+reit
+
+operating_company
+
+تحسينات مهمة:
+
+Final Sector Resolution
+
+تم إضافة منطق:
+
+detectSector → statementProfile → finalSector
+
+لضمان اختيار القطاع الصحيح.
+
+Clean SectorInfo Output
+
+تم تعديل بنية:
+
+sectorInfo
+
+بحيث تعكس القطاع النهائي الحقيقي
+بدلاً من نتيجة الكشف الأولية.
+
+مثال:
+
+sector overridden by statement profile:
+operating_company → reit
+
+False Positive Bank Detection Fix
+
+تم اكتشاف أن كلمات مثل:
+
+financing
+
+murabaha
+
+تمويل
+
+كانت تسبب تحويل شركات تشغيلية إلى قطاع البنوك.
+
+تم إصلاح ذلك عبر:
+
+رفع شرط bankHits من 2 إلى 3
+
+إضافة شرط وجود مصطلح بنكي حقيقي مثل:
+
+special commission
+customer deposits
+loans and advances
+cash and balances with central banks
+ودائع العملاء
+
+النتيجة:
+
+اختبارات القطاعات أصبحت مستقرة:
+
+جاهز → operating_company ✔
+المراعي → operating_company ✔
+جدوى ريت → reit ✔
+مصرف الإنماء → bank ✔
+
+STATUS:
+STABLE
 
 SYSTEM PIPELINE (CURRENT)
 
-upload-url  
-→ ingest  
-→ analyze (Azure Document Intelligence)  
-→ extract-financial  
-
-------------------------------------------------------------
+upload-url
+→ ingest
+→ analyze (Azure Document Intelligence)
+→ extract-financial
 
 SYSTEM PIPELINE (NEXT ARCHITECTURE)
 
-upload  
-→ ingest  
-→ analyze  
-→ sector-detection  
-→ extract-financial  
-→ financial-analysis  
-
-------------------------------------------------------------
+upload
+→ ingest
+→ analyze
+→ sector-detection
+→ extract-financial
+→ financial-analysis
 
 ENGINE CAPABILITIES
 
 المحرك الحالي قادر على:
 
-1. Statement Profile Detection
-   - bank
-   - insurance
-   - reit
-   - operating_company
+Statement Profile Detection
 
-2. Semantic Page Ranking
+bank
 
-3. Table Structure Detection
+insurance
 
-4. Row Extraction with Validation
+reit
 
-5. Guarded Recovery
+operating_company
 
-6. Multi-page Protection
+Sector Detection Engine
 
-7. Structured Financial Output
+Semantic Page Ranking
 
-------------------------------------------------------------
+Table Structure Detection
+
+Row Extraction with Validation
+
+Guarded Recovery
+
+Multi-page Protection
+
+Structured Financial Output
 
 CURRENT STATUS
 
@@ -195,10 +319,11 @@ Stable
 Row Extraction:
 Stable
 
+Sector Detection:
+Stable
+
 Multi-sector support:
 Validated
-
-------------------------------------------------------------
 
 NEXT OBJECTIVE
 
@@ -213,33 +338,38 @@ Financial Statement Intelligence Layer
 
 المرحلة ستشمل:
 
-1. Sector Detection Layer
+Sector Detection Layer
 
 اكتشاف نوع الشركة تلقائيًا اعتمادًا على:
 
-- اسم الشركة
-- مصطلحات القوائم المالية
-- هيكل الميزانية
-- مصطلحات النشاط
+اسم الشركة
 
-2. Financial Profiles
+مصطلحات القوائم المالية
+
+هيكل الميزانية
+
+مصطلحات النشاط
+
+Financial Profiles
 
 إنشاء Profiles مالية لكل قطاع:
 
 profiles/
 
-- bankProfile.js
-- insuranceProfile.js
-- operatingProfile.js
-- reitProfile.js
+bankProfile.js
+insuranceProfile.js
+operatingProfile.js
+reitProfile.js
 
 كل Profile سيحتوي:
 
-- financialMapping
-- statementStructure
-- keywordPatterns
+financialMapping
 
-3. Sector-Specific Financial Mapping
+statementStructure
+
+keywordPatterns
+
+Sector-Specific Financial Mapping
 
 بدلاً من:
 
@@ -250,8 +380,6 @@ Universal Financial Mapping
 Sector-Specific Mapping
 
 بناءً على القطاع المكتشف.
-
-------------------------------------------------------------
 
 LONG TERM VISION
 
