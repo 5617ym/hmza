@@ -1491,10 +1491,14 @@ module.exports = async function (context, req) {
         reasons.push(`negativeHits:-${s}`);
       }
 
-      if (titleHitsAll.length === 0 && structureHitsAll.length === 0) {
-        score -= 40;
-        reasons.push("noTitleNoStructure:-40");
-      }
+      const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
+const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
+
+if (hasNoTitle && hasNoStructure) {
+  const penalty = kind === "balance" ? 70 : 110;
+  score -= penalty;
+  reasons.push(`noTitleNoStructure:-${penalty}`);
+}
 
       return {
         score,
