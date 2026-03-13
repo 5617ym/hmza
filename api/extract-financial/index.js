@@ -14,18 +14,19 @@ module.exports = async function (context, req) {
   try {
     const body = req.body || {};
     const normalized = body.normalized || {};
-const normalizedPrev = body.normalizedPrev || null;
+    const normalizedPrev = body.normalizedPrev || null;
 
-if (!normalized || typeof normalized !== "object") {
-  return send(400, {
-    ok: false,
-    error: "normalized payload is required"
-  });
-}
+    if (!normalized || typeof normalized !== "object") {
+      return send(400, {
+        ok: false,
+        error: "normalized payload is required"
+      });
+    }
 
-const sectorInfo = detectSector(normalized);
-const detectedSector = sectorInfo.sector;
-const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.operating_company;
+    const sectorInfo = detectSector(normalized);
+    const detectedSector = sectorInfo.sector;
+    const activeSectorProfile =
+      sectorProfiles[detectedSector] || sectorProfiles.operating_company;
 
     const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
     const tablesPreview = Array.isArray(normalized.tablesPreview)
@@ -593,7 +594,7 @@ const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.ope
       };
     }
 
-    // =========================================================
+        // =========================================================
     // Layer 2: Page / Table Context Builder
     // =========================================================
 
@@ -1149,7 +1150,7 @@ const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.ope
 
     const pageContexts = allPageNumbers.map((pageNumber) => buildPageContext(pageNumber, allPageNumbers));
 
-    // =========================================================
+        // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
 
@@ -1191,7 +1192,7 @@ const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.ope
           "إيرادات التأمين",
           "خدمة التامين",
           "خدمة التأمين",
-          "اعادة التامين",
+          "اعاده التامين",
           "إعادة التأمين",
           "مطالبات",
           "claims",
@@ -1268,50 +1269,47 @@ const activeSectorProfile = sectorProfiles[detectedSector] || sectorProfiles.ope
       }
     };
 
-     function detectStatementProfile() {
-  const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
-  const scores = {};
+    function detectStatementProfile() {
+      const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
+      const scores = {};
 
-  for (const key of Object.keys(PROFILE_CONFIG)) {
-    const cfg = PROFILE_CONFIG[key];
-    const positive = keywordHits(fullText, cfg.positive);
-    const negative = keywordHits(fullText, cfg.negative);
-    scores[key] = (positive * 8) - (negative * 5);
-  }
+      for (const key of Object.keys(PROFILE_CONFIG)) {
+        const cfg = PROFILE_CONFIG[key];
+        const positive = keywordHits(fullText, cfg.positive);
+        const negative = keywordHits(fullText, cfg.negative);
+        scores[key] = (positive * 8) - (negative * 5);
+      }
 
-  const sorted = Object.keys(scores)
-    .map((k) => ({ key: k, score: scores[k] }))
-    .sort((a, b) => b.score - a.score);
+      const sorted = Object.keys(scores)
+        .map((k) => ({ key: k, score: scores[k] }))
+        .sort((a, b) => b.score - a.score);
 
-  const statementProfile = sorted[0]?.key || "operating_company";
+      const statementProfile = sorted[0]?.key || "operating_company";
 
-  return {
-    statementProfile,
-    scores,
-    rankedProfiles: sorted,
-    reason: `${statementProfile} keywords strongest`
-  };
-}
+      return {
+        statementProfile,
+        scores,
+        rankedProfiles: sorted,
+        reason: `${statementProfile} keywords strongest`
+      };
+    }
 
-const profileDetection = detectStatementProfile();
-const statementProfile = profileDetection.statementProfile;
-let finalSector = detectedSector;
+    const profileDetection = detectStatementProfile();
+    const statementProfile = profileDetection.statementProfile;
+    let finalSector = detectedSector;
 
-if (
-  finalSector === "operating_company" &&
-  statementProfile &&
-  sectorProfiles[statementProfile]
-) {
-  finalSector = statementProfile;
-}
+    if (
+      finalSector === "operating_company" &&
+      statementProfile &&
+      sectorProfiles[statementProfile]
+    ) {
+      finalSector = statementProfile;
+    }
 
-const finalSectorProfile =
-  sectorProfiles[finalSector] || sectorProfiles.operating_company;
+    const finalSectorProfile =
+      sectorProfiles[finalSector] || sectorProfiles.operating_company;
 
-
-
-
-        // =========================================================
+    // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
@@ -1780,9 +1778,10 @@ const finalSectorProfile =
       }
     };
 
-    const ACTIVE_STATEMENT_CONFIGS = STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
+    const ACTIVE_STATEMENT_CONFIGS =
+      STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
 
-    const SEMANTIC_RULES = {
+        const SEMANTIC_RULES = {
       balance: {
         strongTitles: [
           "balance sheet",
@@ -2147,7 +2146,7 @@ const finalSectorProfile =
       return false;
     }
 
-    function countDistinctPhraseHits(text, phrases) {
+        function countDistinctPhraseHits(text, phrases) {
       const s = normalizeText(text);
       const hits = [];
       for (const phrase of (phrases || [])) {
@@ -2318,7 +2317,7 @@ const finalSectorProfile =
       };
     }
 
-        function mandatoryEligibility(pageCtx, kind) {
+    function mandatoryEligibility(pageCtx, kind) {
       const rules = SEMANTIC_RULES[kind] || {};
       const wholeText = getPageStatementText(pageCtx);
 
@@ -2480,7 +2479,7 @@ const finalSectorProfile =
       };
     }
 
-    function semanticBoostScore(pageCtx, cfg, kind) {
+        function semanticBoostScore(pageCtx, cfg, kind) {
       const rules = SEMANTIC_RULES[kind] || {};
       const wholeText = getPageStatementText(pageCtx);
       let boost = 0;
@@ -2633,12 +2632,13 @@ const finalSectorProfile =
         if (statementProfile === "bank" && hasStrongOwnTitle) {
           heavy = 0;
         }
-        // Strong rejection for financial note tables
-if (noteHits.length >= 5 && !hasStrongOwnTitle) {
-  const strongNotePenalty = 40;
-  penalty += strongNotePenalty;
-  reasons.push(`noteTableStrongPenalty:-${strongNotePenalty}`);
-}
+
+        if (noteHits.length >= 5 && !hasStrongOwnTitle) {
+          const strongNotePenalty = 40;
+          penalty += strongNotePenalty;
+          reasons.push(`noteTableStrongPenalty:-${strongNotePenalty}`);
+        }
+
         if (heavy > 0) {
           penalty += heavy;
           reasons.push(`heavyNotePenalty:-${heavy}`);
@@ -2855,7 +2855,7 @@ if (noteHits.length >= 5 && !hasStrongOwnTitle) {
       );
     }
 
-        function statementRankScore(pageCtx, cfg, kind) {
+    function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
       const signals = {};
@@ -3158,42 +3158,41 @@ if (noteHits.length >= 5 && !hasStrongOwnTitle) {
       };
 
       let eligibilityPassed = eligibility.eligible;
-let eligibilityPath = eligibility.path;
+      let eligibilityPath = eligibility.path;
 
-const bankTitleDensePath =
-  statementProfile === "bank" &&
-  !eligibilityPassed &&
-  hasStrongOwnTitle &&
-  denseBank.compactShape &&
-  denseBank.dense &&
-  pageCtx.numbersCount >= 80 &&
-  !pageCtx.isLikelyOwnershipPage &&
-  !pageCtx.isLikelyIndexPage &&
-  !pageCtx.isLikelyStandardsPage &&
-  !pageCtx.isLikelyNarrativePage;
+      const bankTitleDensePath =
+        statementProfile === "bank" &&
+        !eligibilityPassed &&
+        hasStrongOwnTitle &&
+        denseBank.compactShape &&
+        denseBank.dense &&
+        pageCtx.numbersCount >= 80 &&
+        !pageCtx.isLikelyOwnershipPage &&
+        !pageCtx.isLikelyIndexPage &&
+        !pageCtx.isLikelyStandardsPage &&
+        !pageCtx.isLikelyNarrativePage;
 
-if (bankTitleDensePath) {
-  eligibilityPassed = true;
-  eligibilityPath = "bank_title_dense_path";
-}
+      if (bankTitleDensePath) {
+        eligibilityPassed = true;
+        eligibilityPath = "bank_title_dense_path";
+      }
 
-if (!eligibilityPassed) {
-  let failPenalty = 260;
-  if (kind === "cashflow" && statementProfile === "bank" && truncatedRtl.qualifies) {
-    failPenalty = 60;
-  } else if (statementProfile === "bank" && denseBank.qualifies) {
-    failPenalty = 140;
-  } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured) {
-    failPenalty = 180;
-  }
-  score -= failPenalty;
-  reasons.push(`mandatoryEligibilityFail:-${failPenalty}`);
-} else {
-  const passBoost = statementProfile === "bank" ? 24 : 18;
-  score += passBoost;
-  reasons.push(`mandatoryEligibilityPass:+${passBoost}(${eligibilityPath})`);
-}
-      
+      if (!eligibilityPassed) {
+        let failPenalty = 260;
+        if (kind === "cashflow" && statementProfile === "bank" && truncatedRtl.qualifies) {
+          failPenalty = 60;
+        } else if (statementProfile === "bank" && denseBank.qualifies) {
+          failPenalty = 140;
+        } else if (statementProfile === "bank" && denseBank.compactShape && denseBank.structured) {
+          failPenalty = 180;
+        }
+        score -= failPenalty;
+        reasons.push(`mandatoryEligibilityFail:-${failPenalty}`);
+      } else {
+        const passBoost = statementProfile === "bank" ? 24 : 18;
+        score += passBoost;
+        reasons.push(`mandatoryEligibilityPass:+${passBoost}(${eligibilityPath})`);
+      }
 
       return {
         score,
@@ -3346,50 +3345,31 @@ if (!eligibilityPassed) {
     }
 
     return send(200, {
-  ok: true,
-  sector: finalSector,
+      ok: true,
+      sector: finalSector,
 
-  sectorInfo: {
-    ...sectorInfo,
-    sector: finalSector
-  },
+      sectorInfo: {
+        ...sectorInfo,
+        sector: finalSector
+      },
 
-  activeSectorProfile: finalSectorProfile,
+      activeSectorProfile: finalSectorProfile,
 
-  engine: "extract-financial-v6.6",
-  phase: "4B_semantic_ranking_hardening_plus_confidence",
+      engine: "extract-financial-v6.6",
+      phase: "4B_semantic_ranking_hardening_plus_confidence",
 
-  fileName: body.fileName || normalized?.meta?.fileName || null,
+      fileName: body.fileName || normalized?.meta?.fileName || null,
 
-  statementProfile,
+      statementProfile,
 
-  selectedPages: {
-    incomePage,
-    balancePage,
-    cashFlowPage
-  },
+      selectedPages: {
+        incomePage,
+        balancePage,
+        cashFlowPage
+      },
 
-  confidence,
-
-  debug: {
-    profileDetection
-  }
-});
-
-  
-
-  engine: "extract-financial-v6.6",
-  phase: "4B_semantic_ranking_hardening_plus_confidence",
-  fileName: body.fileName || normalized?.meta?.fileName || null,
-  statementProfile,
-
-  selectedPages: {
-    incomePage,
-    balancePage,
-    cashFlowPage
-  },
-      
       confidence,
+
       debug: {
         profileDetection,
         ranking: {
@@ -3398,11 +3378,13 @@ if (!eligibilityPassed) {
           cashFlowTop: calibratedCashflow.slice(0, 5)
         }
       },
+
       meta: {
         pages: normalized?.meta?.pages ?? pages.length ?? null,
         tables: normalized?.meta?.tables ?? tablesPreview.length ?? null,
         textLength: normalized?.meta?.textLength ?? null
       },
+
       normalizedPrevExists: !!normalizedPrev
     });
   } catch (err) {
@@ -3412,14 +3394,3 @@ if (!eligibilityPassed) {
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-  
