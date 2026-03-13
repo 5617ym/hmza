@@ -2140,32 +2140,31 @@ module.exports = async function (context, req) {
     // statementRankScore
 
         function rankPages(kind) {
-      const cfg = mergeStatementConfigWithSectorKeywords(
-        kind,
-        ACTIVE_STATEMENT_CONFIGS[kind]
-      );
+  const cfg = mergeStatementConfigWithSectorKeywords(
+    kind,
+    ACTIVE_STATEMENT_CONFIGS[kind]
+  );
 
-      return pageContexts
-        .map((pageCtx) => {
-          const ranked = statementRankScore(pageCtx, cfg, kind);
-          return {
-            pageNumber: pageCtx.pageNumber,
-            score: ranked.score,
-            reasons: ranked.reasons,
-            signals: ranked.signals,
-            years: pageCtx.years,
-            numbersCount: pageCtx.numbersCount,
-            rowCount: pageCtx.rowCount,
-            tableCount: pageCtx.tableCount,
-            mainColumnCount: pageCtx.mainColumnCount,
-            mainRowCount: pageCtx.mainRowCount,
-            positionRatio: pageCtx.positionRatio,
-            header: pageCtx.header
-          };
-        })
-        .sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
-    }
-
+  return pageContexts
+    .map((pageCtx) => {
+      const ranked = statementRankScore(pageCtx, cfg, kind);
+      return {
+        pageNumber: pageCtx.pageNumber,
+        score: ranked.score,
+        reasons: ranked.reasons,
+        signals: ranked.signals,
+        years: pageCtx.years,
+        numbersCount: pageCtx.numbersCount,
+        rowCount: pageCtx.rowCount,
+        tableCount: pageCtx.tableCount,
+        mainColumnCount: pageCtx.mainColumnCount,
+        mainRowCount: pageCtx.mainRowCount,
+        positionRatio: pageCtx.positionRatio,
+        header: pageCtx.header
+      };
+    })
+    .sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
+}
     const rankedBalance = rankPages("balance");
     const rankedIncome = rankPages("income");
     const rankedCashflow = rankPages("cashflow");
