@@ -28,6 +28,11 @@ module.exports = async function (context, req) {
     const activeSectorProfile =
       sectorProfiles[detectedSector] || sectorProfiles.operating_company;
 
+    const sectorStatements = activeSectorProfile.statements || {};
+    const incomeKeywords = sectorStatements.income || [];
+    const balanceKeywords = sectorStatements.balance || [];
+    const cashflowKeywords = sectorStatements.cashflow || [];
+
     const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
     const tablesPreview = Array.isArray(normalized.tablesPreview)
       ? normalized.tablesPreview
@@ -1793,7 +1798,24 @@ module.exports = async function (context, req) {
 
     const ACTIVE_STATEMENT_CONFIGS =
       STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
+    function mergeStatementConfigWithSectorKeywords(kind, cfg) {
+  const sectorStructure =
+    kind === "income"
+      ? incomeKeywords
+      : kind === "balance"
+        ? balanceKeywords
+        : cashflowKeywords;
 
+  return {
+    ...cfg,
+    structure: unique([
+      ...(cfg?.structure || []),
+      ...(sectorStructure || [])
+    ])
+  };
+}
+    
+      
         const SEMANTIC_RULES = {
       balance: {
         strongTitles: [
@@ -3215,9 +3237,10 @@ module.exports = async function (context, req) {
     }
 
     function rankPages(kind) {
-      const cfg = ACTIVE_STATEMENT_CONFIGS[kind];
-      return pageContexts
-        .map((pageCtx) => {
+      const cfg = mergeStatementConfigWithSectorKeywords(
+  kind,
+  ACTIVE_STATEMENT_CONFIGS[kind]
+);
           const ranked = statementRankScore(pageCtx, cfg, kind);
           return {
             pageNumber: pageCtx.pageNumber,
@@ -3381,14 +3404,19 @@ module.exports = async function (context, req) {
 
       confidence,
 
-      debug: {
-        profileDetection,
-        ranking: {
-          balanceTop: calibratedBalance.slice(0, 5),
-          incomeTop: calibratedIncome.slice(0, 5),
-          cashFlowTop: calibratedCashflow.slice(0, 5)
-        }
-      },
+debug: {
+  profileDetection,
+  activeProfileKeywords: {
+    income: incomeKeywords.slice(0, 12),
+    balance: balanceKeywords.slice(0, 12),
+    cashflow: cashflowKeywords.slice(0, 12)
+  },
+  ranking: {
+    balanceTop: calibratedBalance.slice(0, 5),
+    incomeTop: calibratedIncome.slice(0, 5),
+    cashFlowTop: calibratedCashflow.slice(0, 5)
+  }
+},
 
       meta: {
         pages: normalized?.meta?.pages ?? pages.length ?? null,
