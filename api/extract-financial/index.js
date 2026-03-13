@@ -1832,25 +1832,35 @@ if (pageCtx.isLikelyIndexPage) {
   ) {
     pages.push(nextCtx.pageNumber);
   }
+        const prevRejectedByOtherTitle =
+    !!prevCtx && pageLooksLikeOtherStatementTitle(prevCtx, kind);
+
+  const nextRejectedByOtherTitle =
+    !!nextCtx && pageLooksLikeOtherStatementTitle(nextCtx, kind);
+
 
   return {
     basePage: basePageNumber,
     pages: unique(pages).sort((a, b) => a - b),
     details: {
       previousPage: prevCtx
-        ? {
-            pageNumber: prevCtx.pageNumber,
-            score: prevEval.score,
-            reasons: prevEval.reasons
-          }
-        : null,
+  ? {
+      pageNumber: prevCtx.pageNumber,
+      score: prevEval.score,
+      reasons: prevEval.reasons,
+      rejectedByOtherStatementTitle: prevRejectedByOtherTitle
+    }
+  : null,
+
       nextPage: nextCtx
-        ? {
-            pageNumber: nextCtx.pageNumber,
-            score: nextEval.score,
-            reasons: nextEval.reasons
-          }
-        : null
+  ? {
+      pageNumber: nextCtx.pageNumber,
+      score: nextEval.score,
+      reasons: nextEval.reasons,
+      rejectedByOtherStatementTitle: nextRejectedByOtherTitle
+    }
+  : null
+
     }
   };
 }
