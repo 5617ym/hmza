@@ -164,10 +164,26 @@ function detectSector(normalized) {
   let reasons = ["default operating company"];
 
   // أولوية البنك ثم التأمين ثم الريت
-  if (bankHits.length >= 3) {
-    sector = "bank";
-    confidence = bankHits.length >= 4 ? 0.95 : 0.9;
-    reasons = [`bank keywords: ${bankHits.slice(0, 6).join(", ")}`];
+  if (
+  bankHits.length >= 3 &&
+  bankHits.some((k) =>
+    [
+      "special commission",
+      "special commission income",
+      "special commission expense",
+      "net special commission income",
+      "customer deposits",
+      "due from banks",
+      "due to banks",
+      "loans and advances",
+      "financing and advances",
+      "cash and balances with central banks",
+      "دخل العمولات الخاصة",
+      "صافي دخل العمولات الخاصة",
+      "ودائع العملاء"
+    ].includes(k)
+  )
+) {
   } else if (insuranceHits.length >= 2) {
     sector = "insurance";
     confidence = insuranceHits.length >= 4 ? 0.95 : 0.9;
