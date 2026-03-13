@@ -1721,6 +1721,28 @@ if (pageCtx.isLikelyIndexPage) {
 
       return { score, reasons };
     }
+        function pageLooksLikeOtherStatementTitle(pageCtx, currentKind) {
+      if (!pageCtx) return false;
+
+      const kinds = ["income", "balance", "cashflow"].filter((k) => k !== currentKind);
+      const titleText = [
+        pageCtx.headerText || "",
+        pageCtx.mainTableText || ""
+      ].join("\n");
+
+      for (const kind of kinds) {
+        const cfg = mergeStatementConfigWithSectorKeywords(
+          kind,
+          ACTIVE_STATEMENT_CONFIGS[kind]
+        );
+
+        const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
+        if (otherTitleHits.length > 0) return true;
+      }
+
+      return false;
+    }
+
 
     function detectStatementContinuation(basePageNumber, kind) {
       const baseCtx = getPageContextByNumber(basePageNumber);
@@ -1745,22 +1767,22 @@ if (pageCtx.isLikelyIndexPage) {
       const pages = [basePageNumber];
 
       // الصفحة السابقة: شرط أقوى لأنها غالبًا بداية القائمة
-      if (
+            if (
         prevCtx &&
         prevEval.score >= 55 &&
-        !containsAny(prevCtx.normalizedText, getContinuationConfig(kind).negatives)
+        !pageLooksLikeOtherStatementTitle(prevCtx, kind)
       ) {
         pages.unshift(prevCtx.pageNumber);
       }
 
-      // الصفحة التالية: شرط أخف لأنها غالبًا تكملة مباشرة
       if (
         nextCtx &&
-        nextEval.score >= 45 &&
-        !containsAny(nextCtx.normalizedText, getContinuationConfig(kind).negatives)
+        nextEval.score >= 55 &&
+        !pageLooksLikeOtherStatementTitle(nextCtx, kind)
       ) {
         pages.push(nextCtx.pageNumber);
       }
+
 
       return {
         basePage: basePageNumber,
