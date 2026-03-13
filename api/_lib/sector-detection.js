@@ -164,7 +164,7 @@ function detectSector(normalized) {
   let reasons = ["default operating company"];
 
   // أولوية البنك ثم التأمين ثم الريت
-  if (bankHits.length >= 2) {
+  if (bankHits.length >= 3) {
     sector = "bank";
     confidence = bankHits.length >= 4 ? 0.95 : 0.9;
     reasons = [`bank keywords: ${bankHits.slice(0, 6).join(", ")}`];
