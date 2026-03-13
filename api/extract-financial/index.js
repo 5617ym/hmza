@@ -1740,8 +1740,8 @@ if (pageCtx.isLikelyIndexPage) {
         );
 
         const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
-        if (otherTitleHits.length > 0) return true;
-      }
+if (otherTitleHits.length >= 2) return true;
+
 
       return false;
     }
