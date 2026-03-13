@@ -1,4 +1,4 @@
-PROJECT_STATE.md
+# PROJECT_STATE.md
 
 PROJECT:
 Financial Statement Extraction Engine
@@ -13,21 +13,18 @@ CURRENT_PHASE:
 PHASE 5 – Financial Statement Intelligence Layer
 
 CURRENT_TASK:
-تصميم وبناء Sector Detection Layer
-لتحديد نوع الشركة قبل تطبيق Financial Mapping
-داخل extract-financial.
+تثبيت نجاح Sector Detection + Statement Ranking
+ثم البدء في خطوة جديدة:
+Multi-Page Statement Continuation Detection
 
-القطاعات المستهدفة في البداية:
+الهدف من الخطوة الجديدة:
+جعل النظام لا يكتفي باكتشاف صفحة بداية القائمة المالية فقط،
+بل يكتشف أيضاً هل القائمة ممتدة إلى الصفحة التالية
+أو عدة صفحات متتالية.
 
-bank
-
-insurance
-
-reit
-
-operating_company
-
+------------------------------------------------------------
 PHASE HISTORY
+------------------------------------------------------------
 
 PHASE 4A
 Multi-Sector Validation
@@ -38,355 +35,149 @@ Multi-Sector Validation
 
 القطاعات التي تم اختبارها:
 
-شركة تشغيلية عربية
-
-شركة تشغيلية إنجليزية
-
-بنك عربي
-
-بنك إنجليزي
-
-شركة تأمين
-
-صندوق REIT
-
-شركة صناعية
+1. شركة تشغيلية عربية
+2. شركة تشغيلية إنجليزية
+3. بنك عربي
+4. بنك إنجليزي
+5. شركة تأمين
+6. صندوق REIT
+7. شركة صناعية
 
 الشركات المستخدمة في الاختبار:
 
-جاهز
-
-المراعي
-
-مصرف الإنماء
-
-مصرف الراجحي
-
-التعاونية للتأمين
-
-جدوى ريت
-
-المتقدمة للبتروكيماويات
+- جاهز
+- المراعي
+- مصرف الإنماء
+- مصرف الراجحي
+- التعاونية
+- جدوى ريت
+- المتقدمة
 
 النتيجة:
+تم إثبات أن المحرك قادر على العمل عبر أكثر من قطاع
+مع اختلاف واضح في شكل القوائم المالية.
 
-النظام نجح في اكتشاف صفحات:
-
-Balance Sheet
-Income Statement
-Cash Flow Statement
-
-ودعم:
-
-العربية
-
-الإنجليزية
-
-تقارير IFRS
-
-تقارير السوق السعودي
-
-STATUS:
-Stable
+------------------------------------------------------------
 
 PHASE 4B
 Extraction Engine Hardening
 
-هدف المرحلة:
-
-تقوية محرك extract-financial وتحسين
-اختيار الصفحات الدلالي (Semantic Page Ranking)
-لضمان استقرار الاستخراج عبر تقارير مالية مختلفة.
-
-المشاكل التي تم حلها في هذه المرحلة:
-
-Ranking instability
-
-Ownership tables interference
-
-Dense RTL table confusion
-
-Row extraction instability
-
-Recovery flooding
-
-Bank eligibility failure
-
-Note tables winning
-
-التحسينات التي تمت إضافتها:
-
-Guarded template recovery
-
-Ownership table detection
-
-RTL label detection improvements
-
-Dense table protection logic
-
-Distinct label-column detection
-
-Bank relaxed eligibility path
-
-Strong semantic ranking signals
-
-Note table rejection penalty
-
-Multi-page merge protection
-
-Cross-statement ranking hardening
-
-أهم الإضافات المعمارية:
-
-Bank Title Dense Eligibility Path
-
-يسمح بقبول صفحات القوائم البنكية
-حتى عند ضعف anchor coverage إذا كانت:
-
-تحتوي عنوان قائمة قوي
-
-بنية جدول بنكي واضحة
-
-كثافة أرقام عالية
-
-Note Table Strong Penalty
-
-تمت إضافة عقوبة قوية للصفحات
-التي تمثل جداول إيضاحات مالية مثل:
-
-Sensitivity tables
-
-Interest rate gaps
-
-Debt maturity schedules
-
-Bond / Sukuk tables
-
-وذلك لمنعها من الفوز في
-Statement Page Ranking.
-
-STATUS:
-COMPLETED
-
-PHASE 4C
-Sector Detection Stabilization
-
-تم إضافة طبقة اكتشاف القطاع داخل النظام
-لتمكين المحرك من فهم نوع الشركة قبل
-تطبيق منطق التحليل المالي.
-
-الإضافات التي تمت:
-
-Sector Detection Engine
-
-تم إنشاء وحدة:
-
-api/_lib/sector-detection.js
-
-تعتمد على:
-
-keyword scoring
-
-sector profiles
-
-semantic signals داخل النص
-
-القطاعات المدعومة حالياً:
-
-bank
-
-insurance
-
-reit
-
-operating_company
-
-تحسينات مهمة:
-
-Final Sector Resolution
-
-تم إضافة منطق:
-
-detectSector → statementProfile → finalSector
-
-لضمان اختيار القطاع الصحيح.
-
-Clean SectorInfo Output
-
-تم تعديل بنية:
-
-sectorInfo
-
-بحيث تعكس القطاع النهائي الحقيقي
-بدلاً من نتيجة الكشف الأولية.
-
-مثال:
-
-sector overridden by statement profile:
-operating_company → reit
-
-False Positive Bank Detection Fix
-
-تم اكتشاف أن كلمات مثل:
-
-financing
-
-murabaha
-
-تمويل
-
-كانت تسبب تحويل شركات تشغيلية إلى قطاع البنوك.
-
-تم إصلاح ذلك عبر:
-
-رفع شرط bankHits من 2 إلى 3
-
-إضافة شرط وجود مصطلح بنكي حقيقي مثل:
-
-special commission
-customer deposits
-loans and advances
-cash and balances with central banks
-ودائع العملاء
-
-النتيجة:
-
-اختبارات القطاعات أصبحت مستقرة:
-
-جاهز → operating_company ✔
-المراعي → operating_company ✔
-جدوى ريت → reit ✔
-مصرف الإنماء → bank ✔
-
-STATUS:
-STABLE
-
-SYSTEM PIPELINE (CURRENT)
-
-upload-url
-→ ingest
-→ analyze (Azure Document Intelligence)
-→ extract-financial
-
-SYSTEM PIPELINE (NEXT ARCHITECTURE)
-
-upload
-→ ingest
-→ analyze
-→ sector-detection
-→ extract-financial
-→ financial-analysis
-
-ENGINE CAPABILITIES
-
-المحرك الحالي قادر على:
-
-Statement Profile Detection
-
-bank
-
-insurance
-
-reit
-
-operating_company
-
-Sector Detection Engine
-
-Semantic Page Ranking
-
-Table Structure Detection
-
-Row Extraction with Validation
-
-Guarded Recovery
-
-Multi-page Protection
-
-Structured Financial Output
-
-CURRENT STATUS
-
-Architecture:
-Stable
-
-Extraction Engine:
-Stable
-
-Ranking Engine:
-Stable
-
-Row Extraction:
-Stable
-
-Sector Detection:
-Stable
-
-Multi-sector support:
-Validated
-
-NEXT OBJECTIVE
+تمت تقوية منطق اختيار الصفحات المالية
+باستخدام ranking + penalties + statement structure signals
+لتقليل التقاط صفحات الإيضاحات والملاحظات
+بدلاً من صفحات القوائم الفعلية.
+
+أهم ما تحقق:
+
+- تحسين اكتشاف صفحة قائمة الدخل
+- تحسين اكتشاف صفحة المركز المالي
+- تحسين اكتشاف صفحة التدفقات النقدية
+- تقليل فوز صفحات الملاحظات المتأخرة
+- إضافة penalty قوي للصفحات المتأخرة
+- دعم أفضل لاختلاف القطاع
+
+------------------------------------------------------------
 
 PHASE 5
 Financial Statement Intelligence Layer
 
-الهدف:
+تم بدء هذه المرحلة لإضافة فهم مالي أذكى للنظام
+بدلاً من الاعتماد فقط على الكلمات العامة.
 
-إضافة طبقة ذكاء مالي للنظام بحيث يصبح
-قادرًا على فهم نوع الشركة أولاً
-ثم تطبيق Financial Mapping مناسب لكل قطاع.
+العمل الحالي داخل هذه المرحلة:
 
-المرحلة ستشمل:
+1. Sector Detection Layer
+2. Statement Profile Detection
+3. Sector-Aware Ranking
+4. التحضير لاكتشاف القوائم متعددة الصفحات
 
-Sector Detection Layer
+------------------------------------------------------------
+LATEST VALIDATION RESULT
+------------------------------------------------------------
 
-اكتشاف نوع الشركة تلقائيًا اعتمادًا على:
+آخر اختبار ناجح على ملف بنك:
 
-اسم الشركة
+- sector = bank
+- selected balance page = 9
+- selected income page = 10
+- selected cash flow page = 15
 
-مصطلحات القوائم المالية
+ملاحظة مهمة:
+تم التأكد عمليًا أن قائمة التدفقات النقدية
+ممتدة على صفحتين:
 
-هيكل الميزانية
+14–15
 
-مصطلحات النشاط
+وهذا يعني أن النظام الحالي نجح في اكتشاف
+صفحة ضمن القائمة الصحيحة،
+لكن ما زال يحتاج خطوة إضافية
+لفهم امتداد القائمة عبر أكثر من صفحة.
 
-Financial Profiles
+------------------------------------------------------------
+CURRENT_STATUS
+------------------------------------------------------------
 
-إنشاء Profiles مالية لكل قطاع:
+الوضع الحالي ممتاز ومستقر.
 
-profiles/
+النظام الآن يستطيع بشكل جيد:
 
-bankProfile.js
-insuranceProfile.js
-operatingProfile.js
-reitProfile.js
+- اكتشاف القطاع
+- اختيار الصفحة الصحيحة للمركز المالي
+- اختيار الصفحة الصحيحة لقائمة الدخل
+- اختيار الصفحة الصحيحة للتدفقات النقدية
+- تقليل أخطاء اختيار صفحات الإيضاحات
 
-كل Profile سيحتوي:
+لكن ما زال ينقصه:
 
-financialMapping
+- فهم امتداد القائمة إلى الصفحة التالية
+- إرجاع نطاق صفحات بدل صفحة واحدة عند الحاجة
 
-statementStructure
+------------------------------------------------------------
+NEXT_STEP
+------------------------------------------------------------
 
-keywordPatterns
+الخطوة التالية:
+بناء Multi-Page Statement Continuation Detection
 
-Sector-Specific Financial Mapping
+الفكرة:
+بعد أن يختار النظام الصفحة الأفضل لكل قائمة،
+يقوم بفحص الصفحة التالية مباشرة ليتأكد:
 
-بدلاً من:
+- هل هي استمرار لنفس القائمة؟
+- هل تحمل نفس السنوات؟
+- هل فيها نفس النمط الجدولي؟
+- هل لا تزال خالية من عنوان قائمة جديدة مختلفة؟
+- هل ما زالت تحتوي على بنود مالية من نفس نوع القائمة؟
 
-Universal Financial Mapping
+إذا كانت الإجابة نعم،
+يتم تسجيل القائمة كنطاق صفحات
+بدلاً من صفحة واحدة.
 
-سيصبح النظام يستخدم:
+مثال مستقبلي متوقع:
 
-Sector-Specific Mapping
+selectedPages: {
+  incomePages: [10],
+  balancePages: [9],
+  cashFlowPages: [14, 15]
+}
 
-بناءً على القطاع المكتشف.
+------------------------------------------------------------
+DEFINITION OF DONE
+------------------------------------------------------------
 
-LONG TERM VISION
+تعتبر الخطوة القادمة منتهية عندما يصبح النظام قادرًا على:
 
-تحويل النظام من:
+1. اكتشاف بداية القائمة
+2. فحص الصفحة التالية
+3. تحديد هل هي continuation أم لا
+4. إرجاع page range أو pages array
+5. عدم ضم صفحة ملاحظات أو قائمة مختلفة بالخطأ
 
-PDF Financial Extractor
+------------------------------------------------------------
+KNOWN RULE
+------------------------------------------------------------
 
-إلى:
-
-Financial Intelligence Engine
+لا يتم تغيير المعمارية العامة.
+لا يتم كسر البناء الحالي.
+أي إضافة جديدة يجب أن تكون طبقة فوق النظام الحالي
+وليس إعادة بناء من الصفر.
