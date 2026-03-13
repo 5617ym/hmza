@@ -1309,8 +1309,7 @@ module.exports = async function (context, req) {
     const finalSectorProfile =
       sectorProfiles[finalSector] || sectorProfiles.operating_company;
     const sectorInfo =
-      statementProfile &&
-      statementProfile !== rawSectorInfo.sector
+  finalSector !== rawSectorInfo.sector
     ? {
         ...rawSectorInfo,
         sector: finalSector,
