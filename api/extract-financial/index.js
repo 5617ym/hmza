@@ -274,7 +274,7 @@ module.exports = async function (context, req) {
         .join("\n");
     }
 
-        function getTableRowCount(table) {
+    function getTableRowCount(table) {
       return safeNumber(table?.rowCount ?? table?.rows ?? table?.nRows ?? 0, 0);
     }
 
@@ -339,7 +339,7 @@ module.exports = async function (context, req) {
       return isLikelyOnlyReferenceText(raw);
     }
 
-    function isLikelyStatementDateText(text) {
+        function isLikelyStatementDateText(text) {
       const s = normalizeText(text);
       return (
         s.includes("31 december") ||
@@ -519,7 +519,7 @@ module.exports = async function (context, req) {
         }
       }
 
-            for (const row of headerRows) {
+      for (const row of headerRows) {
         for (let i = 0; i < row.length; i += 1) {
           if (isNoteHeaderCell(row[i])) {
             noteCol = i;
@@ -582,7 +582,7 @@ module.exports = async function (context, req) {
       };
     }
 
-    function buildPageContext(pageNumber, orderedPageNumbers) {
+        function buildPageContext(pageNumber, orderedPageNumbers) {
       const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
       const pageTables = getTablesForPage(pageNumber);
       const mainTable = pickMainTable(pageTables);
@@ -799,7 +799,7 @@ module.exports = async function (context, req) {
         ]
       },
 
-            reit: {
+      reit: {
         key: "reit",
         positive: [
           "عقارات استثمارية",
@@ -912,8 +912,7 @@ module.exports = async function (context, req) {
             ...rawSectorInfo,
             sector: finalSector
           };
-
-    // =========================================================
+        // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
@@ -1087,8 +1086,7 @@ module.exports = async function (context, req) {
             "changes in equity"
           ]
         },
-
-                income: {
+        income: {
           key: "income",
           titles: [
             "قائمة الدخل",
@@ -1345,7 +1343,7 @@ module.exports = async function (context, req) {
       };
     }
 
-    function getHeaderSearchText(pageCtx) {
+        function getHeaderSearchText(pageCtx) {
       return flattenValue(pageCtx?.header || "");
     }
 
@@ -1434,7 +1432,7 @@ module.exports = async function (context, req) {
         reasons.push("singleYearDetected:+5");
       }
 
-            if (pageCtx.numbersCount > 20) {
+      if (pageCtx.numbersCount > 20) {
         score += 10;
         reasons.push("numbersDensity:+10");
       }
@@ -1452,15 +1450,15 @@ module.exports = async function (context, req) {
       if (pageCtx.positionRatio <= 0.30) {
         score += 8;
         reasons.push("earlyPage:+8");
-    } else if (pageCtx.positionRatio >= 0.35) {
+      } else if (pageCtx.positionRatio >= 0.35) {
         score -= 120;
         reasons.push("latePagePenalty:-120");
-}
+      }
 
-if (pageCtx.isLikelyIndexPage) {
-  score -= 220;
-  reasons.push("indexPenalty:-220");
-}
+      if (pageCtx.isLikelyIndexPage) {
+        score -= 220;
+        reasons.push("indexPenalty:-220");
+      }
 
       if (pageCtx.isLikelyStandardsPage) {
         score -= 190;
@@ -1599,7 +1597,8 @@ if (pageCtx.isLikelyIndexPage) {
     function findAlternative(list, blockedPages) {
       return (list || []).find((p) => !blockedPages.has(p.pageNumber))?.pageNumber || null;
     }
-        function getPageContextByNumber(pageNumber) {
+
+    function getPageContextByNumber(pageNumber) {
       return pageContexts.find((p) => p.pageNumber === pageNumber) || null;
     }
 
@@ -1663,7 +1662,7 @@ if (pageCtx.isLikelyIndexPage) {
         reasons.push(`title:+${s}`);
       }
 
-      if (candidateCtx.hasYearLikeHeader) {
+            if (candidateCtx.hasYearLikeHeader) {
         score += 15;
         reasons.push("yearHeader:+15");
       }
@@ -1721,17 +1720,18 @@ if (pageCtx.isLikelyIndexPage) {
 
       return { score, reasons };
     }
-        function pageLooksLikeOtherStatementTitle(pageCtx, currentKind) {
+
+    function pageLooksLikeOtherStatementTitle(pageCtx, currentKind) {
       if (!pageCtx) return false;
 
       const kinds = ["income", "balance", "cashflow"].filter((k) => k !== currentKind);
-      const titleText = [
-  pageCtx.headerText || "",
-  ...(pageCtx.mainRows || [])
-    .slice(0, 3)
-    .map((r) => Array.isArray(r) ? r.join(" | ") : "")
-].join("\n");
 
+      const titleText = [
+        pageCtx.headerText || "",
+        ...(pageCtx.mainRows || [])
+          .slice(0, 3)
+          .map((r) => Array.isArray(r) ? r.join(" | ") : "")
+      ].join("\n");
 
       for (const kind of kinds) {
         const cfg = mergeStatementConfigWithSectorKeywords(
@@ -1740,134 +1740,119 @@ if (pageCtx.isLikelyIndexPage) {
         );
 
         const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
-if (otherTitleHits.length >= 2) return true;
-
+        if (otherTitleHits.length >= 2) {
+          return true;
+        }
+      }
 
       return false;
     }
 
     function looksLikeSameStatement(baseCtx, candidateCtx) {
-  if (!baseCtx || !candidateCtx) return false;
+      if (!baseCtx || !candidateCtx) return false;
 
-  let score = 0;
+      let score = 0;
 
-  // تشابه بنية الجدول
-  if (
-    Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1
-  ) {
-    score += 20;
-  }
+      if (
+        Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1
+      ) {
+        score += 20;
+      }
 
-  // تشابه كثافة الأرقام
-  if (
-    Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20
-  ) {
-    score += 20;
-  }
+      if (
+        Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20
+      ) {
+        score += 20;
+      }
 
-  // تشابه عدد الصفوف
-  if (
-    Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20
-  ) {
-    score += 20;
-  }
+      if (
+        Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20
+      ) {
+        score += 20;
+      }
 
-  // وجود سنوات مشابهة
-  if (
-    baseCtx.years &&
-    candidateCtx.years &&
-    baseCtx.years.some((y) => candidateCtx.years.includes(y))
-  ) {
-    score += 20;
-  }
+      if (
+        baseCtx.years &&
+        candidateCtx.years &&
+        baseCtx.years.some((y) => candidateCtx.years.includes(y))
+      ) {
+        score += 20;
+      }
 
-  // كلاهما يحتوي جداول
-  if (baseCtx.mainRowCount > 5 && candidateCtx.mainRowCount > 5) {
-    score += 20;
-  }
+      if ((baseCtx.mainRowCount || 0) > 5 && (candidateCtx.mainRowCount || 0) > 5) {
+        score += 20;
+      }
 
-  return score >= 60;
-}
-
+      return score >= 60;
+    }
 
     function detectStatementContinuation(basePageNumber, kind) {
-  const baseCtx = getPageContextByNumber(basePageNumber);
+      const baseCtx = getPageContextByNumber(basePageNumber);
 
-  if (!baseCtx) {
-    return {
-      basePage: basePageNumber || null,
-      pages: Number.isFinite(basePageNumber) ? [basePageNumber] : [],
-      details: {
-        previousPage: null,
-        nextPage: null
+      if (!baseCtx) {
+        return {
+          basePage: basePageNumber || null,
+          pages: Number.isFinite(basePageNumber) ? [basePageNumber] : [],
+          details: {
+            previousPage: null,
+            nextPage: null
+          }
+        };
       }
-    };
-  }
 
-  const prevCtx = getNeighborPageContext(basePageNumber, -1);
-  const nextCtx = getNeighborPageContext(basePageNumber, 1);
+      const prevCtx = getNeighborPageContext(basePageNumber, -1);
+      const nextCtx = getNeighborPageContext(basePageNumber, 1);
 
-  const prevEval = continuationScore(prevCtx, kind);
-  const nextEval = continuationScore(nextCtx, kind);
+      const prevEval = continuationScore(prevCtx, kind);
+      const nextEval = continuationScore(nextCtx, kind);
 
-  const pages = [basePageNumber];
+      const pages = [basePageNumber];
 
-  if (
-    prevCtx &&
-    prevEval.score >= 55 &&
-    !pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
-    (
-      looksLikeSameStatement(baseCtx, prevCtx) ||
-      prevEval.score >= 200
-    )
-  ) {
-    pages.unshift(prevCtx.pageNumber);
-  }
+      if (
+        prevCtx &&
+        prevEval.score >= 55 &&
+        !pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
+        (
+          looksLikeSameStatement(baseCtx, prevCtx) ||
+          prevEval.score >= 200
+        )
+      ) {
+        pages.unshift(prevCtx.pageNumber);
+      }
 
-  if (
-    nextCtx &&
-    nextEval.score >= 55 &&
-    !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
-    (
-      looksLikeSameStatement(baseCtx, nextCtx) ||
-      nextEval.score >= 200
-    )
-  ) {
-    pages.push(nextCtx.pageNumber);
-  }
-        const prevRejectedByOtherTitle =
-    !!prevCtx && pageLooksLikeOtherStatementTitle(prevCtx, kind);
+      if (
+        nextCtx &&
+        nextEval.score >= 55 &&
+        !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
+        (
+          looksLikeSameStatement(baseCtx, nextCtx) ||
+          nextEval.score >= 200
+        )
+      ) {
+        pages.push(nextCtx.pageNumber);
+      }
 
-  const nextRejectedByOtherTitle =
-    !!nextCtx && pageLooksLikeOtherStatementTitle(nextCtx, kind);
-
-
-  return {
-    basePage: basePageNumber,
-    pages: unique(pages).sort((a, b) => a - b),
-    details: {
-      previousPage: prevCtx
-  ? {
-      pageNumber: prevCtx.pageNumber,
-      score: prevEval.score,
-      reasons: prevEval.reasons,
-      rejectedByOtherStatementTitle: prevRejectedByOtherTitle
+      return {
+        basePage: basePageNumber,
+        pages: unique(pages).sort((a, b) => a - b),
+        details: {
+          previousPage: prevCtx
+            ? {
+                pageNumber: prevCtx.pageNumber,
+                score: prevEval.score,
+                reasons: prevEval.reasons
+              }
+            : null,
+          nextPage: nextCtx
+            ? {
+                pageNumber: nextCtx.pageNumber,
+                score: nextEval.score,
+                reasons: nextEval.reasons
+              }
+            : null
+        }
+      };
     }
-  : null,
-
-      nextPage: nextCtx
-  ? {
-      pageNumber: nextCtx.pageNumber,
-      score: nextEval.score,
-      reasons: nextEval.reasons,
-      rejectedByOtherStatementTitle: nextRejectedByOtherTitle
-    }
-  : null
-
-    }
-  };
-}
-
 
     if (incomePage && balancePage && incomePage === balancePage) {
       const incomeScore = rankedIncome.find((p) => p.pageNumber === incomePage)?.score ?? -999999;
@@ -1921,16 +1906,16 @@ if (otherTitleHits.length >= 2) return true;
         new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
       ) || cashFlowPage;
     }
+
     const incomeContinuation = detectStatementContinuation(incomePage, "income");
-const balanceContinuation = detectStatementContinuation(balancePage, "balance");
-const cashflowContinuation = detectStatementContinuation(cashFlowPage, "cashflow");
+    const balanceContinuation = detectStatementContinuation(balancePage, "balance");
+    const cashflowContinuation = detectStatementContinuation(cashFlowPage, "cashflow");
 
-const statementPageRanges = {
-  income: incomeContinuation.pages,
-  balance: balanceContinuation.pages,
-  cashflow: cashflowContinuation.pages
-};
-
+    const statementPageRanges = {
+      income: incomeContinuation.pages,
+      balance: balanceContinuation.pages,
+      cashflow: cashflowContinuation.pages
+    };
 
     return send(200, {
       ok: true,
@@ -1947,20 +1932,17 @@ const statementPageRanges = {
         balancePage,
         cashFlowPage
       },
-      
-      statementPageRanges,
 
+      statementPageRanges,
 
       confidence,
 
       debug: {
         continuation: {
-  income: incomeContinuation,
-  balance: balanceContinuation,
-  cashflow: cashflowContinuation
-},
-
-        
+          income: incomeContinuation,
+          balance: balanceContinuation,
+          cashflow: cashflowContinuation
+        },
         profileDetection,
         activeProfileKeywords: {
           income: incomeKeywords.slice(0, 12),
@@ -1989,6 +1971,12 @@ const statementPageRanges = {
     });
   }
 };
+
+
+
+
+
+
 
 
 
