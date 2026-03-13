@@ -2139,7 +2139,49 @@ module.exports = async function (context, req) {
     // statementSpecificCoreShape
     // statementRankScore
 
-        function rankPages(kind) {
+
+    function statementRankScore(pageCtx, cfg, kind) {
+
+  let score = 0;
+  const reasons = [];
+  const signals = {};
+
+  if (!pageCtx) {
+    return { score, reasons, signals };
+  }
+
+  if (pageCtx.header) {
+    const header = pageCtx.header.toLowerCase();
+
+    for (const kw of (cfg.keywords || [])) {
+      if (header.includes(kw)) {
+        score += 10;
+        reasons.push(`keyword:${kw}`);
+      }
+    }
+  }
+
+  if (pageCtx.years && pageCtx.years.length >= 2) {
+    score += 5;
+    reasons.push("yearsDetected");
+  }
+
+  if (pageCtx.numbersCount > 20) {
+    score += 5;
+    reasons.push("numbersDensity");
+  }
+
+  return {
+    score,
+    reasons,
+    signals
+  };
+
+}
+
+
+function rankPages(kind) {
+
   const cfg = mergeStatementConfigWithSectorKeywords(
     kind,
     ACTIVE_STATEMENT_CONFIGS[kind]
@@ -2147,7 +2189,9 @@ module.exports = async function (context, req) {
 
   return pageContexts
     .map((pageCtx) => {
+
       const ranked = statementRankScore(pageCtx, cfg, kind);
+
       return {
         pageNumber: pageCtx.pageNumber,
         score: ranked.score,
@@ -2162,13 +2206,16 @@ module.exports = async function (context, req) {
         positionRatio: pageCtx.positionRatio,
         header: pageCtx.header
       };
+
     })
     .sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
-}
-    const rankedBalance = rankPages("balance");
-    const rankedIncome = rankPages("income");
-    const rankedCashflow = rankPages("cashflow");
 
+}
+
+
+const rankedBalance = rankPages("balance");
+const rankedIncome = rankPages("income");
+const rankedCashflow = rankPages("cashflow");
     // =========================================================
     // Score Calibration Layer (v6.6)
     // =========================================================
