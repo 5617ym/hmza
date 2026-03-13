@@ -1452,17 +1452,15 @@ module.exports = async function (context, req) {
       if (pageCtx.positionRatio <= 0.30) {
         score += 8;
         reasons.push("earlyPage:+8");
-      } else if (pageCtx.positionRatio >= 0.35) {
-  score -= 120;
-  reasons.push("latePagePenalty:-120");
+    } else if (pageCtx.positionRatio >= 0.35) {
+        score -= 120;
+        reasons.push("latePagePenalty:-120");
 }
-      
-      }
 
-      if (pageCtx.isLikelyIndexPage) {
-        score -= 220;
-        reasons.push("indexPenalty:-220");
-      }
+if (pageCtx.isLikelyIndexPage) {
+  score -= 220;
+  reasons.push("indexPenalty:-220");
+}
 
       if (pageCtx.isLikelyStandardsPage) {
         score -= 190;
