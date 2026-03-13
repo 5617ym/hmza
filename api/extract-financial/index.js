@@ -1398,14 +1398,18 @@ module.exports = async function (context, req) {
       signals.negativeHits = negativeHits;
 
       if (titleHitsHeader.length > 0) {
-        const s = titleHitsHeader.length * 90;
-        score += s;
-        reasons.push(`titleHeader:+${s}`);
-      } else if (titleHitsAll.length > 0) {
-        const s = titleHitsAll.length * 40;
-        score += s;
-        reasons.push(`titleAll:+${s}`);
-      }
+  const base = titleHitsHeader.length * 90;
+  const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
+  const s = Math.round(base * multiplier);
+  score += s;
+  reasons.push(`titleHeader:+${s}`);
+} else if (titleHitsAll.length > 0) {
+  const base = titleHitsAll.length * 40;
+  const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
+  const s = Math.round(base * multiplier);
+  score += s;
+  reasons.push(`titleAll:+${s}`);
+}
 
       if (structureHitsAll.length > 0) {
         const s = Math.min(structureHitsAll.length, 10) * 16;
