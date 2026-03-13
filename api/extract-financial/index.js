@@ -1743,6 +1743,49 @@ if (pageCtx.isLikelyIndexPage) {
       return false;
     }
 
+    function looksLikeSameStatement(baseCtx, candidateCtx) {
+  if (!baseCtx || !candidateCtx) return false;
+
+  let score = 0;
+
+  // تشابه بنية الجدول
+  if (
+    Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1
+  ) {
+    score += 20;
+  }
+
+  // تشابه كثافة الأرقام
+  if (
+    Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20
+  ) {
+    score += 20;
+  }
+
+  // تشابه عدد الصفوف
+  if (
+    Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20
+  ) {
+    score += 20;
+  }
+
+  // وجود سنوات مشابهة
+  if (
+    baseCtx.years &&
+    candidateCtx.years &&
+    baseCtx.years.some((y) => candidateCtx.years.includes(y))
+  ) {
+    score += 20;
+  }
+
+  // كلاهما يحتوي جداول
+  if (baseCtx.mainRowCount > 5 && candidateCtx.mainRowCount > 5) {
+    score += 20;
+  }
+
+  return score >= 60;
+}
+
 
     function detectStatementContinuation(basePageNumber, kind) {
       const baseCtx = getPageContextByNumber(basePageNumber);
@@ -1767,21 +1810,24 @@ if (pageCtx.isLikelyIndexPage) {
       const pages = [basePageNumber];
 
       // الصفحة السابقة: شرط أقوى لأنها غالبًا بداية القائمة
-            if (
-        prevCtx &&
-        prevEval.score >= 55 &&
-        !pageLooksLikeOtherStatementTitle(prevCtx, kind)
-      ) {
-        pages.unshift(prevCtx.pageNumber);
-      }
+        if (
+  prevCtx &&
+  prevEval.score >= 55 &&
+  !pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
+  looksLikeSameStatement(baseCtx, prevCtx)
+) {
+  pages.unshift(prevCtx.pageNumber);
+}
 
-      if (
-        nextCtx &&
-        nextEval.score >= 55 &&
-        !pageLooksLikeOtherStatementTitle(nextCtx, kind)
-      ) {
-        pages.push(nextCtx.pageNumber);
-      }
+if (
+  nextCtx &&
+  nextEval.score >= 55 &&
+  !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
+  looksLikeSameStatement(baseCtx, nextCtx)
+) {
+  pages.push(nextCtx.pageNumber);
+}
+
 
 
       return {
