@@ -1788,71 +1788,72 @@ if (pageCtx.isLikelyIndexPage) {
 
 
     function detectStatementContinuation(basePageNumber, kind) {
-      const baseCtx = getPageContextByNumber(basePageNumber);
+  const baseCtx = getPageContextByNumber(basePageNumber);
 
-      if (!baseCtx) {
-        return {
-          basePage: basePageNumber || null,
-          pages: Number.isFinite(basePageNumber) ? [basePageNumber] : [],
-          details: {
-            previousPage: null,
-            nextPage: null
-          }
-        };
+  if (!baseCtx) {
+    return {
+      basePage: basePageNumber || null,
+      pages: Number.isFinite(basePageNumber) ? [basePageNumber] : [],
+      details: {
+        previousPage: null,
+        nextPage: null
       }
+    };
+  }
 
-      const prevCtx = getNeighborPageContext(basePageNumber, -1);
-      const nextCtx = getNeighborPageContext(basePageNumber, 1);
+  const prevCtx = getNeighborPageContext(basePageNumber, -1);
+  const nextCtx = getNeighborPageContext(basePageNumber, 1);
 
-      const prevEval = continuationScore(prevCtx, kind);
-      const nextEval = continuationScore(nextCtx, kind);
+  const prevEval = continuationScore(prevCtx, kind);
+  const nextEval = continuationScore(nextCtx, kind);
 
-      const pages = [basePageNumber];
+  const pages = [basePageNumber];
 
-      // الصفحة السابقة: شرط أقوى لأنها غالبًا بداية القائمة
-        if (
-  prevCtx &&
-  prevEval.score >= 55 &&
-  !pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
-  looksLikeSameStatement(baseCtx, prevCtx)
-) {
-  pages.unshift(prevCtx.pageNumber);
-}
+  if (
+    prevCtx &&
+    prevEval.score >= 55 &&
+    !pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
+    (
+      looksLikeSameStatement(baseCtx, prevCtx) ||
+      prevEval.score >= 200
+    )
+  ) {
+    pages.unshift(prevCtx.pageNumber);
+  }
 
-if (
-  nextCtx &&
-  nextEval.score >= 55 &&
-  !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
-  (
-    looksLikeSameStatement(baseCtx, nextCtx) ||
-    nextEval.score >= 200
-  )
-)
+  if (
+    nextCtx &&
+    nextEval.score >= 55 &&
+    !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
+    (
+      looksLikeSameStatement(baseCtx, nextCtx) ||
+      nextEval.score >= 200
+    )
+  ) {
+    pages.push(nextCtx.pageNumber);
+  }
 
-
-
-
-      return {
-        basePage: basePageNumber,
-        pages: unique(pages).sort((a, b) => a - b),
-        details: {
-          previousPage: prevCtx
-            ? {
-                pageNumber: prevCtx.pageNumber,
-                score: prevEval.score,
-                reasons: prevEval.reasons
-              }
-            : null,
-          nextPage: nextCtx
-            ? {
-                pageNumber: nextCtx.pageNumber,
-                score: nextEval.score,
-                reasons: nextEval.reasons
-              }
-            : null
-        }
-      };
+  return {
+    basePage: basePageNumber,
+    pages: unique(pages).sort((a, b) => a - b),
+    details: {
+      previousPage: prevCtx
+        ? {
+            pageNumber: prevCtx.pageNumber,
+            score: prevEval.score,
+            reasons: prevEval.reasons
+          }
+        : null,
+      nextPage: nextCtx
+        ? {
+            pageNumber: nextCtx.pageNumber,
+            score: nextEval.score,
+            reasons: nextEval.reasons
+          }
+        : null
     }
+  };
+}
 
 
     if (incomePage && balancePage && incomePage === balancePage) {
