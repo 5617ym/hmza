@@ -1452,9 +1452,11 @@ module.exports = async function (context, req) {
       if (pageCtx.positionRatio <= 0.30) {
         score += 8;
         reasons.push("earlyPage:+8");
-      } else if (pageCtx.positionRatio >= 0.80) {
-        score -= 8;
-        reasons.push("latePage:-8");
+      } else if (pageCtx.positionRatio >= 0.35) {
+  score -= 120;
+  reasons.push("latePagePenalty:-120");
+}
+      
       }
 
       if (pageCtx.isLikelyIndexPage) {
