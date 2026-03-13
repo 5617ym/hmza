@@ -1726,9 +1726,12 @@ if (pageCtx.isLikelyIndexPage) {
 
       const kinds = ["income", "balance", "cashflow"].filter((k) => k !== currentKind);
       const titleText = [
-        pageCtx.headerText || "",
-        pageCtx.mainTableText || ""
-      ].join("\n");
+  pageCtx.headerText || "",
+  ...(pageCtx.mainRows || [])
+    .slice(0, 3)
+    .map((r) => Array.isArray(r) ? r.join(" | ") : "")
+].join("\n");
+
 
       for (const kind of kinds) {
         const cfg = mergeStatementConfigWithSectorKeywords(
