@@ -23,8 +23,8 @@ module.exports = async function (context, req) {
       });
     }
 
-    const sectorInfo = detectSector(normalized);
-    const detectedSector = sectorInfo.sector;
+    const rawSectorInfo = detectSector(normalized);
+    const detectedSector = rawSectorInfo.sector;
     const activeSectorProfile =
       sectorProfiles[detectedSector] || sectorProfiles.operating_company;
 
@@ -1308,6 +1308,20 @@ module.exports = async function (context, req) {
 
     const finalSectorProfile =
       sectorProfiles[finalSector] || sectorProfiles.operating_company;
+    const sectorInfo =
+      statementProfile &&
+      statementProfile !== rawSectorInfo.sector
+    ? {
+        ...rawSectorInfo,
+        sector: finalSector,
+        reasons: [
+          `sector overridden by statement profile: ${rawSectorInfo.sector} -> ${finalSector}`
+        ]
+      }
+    : {
+        ...rawSectorInfo,
+        sector: finalSector
+      };
 
     // =========================================================
     // Layer 4: Statement Page Ranking and Selection
@@ -3344,14 +3358,12 @@ module.exports = async function (context, req) {
       ) || cashFlowPage;
     }
 
-    return send(200, {
+     return send(200, {
       ok: true,
       sector: finalSector,
 
-      sectorInfo: {
-        ...sectorInfo,
-        sector: finalSector
-      },
+      sectorInfo,
+  
 
       activeSectorProfile: finalSectorProfile,
 
