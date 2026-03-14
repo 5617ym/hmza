@@ -12,9 +12,15 @@ module.exports = async function (context, req) {
   };
 
   try {
-    const body = req.body || {};
-    const normalized = body.normalized || {};
-    const normalizedPrev = body.normalizedPrev || null;
+    const fs = require("fs");
+const path = require("path");
+
+const filePath = path.join(__dirname, "../../fixtures/المراعي-layout.json");
+const raw = fs.readFileSync(filePath, "utf8");
+const body = JSON.parse(raw);
+
+const normalized = body.normalized || {};
+const normalizedPrev = null;
 
     if (!normalized || typeof normalized !== "object") {
       return send(400, {
