@@ -1425,6 +1425,10 @@ module.exports = async function (context, req) {
 
       const structureSupportCount =
   structureHitsAll.length + structureHitsFirstRows.length;
+      if (structureSupportCount >= 5) {
+  score += 25;
+  reasons.push("strongStructureBonus:+25");
+}
 
 if (pageCtx.hasYearLikeHeader) {
   const s = structureSupportCount > 0 ? 22 : 10;
