@@ -1841,9 +1841,9 @@ if (hasNoTitle && hasNoStructure) {
         prevEval.score >= 55 &&
         !pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
         (
-          looksLikeSameStatement(baseCtx, prevCtx) ||
-          prevEval.score >= 200
-        )
+  looksLikeSameStatement(baseCtx, prevCtx) ||
+  prevEval.score >= 120
+)
       ) {
         pages.unshift(prevCtx.pageNumber);
       }
@@ -1853,9 +1853,9 @@ if (hasNoTitle && hasNoStructure) {
         nextEval.score >= 55 &&
         !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
         (
-          looksLikeSameStatement(baseCtx, nextCtx) ||
-          nextEval.score >= 200
-        )
+  looksLikeSameStatement(baseCtx, nextCtx) ||
+  nextEval.score >= 120
+)
       ) {
         pages.push(nextCtx.pageNumber);
       }
