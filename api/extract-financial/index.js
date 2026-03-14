@@ -202,7 +202,9 @@ function statementRankScore(pageCtx, cfg, kind) {
   // --------------------------------------------------
   // Audit / auditor narrative penalty
   // --------------------------------------------------
-
+  const pageText = normalizeText(
+  [pageCtx.text || "", pageCtx.headerText || "", pageCtx.mainTableText || ""].join("\n")
+);
   const auditNarrativeHits =
     pageText.includes("امر المراجعه") ||
     pageText.includes("امور المراجعه") ||
