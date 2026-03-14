@@ -1768,7 +1768,7 @@ if (hasNoTitle && hasNoStructure) {
         );
 
         const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
-        if (otherTitleHits.length >= 1) {
+        if (otherTitleHits.length >= 2) {
   return true;
 }
       }
