@@ -1876,7 +1876,7 @@ if (hasNoTitle && hasNoStructure) {
 
       if (
         nextCtx &&
-        nextEval.score >= 55 &&
+        nextEval.score >= 65 &&
         !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
         (
   looksLikeSameStatement(baseCtx, nextCtx) ||
