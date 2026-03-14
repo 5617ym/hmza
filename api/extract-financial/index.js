@@ -1443,19 +1443,22 @@ if (pageCtx.years && pageCtx.years.length >= 2) {
 }
 
       if (pageCtx.numbersCount > 20) {
-        score += 10;
-        reasons.push("numbersDensity:+10");
-      }
+  const s = structureSupportCount > 0 ? 10 : 4;
+  score += s;
+  reasons.push(`numbersDensity:+${s}`);
+}
 
-      if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
-        score += 8;
-        reasons.push("rowRange:+8");
-      }
+if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
+  const s = structureSupportCount > 0 ? 8 : 3;
+  score += s;
+  reasons.push(`rowRange:+${s}`);
+}
 
-      if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
-        score += 8;
-        reasons.push("columnRange:+8");
-      }
+if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
+  const s = structureSupportCount > 0 ? 8 : 3;
+  score += s;
+  reasons.push(`columnRange:+${s}`);
+}
 
       if (pageCtx.positionRatio <= 0.30) {
         score += 8;
