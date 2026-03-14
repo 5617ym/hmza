@@ -1474,8 +1474,8 @@ if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
   score += s;
   reasons.push(`earlyPage:+${s}`);
 } else if (pageCtx.positionRatio >= 0.35) {
-  score -= 120;
-  reasons.push("latePagePenalty:-120");
+  score -= 180;
+reasons.push("latePagePenalty:-180");
 }
 
       if (pageCtx.isLikelyIndexPage) {
