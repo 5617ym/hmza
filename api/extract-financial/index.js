@@ -15,7 +15,7 @@ module.exports = async function (context, req) {
     const fs = require("fs");
 const path = require("path");
 
-const filePath = path.join(__dirname, "../../fixtures/almarai-layout.json");
+const filePath = path.join(process.cwd(), "fixtures/almarai-layout.json");
 const raw = fs.readFileSync(filePath, "utf8");
 const body = JSON.parse(raw);
 
