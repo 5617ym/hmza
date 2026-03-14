@@ -1504,7 +1504,7 @@ if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
       }
 
       if (negativeHits.length > 0) {
-        const s = Math.min(negativeHits.length, 8) * 20;
+        const s = Math.min(negativeHits.length, 8) 
         score -= s;
         reasons.push(`negativeHits:-${s}`);
       }
@@ -1671,6 +1671,10 @@ if (hasNoTitle && hasNoStructure) {
         score += s;
         reasons.push(`structureAll:+${s}`);
       }
+      if (titleHits.length === 0 && structureHitsFirstRows.length === 0) {
+  score -= 70;
+  reasons.push("noTitleNoFirstRows:-70");
+}
 
       if (structureHitsFirstRows.length > 0) {
         const s = Math.min(structureHitsFirstRows.length, 5) * 20;
