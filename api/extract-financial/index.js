@@ -1425,7 +1425,7 @@ module.exports = async function (context, req) {
 
       const structureSupportCount =
   structureHitsAll.length + structureHitsFirstRows.length;
-      if (structureSupportCount >= 5) {
+      if (structureSupportCount >= 5 && pageCtx.positionRatio <= 0.35) {
   score += 25;
   reasons.push("strongStructureBonus:+25");
 }
