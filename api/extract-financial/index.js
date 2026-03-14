@@ -1679,10 +1679,12 @@ if (hasNoTitle && hasNoStructure) {
       }
 
       if (titleHits.length > 0) {
-        const s = Math.min(titleHits.length, 2) * 20;
-        score += s;
-        reasons.push(`title:+${s}`);
-      }
+  const base = Math.min(titleHits.length, 2) * 20;
+  const multiplier = structureHitsAll.length > 0 || structureHitsFirstRows.length > 0 ? 1 : 0.5;
+  const s = Math.round(base * multiplier);
+  score += s;
+  reasons.push(`title:+${s}`);
+}
 
             if (candidateCtx.hasYearLikeHeader) {
         score += 15;
