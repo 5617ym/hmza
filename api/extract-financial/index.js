@@ -1465,12 +1465,13 @@ if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
 }
 
       if (pageCtx.positionRatio <= 0.30) {
-        score += 8;
-        reasons.push("earlyPage:+8");
-      } else if (pageCtx.positionRatio >= 0.35) {
-        score -= 120;
-        reasons.push("latePagePenalty:-120");
-      }
+  const s = structureSupportCount > 0 ? 8 : 3;
+  score += s;
+  reasons.push(`earlyPage:+${s}`);
+} else if (pageCtx.positionRatio >= 0.35) {
+  score -= 120;
+  reasons.push("latePagePenalty:-120");
+}
 
       if (pageCtx.isLikelyIndexPage) {
         score -= 220;
