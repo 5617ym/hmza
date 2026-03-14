@@ -2001,6 +2001,7 @@ if (hasNoTitle && hasNoStructure) {
     pages: statementPageRanges.cashflow
   }
 },
+      statementSelectionResolved,
 
       confidence,
 
