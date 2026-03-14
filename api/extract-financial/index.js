@@ -1543,6 +1543,16 @@ if (hasNoTitle && hasNoStructure) {
   score += 40;
   reasons.push("cashflowTall3ColFallbackBonus:+40");
 }
+  const auditNarrativeHits =
+  pageText.includes("أمر المراجعة") ||
+  pageText.includes("المراجع") ||
+  pageText.includes("Key Audit") ||
+  pageText.includes("auditor");
+
+if (auditNarrativeHits) {
+  score -= 220;
+  reasons.push("auditNarrativePenalty:-220");
+}
 
       return {
         score,
