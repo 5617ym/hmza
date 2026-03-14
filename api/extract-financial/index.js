@@ -1423,18 +1423,24 @@ module.exports = async function (context, req) {
         reasons.push(`structureFirstRows:+${s}`);
       }
 
-      if (pageCtx.hasYearLikeHeader) {
-        score += 22;
-        reasons.push("yearHeader:+22");
-      }
+      const structureSupportCount =
+  structureHitsAll.length + structureHitsFirstRows.length;
 
-      if (pageCtx.years && pageCtx.years.length >= 2) {
-        score += 14;
-        reasons.push("yearsDetected:+14");
-      } else if (pageCtx.years && pageCtx.years.length === 1) {
-        score += 5;
-        reasons.push("singleYearDetected:+5");
-      }
+if (pageCtx.hasYearLikeHeader) {
+  const s = structureSupportCount > 0 ? 22 : 10;
+  score += s;
+  reasons.push(`yearHeader:+${s}`);
+}
+
+if (pageCtx.years && pageCtx.years.length >= 2) {
+  const s = structureSupportCount > 0 ? 14 : 6;
+  score += s;
+  reasons.push(`yearsDetected:+${s}`);
+} else if (pageCtx.years && pageCtx.years.length === 1) {
+  const s = structureSupportCount > 0 ? 5 : 2;
+  score += s;
+  reasons.push(`singleYearDetected:+${s}`);
+}
 
       if (pageCtx.numbersCount > 20) {
         score += 10;
