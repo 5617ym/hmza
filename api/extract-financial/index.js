@@ -1517,6 +1517,12 @@ if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
       const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
 const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
 
+if (hasNoTitle) {
+  const penalty = kind === "balance" ? 90 : 170;
+  score -= penalty;
+  reasons.push(`noTitlePenalty:-${penalty}`);
+}
+
 if (hasNoTitle && hasNoStructure) {
   const penalty = kind === "balance" ? 70 : 110;
   score -= penalty;
