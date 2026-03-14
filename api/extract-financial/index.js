@@ -736,6 +736,27 @@ module.exports = async function (context, req) {
     const pageContexts = allPageNumbers.map((pageNumber) =>
       buildPageContext(pageNumber, allPageNumbers)
     );
+    function getPageContextsByNumbers(pageNumbers) {
+  const wanted = new Set((pageNumbers || []).filter((n) => Number.isFinite(n)));
+  return pageContexts.filter((p) => wanted.has(p.pageNumber));
+}
+    const statementSelectionResolved = {
+  income: {
+    basePage: incomePage,
+    pages: statementPageRanges.income,
+    pageContexts: getPageContextsByNumbers(statementPageRanges.income)
+  },
+  balance: {
+    basePage: balancePage,
+    pages: statementPageRanges.balance,
+    pageContexts: getPageContextsByNumbers(statementPageRanges.balance)
+  },
+  cashflow: {
+    basePage: cashFlowPage,
+    pages: statementPageRanges.cashflow,
+    pageContexts: getPageContextsByNumbers(statementPageRanges.cashflow)
+  }
+};
 
     // =========================================================
     // Layer 3: Statement Profile Detection
