@@ -1509,10 +1509,10 @@ if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
       }
 
       if (negativeHits.length > 0) {
-        const s = Math.min(negativeHits.length, 8) 
-        score -= s;
-        reasons.push(`negativeHits:-${s}`);
-      }
+  const s = Math.min(negativeHits.length, 8) * 22;
+  score -= s;
+  reasons.push(`negativeHits:-${s}`);
+}
 
       const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
 const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
