@@ -1861,25 +1861,27 @@ if (hasNoTitle && hasNoStructure) {
       }
 
       return {
-        basePage: basePageNumber,
-        pages: unique(pages).sort((a, b) => a - b),
-        details: {
-          previousPage: prevCtx
-            ? {
-                pageNumber: prevCtx.pageNumber,
-                score: prevEval.score,
-                reasons: prevEval.reasons
-              }
-            : null,
-          nextPage: nextCtx
-            ? {
-                pageNumber: nextCtx.pageNumber,
-                score: nextEval.score,
-                reasons: nextEval.reasons
-              }
-            : null
+  basePage: basePageNumber,
+  pages: unique(pages).sort((a, b) => a - b),
+  details: {
+    acceptedPrevious: pages.includes(prevCtx?.pageNumber),
+    acceptedNext: pages.includes(nextCtx?.pageNumber),
+    previousPage: prevCtx
+      ? {
+          pageNumber: prevCtx.pageNumber,
+          score: prevEval.score,
+          reasons: prevEval.reasons
         }
-      };
+      : null,
+    nextPage: nextCtx
+      ? {
+          pageNumber: nextCtx.pageNumber,
+          score: nextEval.score,
+          reasons: nextEval.reasons
+        }
+      : null
+  }
+};
     }
 
     if (incomePage && balancePage && incomePage === balancePage) {
