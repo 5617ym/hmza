@@ -1779,7 +1779,7 @@ if (hasNoTitle && hasNoStructure) {
         );
 
         const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
-        if (otherTitleHits.length >= 2) {
+        if (otherTitleHits.length >= 1) {
   return true;
 }
       }
