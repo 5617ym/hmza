@@ -1532,6 +1532,17 @@ if (hasNoTitle && hasNoStructure) {
   score -= 120;
   reasons.push("cashflowTitleWithoutStructurePenalty:-120");
 }
+      if (
+  kind === "cashflow" &&
+  hasNoTitle &&
+  hasNoStructure &&
+  pageCtx.mainColumnCount === 3 &&
+  pageCtx.mainRowCount >= 40 &&
+  (pageCtx.years || []).length >= 2
+) {
+  score += 40;
+  reasons.push("cashflowTall3ColFallbackBonus:+40");
+}
 
       return {
         score,
