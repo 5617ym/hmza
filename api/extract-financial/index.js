@@ -1528,6 +1528,10 @@ if (hasNoTitle && hasNoStructure) {
   score -= penalty;
   reasons.push(`noTitleNoStructure:-${penalty}`);
 }
+      if (kind === "cashflow" && hasNoTitle && hasNoStructure) {
+  score -= 120;
+  reasons.push("cashflowTitleWithoutStructurePenalty:-120");
+}
 
       return {
         score,
