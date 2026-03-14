@@ -2030,7 +2030,7 @@ if (hasNoTitle && hasNoStructure) {
         ranking: {
           balanceTop: calibratedBalance.slice(0, 5),
           incomeTop: calibratedIncome.slice(0, 5),
-          cashFlowTop: calibratedCashflow.slice(0, 5)
+          cashFlowTop: calibratedCashflow.slice(0, 15)
         }
       },
 
