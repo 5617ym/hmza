@@ -1964,6 +1964,20 @@ if (hasNoTitle && hasNoStructure) {
       },
 
       statementPageRanges,
+      statementSelection: {
+  income: {
+    basePage: incomePage,
+    pages: statementPageRanges.income
+  },
+  balance: {
+    basePage: balancePage,
+    pages: statementPageRanges.balance
+  },
+  cashflow: {
+    basePage: cashFlowPage,
+    pages: statementPageRanges.cashflow
+  }
+},
 
       confidence,
 
