@@ -1901,9 +1901,9 @@ if (hasNoTitle && hasNoStructure) {
 
       if (balanceScore >= incomeScore) {
         incomePage = findAlternative(
-          rankedIncome,
-          new Set([balancePage, ...strongBalancePages, cashFlowPage].filter(Boolean))
-        ) || incomePage;
+  rankedIncome,
+  new Set([balancePage, cashFlowPage].filter(Boolean))
+) || incomePage;
       } else {
         balancePage = findAlternative(
           rankedBalance,
