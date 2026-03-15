@@ -2314,15 +2314,7 @@ const normalizedPrev = null;
 },
       statementSelectionResolved,
       financialRows,
-      incomePageContextDebug: statementSelectionResolved?.income?.pageContexts?.[0]
-  ? {
-      pageNumber: statementSelectionResolved.income.pageContexts[0].pageNumber,
-      header: statementSelectionResolved.income.pageContexts[0].header,
-      mainColumnCount: statementSelectionResolved.income.pageContexts[0].mainColumnCount,
-      mainRowCount: statementSelectionResolved.income.pageContexts[0].mainRowCount,
-      firstRows: (statementSelectionResolved.income.pageContexts[0].mainRows || []).slice(0, 5)
-    }
-  : null,
+    
 
       confidence,
       
