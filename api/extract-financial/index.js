@@ -2649,6 +2649,71 @@ module.exports = async function (context, req) {
       return out;
     }
 
+    function buildExtractionDiagnostics(statementSelection) {
+  const diagnostics = {};
+
+  for (const statementType of ["income", "balance", "cashflow"]) {
+    const entry = statementSelection?.[statementType];
+    const pageContextsForStatement = Array.isArray(entry?.pageContexts)
+      ? entry.pageContexts
+      : [];
+
+    const perPage = pageContextsForStatement.map((pageCtx) => {
+      const rawEntries = collectNumericRows(pageCtx, statementType);
+      const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
+
+      const acceptedEntries = repairedEntries.filter((row) => {
+        const label = normalizeLabelForRow(row.label);
+        return !shouldSkipExtractedRow({
+          row: row.row,
+          rowIndex: row.rowIndex,
+          label,
+          statementType,
+          pageCtx,
+          currentYearValue: row.currentYearValue,
+          previousYearValue: row.previousYearValue
+        });
+      });
+
+      return {
+        pageNumber: pageCtx.pageNumber,
+        rawEntriesCount: rawEntries.length,
+        repairedEntriesCount: repairedEntries.length,
+        acceptedEntriesCount: acceptedEntries.length,
+        header: pageCtx.header,
+        sampleRaw: rawEntries.slice(0, 3).map((x) => ({
+          rowIndex: x.rowIndex,
+          labelCandidate: x.labelCandidate,
+          note: x.note,
+          currentYearValue: x.currentYearValue,
+          previousYearValue: x.previousYearValue,
+          source: x.source,
+          rawRow: x.row
+        })),
+        sampleRepaired: repairedEntries.slice(0, 3).map((x) => ({
+          rowIndex: x.rowIndex,
+          label: x.label,
+          note: x.note,
+          source: x.source
+        })),
+        sampleAccepted: acceptedEntries.slice(0, 3).map((x) => ({
+          rowIndex: x.rowIndex,
+          label: normalizeLabelForRow(x.label),
+          note: x.note,
+          source: x.source
+        }))
+      };
+    });
+
+    diagnostics[statementType] = {
+      pages: pageContextsForStatement.map((p) => p.pageNumber),
+      perPage
+    };
+  }
+
+  return diagnostics;
+}
+
     function extractStatementRows(statementSelection) {
       const result = {
         income: [],
@@ -2673,6 +2738,7 @@ module.exports = async function (context, req) {
     }
 
     const financialRows = extractStatementRows(statementSelectionResolved);
+    const extractionDiagnostics = buildExtractionDiagnostics(statementSelectionResolved);
 
     return send(200, {
       ok: true,
@@ -2711,11 +2777,12 @@ module.exports = async function (context, req) {
       confidence,
 
       debug: {
-        extraction: {
-          incomeRowsCount: financialRows.income.length,
-          balanceRowsCount: financialRows.balance.length,
-          cashflowRowsCount: financialRows.cashflow.length
-        },
+  extraction: {
+    incomeRowsCount: financialRows.income.length,
+    balanceRowsCount: financialRows.balance.length,
+    cashflowRowsCount: financialRows.cashflow.length
+  },
+  stageDiagnostics: extractionDiagnostics,
         continuation: {
           income: incomeContinuation,
           balance: balanceContinuation,
