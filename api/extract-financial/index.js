@@ -100,12 +100,29 @@ module.exports = async function (context, req) {
         ? activeSectorProfile.cashFlow
         : [];
 
-    const pages = Array.isArray(normalized.pages) ? normalized.pages : [];
-    const tablesPreview = Array.isArray(normalized.tablesPreview)
-      ? normalized.tablesPreview
-      : Array.isArray(normalized.tables)
-        ? normalized.tables
-        : [];
+    // =========================================================
+// Robust Normalized Input Resolver
+// =========================================================
+
+const pages =
+  Array.isArray(normalized.pages)
+    ? normalized.pages
+    : Array.isArray(normalized.layout?.pages)
+      ? normalized.layout.pages
+      : [];
+
+const tablesPreview =
+  Array.isArray(normalized.tablesPreview)
+    ? normalized.tablesPreview
+    : Array.isArray(normalized.tables)
+      ? normalized.tables
+      : Array.isArray(normalized.pageTables)
+        ? normalized.pageTables
+        : Array.isArray(normalized.layout?.tables)
+          ? normalized.layout.tables
+          : Array.isArray(normalized.layout?.pageTables)
+            ? normalized.layout.pageTables
+            : [];
 
     // =========================================================
     // Layer 1: Normalization Helpers
