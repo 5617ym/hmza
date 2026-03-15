@@ -2009,7 +2009,7 @@ const normalizedPrev = null;
       balance: balanceContinuation.pages,
       cashflow: cashflowContinuation.pages
     };
-    const statementSelectionResolved = {
+    const  = {
   income: {
     basePage: incomePage,
     pages: statementPageRanges.income,
@@ -2256,7 +2256,7 @@ const normalizedPrev = null;
       return out;
     }
 
-    function extractStatementRows(statementSelectionResolved) {
+    function extractStatementRows() {
       const result = {
         income: [],
         balance: [],
@@ -2264,7 +2264,7 @@ const normalizedPrev = null;
       };
 
       for (const statementType of ["income", "balance", "cashflow"]) {
-        const entry = statementSelectionResolved?.[statementType];
+        const entry = ?.[statementType];
         const pageContextsForStatement = Array.isArray(entry?.pageContexts)
           ? entry.pageContexts
           : [];
@@ -2279,7 +2279,7 @@ const normalizedPrev = null;
       return result;
     }
 
-    const financialRows = extractStatementRows(statementSelectionResolved);
+    const financialRows = extractStatementRows();
 
     return send(200, {
       ok: true,
@@ -2314,6 +2314,7 @@ const normalizedPrev = null;
 },
       statementSelectionResolved,
       financialRows,
+      incomePageContext: statementSelectionResolved?.income?.pageContexts?.[0] || null,
 
       confidence,
       
