@@ -2507,33 +2507,78 @@ module.exports = async function (context, req) {
 
       return numericRows;
     }
+    function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
+  if (!Array.isArray(candidates) || !candidates.length) return null;
+
+  const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4];
+
+  for (const offset of offsets) {
+    const idx = startIndex + offset;
+    if (idx < 0 || idx >= candidates.length) continue;
+
+    const candidate = normalizeLabelForRow(candidates[idx]);
+    const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
+
+    if (isAcceptableFinancialLabel(candidate, statementType)) {
+      return {
+        label: candidate,
+        recoveredFrom: "page_text_nearby"
+      };
+    }
+
+    if (
+      salvagedCandidate &&
+      isAcceptableFinancialLabel(salvagedCandidate, statementType)
+    ) {
+      return {
+        label: salvagedCandidate,
+        recoveredFrom: "page_text_salvaged_nearby"
+      };
+    }
+  }
+
+  return null;
+}
 
     function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
-      if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
+  if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
 
-      const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
-      if (!candidates.length) return rawEntries;
+  const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
+  if (!candidates.length) return rawEntries;
 
-      let cursor = 0;
+  return rawEntries.map((entry, entryIndex) => {
+    const finalLabel = normalizeLabelForRow(entry.labelCandidate);
 
-      return rawEntries.map((entry) => {
-        let finalLabel = normalizeLabelForRow(entry.labelCandidate);
+    if (isAcceptableFinancialLabel(finalLabel, statementType)) {
+      return {
+        ...entry,
+        label: finalLabel
+      };
+    }
 
-        if (isAcceptableFinancialLabel(finalLabel, statementType)) {
-          while (cursor < candidates.length) {
-            const candidateNorm = normalizeText(candidates[cursor]);
-            if (candidateNorm === normalizeText(finalLabel)) {
-              cursor += 1;
-              break;
-            }
-            cursor += 1;
-          }
-          return {
-            ...entry,
-            label: finalLabel
-          };
+    const nearby = findBestNearbyLabelCandidate(
+      candidates,
+      entryIndex,
+      statementType
+    );
+
+    if (nearby) {
+      return {
+        ...entry,
+        label: nearby.label,
+        source: {
+          ...entry.source,
+          labelRecoveredFrom: nearby.recoveredFrom
         }
+      };
+    }
 
+    return {
+      ...entry,
+      label: finalLabel
+    };
+  });
+}
         while (cursor < candidates.length) {
   const rawCandidate = candidates[cursor];
   cursor += 1;
