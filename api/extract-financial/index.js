@@ -600,27 +600,35 @@ module.exports = async function (context, req) {
   if (!cleanLabel) return false;
 
   const trimmed = cleanLabel.trim();
-  const normalized = normalizedLabel.trim();
+  const normalized = (normalizedLabel || "").trim();
 
-  // must contain letters (Arabic or English)
+  // must contain actual letters
   if (!/[A-Za-z\u0600-\u06FF]/.test(trimmed)) return false;
 
   // too short
   if (normalized.length <= 2) return false;
 
-  // reject pure numbers or number-like
-  if (/^[\d\s,.\-()]+$/.test(trimmed)) return false;
+  // reject pure numeric / numeric-like labels
+  // supports English + Arabic digits and separators
+  if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
 
-  // reject year-only labels
+  // reject year only (English / Arabic)
   if (/^(19|20)\d{2}$/.test(trimmed)) return false;
+  if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
 
-  // reject "2023 ريال سعودي" etc
-  if (/^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(normalized)) return false;
+  // reject year + currency headers
+  if (
+    /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(normalized) ||
+    /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(normalized)
+  ) {
+    return false;
+  }
 
-  // reject currency headers
+  // reject standalone currency/meta headers
   if (
     normalized.includes("ريال سعودي") ||
     normalized.includes("الف ريال") ||
+    normalized.includes("ألف ريال") ||
     normalized.includes("بالريال") ||
     normalized.includes("sar") ||
     normalized.includes("usd")
@@ -628,17 +636,18 @@ module.exports = async function (context, req) {
     return false;
   }
 
-  // reject reference-like labels
-  if (/^\d{1,3}[,\.\-]\d{1,3}$/.test(trimmed)) return false;
+  // reject note/reference-like labels such as:
+  // 14,12 / ١٤،١٢ / 12-14 / ١٢-١٤
+  if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
 
-  // reject note numbers
-  if (/^\d+$/.test(trimmed)) return false;
+  // reject single note number
+  if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
 
-  // reject very small tokens
-  const wordCount = normalized.split(/\s+/).length;
-  if (wordCount === 1 && normalized.length < 4) return false;
+  // reject very short one-word tokens
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 1 && normalized.length < 4) return false;
 
-  // existing filters
+  // existing semantic filters
   if (isLikelyReferenceValue(trimmed)) return false;
   if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
   if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
