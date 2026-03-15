@@ -12,16 +12,9 @@ module.exports = async function (context, req) {
   };
 
   try {
-    const fs = require("fs");
-    const path = require("path");
-
-    const testCompany = "jadwa-reit"; // almarai | jadwa-reit | bank-file
-    const filePath = path.join(__dirname, `../${testCompany}-layout.json`);
-    const raw = fs.readFileSync(filePath, "utf8");
-    const body = JSON.parse(raw);
-
+    const body = req.body || {};
     const normalized = body.normalized || {};
-    const normalizedPrev = null;
+    const normalizedPrev = body.normalizedPrev || null;
 
     if (!normalized || typeof normalized !== "object") {
       return send(400, {
@@ -291,7 +284,7 @@ module.exports = async function (context, req) {
       return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
     }
 
-    function extractTableRows(table) {
+        function extractTableRows(table) {
       // ============================================
       // Layer A: Full Table Row Reconstruction
       // ============================================
@@ -402,7 +395,7 @@ module.exports = async function (context, req) {
       return rows.filter((r) => r.some((c) => !isBlank(c)));
     }
 
-        function rowsWithMeta(table) {
+    function rowsWithMeta(table) {
       const rows = extractTableRows(table);
       return rows.map((cells, index) => ({
         index,
@@ -556,7 +549,7 @@ module.exports = async function (context, req) {
         });
     }
 
-    function isSectionHeaderOnlyLabel(label, statementType) {
+        function isSectionHeaderOnlyLabel(label, statementType) {
       const s = normalizeText(label);
 
       const genericHeaders = [
@@ -594,104 +587,84 @@ module.exports = async function (context, req) {
     }
 
     function salvageFinancialLabelCandidate(rawLabel) {
-  const clean = cleanupLabel(rawLabel);
-  if (!clean) return null;
+      const clean = cleanupLabel(rawLabel);
+      if (!clean) return null;
 
-  let text = clean;
+      let text = clean;
 
-  // remove Arabic/English years
-  text = text.replace(/\b(19|20)\d{2}\b/g, " ");
-  text = text.replace(/\b(١٩|٢٠)[٠-٩]{2}\b/g, " ");
+      text = text.replace(/\b(19|20)\d{2}\b/g, " ");
+      text = text.replace(/\b(١٩|٢٠)[٠-٩]{2}\b/g, " ");
 
-  // remove currencies / common header units
-  text = text.replace(/\b(ريال سعودي|ريال|ألف ريال|الف ريال|بالريال|sar|usd|دولار)\b/gi, " ");
+      text = text.replace(
+        /\b(ريال سعودي|ريال|ألف ريال|الف ريال|بالريال|sar|usd|دولار)\b/gi,
+        " "
+      );
 
-  // remove note/reference patterns like 14,12 / ١٤،١٢ / 12-14
-  text = text.replace(/\b[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}\b/g, " ");
+      text = text.replace(/\b[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}\b/g, " ");
+      text = text.replace(/\b[0-9٠-٩]+\b/g, " ");
+      text = text.replace(/\s+/g, " ").trim();
 
-  // remove standalone numbers
-  text = text.replace(/\b[0-9٠-٩]+\b/g, " ");
-
-  // normalize spaces
-  text = text.replace(/\s+/g, " ").trim();
-
-  if (!text) return null;
-
-  return text;
-}
+      if (!text) return null;
+      return text;
+    }
 
     function isAcceptableFinancialLabel(label, statementType) {
-  const cleanLabel = cleanupLabel(label);
-  const normalizedLabel = normalizeText(cleanLabel);
+      const cleanLabel = cleanupLabel(label);
+      const normalizedLabel = normalizeText(cleanLabel);
 
-  if (!cleanLabel) return false;
+      if (!cleanLabel) return false;
 
-  const trimmed = cleanLabel.trim();
-  const normalized = (normalizedLabel || "").trim();
+      const trimmed = cleanLabel.trim();
+      const normalized = (normalizedLabel || "").trim();
 
-  // must contain actual letters
-  if (!/[A-Za-z\u0600-\u06FF]/.test(trimmed)) return false;
+      if (!/[A-Za-z\u0600-\u06FF]/.test(trimmed)) return false;
+      if (normalized.length <= 2) return false;
 
-  // too short
-  if (normalized.length <= 2) return false;
+      if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
 
-  // reject pure numeric / numeric-like labels
-  // supports English + Arabic digits and separators
-  if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
+      if (/^(19|20)\d{2}$/.test(trimmed)) return false;
+      if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
 
-  // reject year only (English / Arabic)
-  if (/^(19|20)\d{2}$/.test(trimmed)) return false;
-  if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
+      if (
+        /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(normalized) ||
+        /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(normalized)
+      ) {
+        return false;
+      }
 
-  // reject year + currency headers
-  if (
-    /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(normalized) ||
-    /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(normalized)
-  ) {
-    return false;
-  }
+      if (
+        normalized.includes("ريال سعودي") ||
+        normalized.includes("الف ريال") ||
+        normalized.includes("ألف ريال") ||
+        normalized.includes("بالريال") ||
+        normalized.includes("sar") ||
+        normalized.includes("usd")
+      ) {
+        return false;
+      }
 
-  // reject standalone currency/meta headers
-  if (
-    normalized.includes("ريال سعودي") ||
-    normalized.includes("الف ريال") ||
-    normalized.includes("ألف ريال") ||
-    normalized.includes("بالريال") ||
-    normalized.includes("sar") ||
-    normalized.includes("usd")
-  ) {
-    return false;
-  }
+      if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
+      if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
 
-  // reject note/reference-like labels such as:
-  // 14,12 / ١٤،١٢ / 12-14 / ١٢-١٤
-  if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
+      const words = normalized.split(/\s+/).filter(Boolean);
+      if (words.length === 1 && normalized.length < 4) return false;
 
-  // reject single note number
-  if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
+      if (isLikelyReferenceValue(trimmed)) return false;
+      if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
+      if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
+      if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
 
-  // reject very short one-word tokens
-  const words = normalized.split(/\s+/).filter(Boolean);
-  if (words.length === 1 && normalized.length < 4) return false;
+      if (
+        normalized.includes("الايضاحات المرفقه") ||
+        normalized.includes("الإيضاحات المرفقة") ||
+        normalized.includes("integral part") ||
+        normalized.includes("accompanying notes")
+      ) {
+        return false;
+      }
 
-  // existing semantic filters
-  if (isLikelyReferenceValue(trimmed)) return false;
-  if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
-  if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
-  if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
-
-  // known meta phrases
-  if (
-    normalized.includes("الايضاحات المرفقه") ||
-    normalized.includes("الإيضاحات المرفقة") ||
-    normalized.includes("integral part") ||
-    normalized.includes("accompanying notes")
-  ) {
-    return false;
-  }
-
-  return true;
-}
+      return true;
+    }
 
     function extractLabelCandidatesFromPageText(pageCtx, statementType) {
       const textBlob = [
@@ -708,8 +681,7 @@ module.exports = async function (context, req) {
         .filter((line) => !isLikelyNarrativeLine(line))
         .filter((line) => !isQuarterOrPeriodCell(line))
         .filter((line) => !isPureNumericSymbolCell(line))
-        .filter((line) => !isLikelyOnlyReferenceText(line))
-        .filter((line) => isAcceptableFinancialLabel(line, statementType));
+        .filter((line) => !isLikelyOnlyReferenceText(line));
 
       return dedupePreserveOrder(candidates);
     }
@@ -753,7 +725,7 @@ module.exports = async function (context, req) {
         .sort((a, b) => b.score - a.score || a.idx - b.idx);
     }
 
-        function detectTableLanguageDirection(rows) {
+    function detectTableLanguageDirection(rows) {
       let arabicScore = 0;
       let latinScore = 0;
 
@@ -775,7 +747,7 @@ module.exports = async function (context, req) {
       };
     }
 
-    function detectHeaderColumns(rows) {
+        function detectHeaderColumns(rows) {
       const headerRows = getHeaderRows(rows);
       const language = detectTableLanguageDirection(rows);
 
@@ -1037,7 +1009,7 @@ module.exports = async function (context, req) {
       return pageContexts.filter((p) => wanted.has(p.pageNumber));
     }
 
-    // =========================================================
+        // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
 
@@ -1213,7 +1185,7 @@ module.exports = async function (context, req) {
             sector: finalSector
           };
 
-        // =========================================================
+    // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
@@ -1450,7 +1422,7 @@ module.exports = async function (context, req) {
         }
       },
 
-      reit: {
+            reit: {
         balance: {
           key: "balance",
           titles: [
@@ -1665,7 +1637,7 @@ module.exports = async function (context, req) {
       ].join("\n");
     }
 
-        function statementRankScore(pageCtx, cfg, kind) {
+    function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
       const signals = {};
@@ -1722,7 +1694,7 @@ module.exports = async function (context, req) {
         reasons.push(`titleAll:+${s}`);
       }
 
-      if (structureHitsAll.length > 0) {
+            if (structureHitsAll.length > 0) {
         const s = Math.min(structureHitsAll.length, 10) * 16;
         score += s;
         reasons.push(`structureAll:+${s}`);
@@ -2315,489 +2287,7 @@ module.exports = async function (context, req) {
         .filter((x) => !reserved.has(x.idx))
         .filter((x) => isLikelyTextLabelCell(x.cell))
         .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
-        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
-        .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType));
-
-      if (textCandidates.length > 0) {
-        const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
-        return rtlPick?.cell || "";
-      }
-
-      const fallbackFromAnyText = cells
-        .filter((x) => !reserved.has(x.idx))
-        .filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
-        .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
-        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
-        .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType))
-        .sort((a, b) => b.idx - a.idx)[0];
-
-      return fallbackFromAnyText?.cell || "";
-    }
-
-    function normalizeLabelForRow(label) {
-      return cleanupLabel(
-        String(label || "")
-          .replace(/\.+$/g, "")
-          .replace(/\s{2,}/g, " ")
-          .trim()
-      );
-    }
-
-    function isLikelyStatementTitleRow(label, statementType) {
-      const s = normalizeText(label);
-
-      if (!s) return false;
-
-      const titleMap = {
-        income: [
-          "قائمة الدخل",
-          "قائمة الارباح والخسائر",
-          "قائمة الأرباح والخسائر",
-          "قائمة الدخل الشامل",
-          "statement of income",
-          "income statement",
-          "statement of profit or loss",
-          "statement of comprehensive income",
-          "profit or loss"
-        ],
-        balance: [
-          "قائمة المركز المالي",
-          "المركز المالي",
-          "قائمة الوضع المالي",
-          "statement of financial position",
-          "balance sheet",
-          "financial position"
-        ],
-        cashflow: [
-          "قائمة التدفقات النقدية",
-          "بيان التدفقات النقدية",
-          "التدفقات النقدية",
-          "statement of cash flows",
-          "cash flow statement"
-        ]
-      };
-
-      return (titleMap[statementType] || []).some((x) => s.includes(normalizeText(x)));
-    }
-
-    function isLikelyMetaOrHeaderLabel(label) {
-      const s = normalizeText(label);
-
-      if (!s) return true;
-
-      return (
-        isLikelyStatementDateText(s) ||
-        isLikelyStandardEffectiveDateText(s) ||
-        isLikelyNarrativeLine(s) ||
-        isQuarterOrPeriodCell(s) ||
-        s === "البيان" ||
-        s === "البيانات" ||
-        s === "description" ||
-        s === "particulars" ||
-        s === "item" ||
-        s === "البند" ||
-        s === "بنود" ||
-        s === "notes" ||
-        s === "note" ||
-        s === "ايضاح" ||
-        s === "الايضاح"
-      );
-    }
-
-    function rowHasUsefulNumericValue(row, header) {
-      const currentRaw = getCell(row, header?.currentCol);
-      const previousRaw = getCell(row, header?.previousCol);
-
-      const currentValue = parseNumberSmart(currentRaw);
-      const previousValue = parseNumberSmart(previousRaw);
-
-      return currentValue != null || previousValue != null;
-    }
-
-    function shouldSkipExtractedRow({
-      row,
-      rowIndex,
-      label,
-      statementType,
-      pageCtx,
-      currentYearValue,
-      previousYearValue
-    }) {
-      const cleanLabel = normalizeLabelForRow(label);
-
-      if (!cleanLabel) return true;
-      if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
-      if (!rowHasUsefulNumericValue(row, pageCtx?.header)) return true;
-
-      if (
-        statementType === "income" &&
-        currentYearValue == null &&
-        previousYearValue == null
-      ) {
-        return true;
-      }
-
-      if (!isAcceptableFinancialLabel(cleanLabel, statementType)) {
-        return true;
-      }
-
-      return false;
-    }
-
-    function collectNumericRows(pageCtx, statementType) {
-      const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
-      const header = pageCtx?.header || {};
-      const numericRows = [];
-
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-        const row = rows[rowIndex];
-        if (!Array.isArray(row) || !row.length) continue;
-        if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
-        if (!rowHasUsefulNumericValue(row, header)) continue;
-
-        const labelFromHeader = getCell(row, header.labelCol);
-        const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
-        const noteRaw = getCell(row, header.noteCol);
-
-        const noteLooksLikeLabel =
-          header.labelCol == null &&
-          !!noteRaw &&
-          isLikelyTextLabelCell(noteRaw) &&
-          !isLikelyReferenceValue(noteRaw) &&
-          !isLikelyMetaOrHeaderLabel(noteRaw) &&
-          !isLikelyStatementTitleRow(noteRaw, statementType) &&
-          !isSectionHeaderOnlyLabel(noteRaw, statementType);
-
-        const labelCandidate = normalizeLabelForRow(
-          labelFromHeader ||
-          fallbackLabel ||
-          (noteLooksLikeLabel ? noteRaw : "")
-        );
-
-        const note =
-          noteLooksLikeLabel
-            ? null
-            : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
-
-        const currentYearValueRaw = getCell(row, header.currentCol);
-        const previousYearValueRaw = getCell(row, header.previousCol);
-
-        const currentYearValue = parseNumberSmart(currentYearValueRaw);
-        const previousYearValue = parseNumberSmart(previousYearValueRaw);
-
-        numericRows.push({
-          statementType,
-          pageNumber: pageCtx.pageNumber,
-          rowIndex,
-          row,
-          labelCandidate,
-          note,
-          currentYearValue,
-          previousYearValue,
-          source: {
-            labelCol: Number.isFinite(header.labelCol) ? header.labelCol : null,
-            noteCol: Number.isFinite(header.noteCol) ? header.noteCol : null,
-            currentCol: Number.isFinite(header.currentCol) ? header.currentCol : null,
-            previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
-            resolutionMode: header.resolutionMode || null,
-            direction: header.direction || null
-          }
-        });
-      }
-
-      return numericRows;
-    }
-    function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
-  if (!Array.isArray(candidates) || !candidates.length) return null;
-
-  const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4];
-
-  for (const offset of offsets) {
-    const idx = startIndex + offset;
-    if (idx < 0 || idx >= candidates.length) continue;
-
-    const candidate = normalizeLabelForRow(candidates[idx]);
-    const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
-
-    if (isAcceptableFinancialLabel(candidate, statementType)) {
-      return {
-        label: candidate,
-        recoveredFrom: "page_text_nearby"
-      };
-    }
-
-    if (
-      salvagedCandidate &&
-      isAcceptableFinancialLabel(salvagedCandidate, statementType)
-    ) {
-      return {
-        label: salvagedCandidate,
-        recoveredFrom: "page_text_salvaged_nearby"
-      };
-    }
-  }
-
-  return null;
-}
-
-    function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
-  if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
-
-  const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
-  if (!candidates.length) return rawEntries;
-
-  return rawEntries.map((entry, entryIndex) => {
-    const finalLabel = normalizeLabelForRow(entry.labelCandidate);
-
-    if (isAcceptableFinancialLabel(finalLabel, statementType)) {
-      return {
-        ...entry,
-        label: finalLabel
-      };
-    }
-
-    const nearby = findBestNearbyLabelCandidate(
-      candidates,
-      entryIndex,
-      statementType
-    );
-
-    if (nearby) {
-      return {
-        ...entry,
-        label: nearby.label,
-        source: {
-          ...entry.source,
-          labelRecoveredFrom: nearby.recoveredFrom
-        }
-      };
-    }
-
-    return {
-      ...entry,
-      label: finalLabel
-    };
-  });
-}
-        while (cursor < candidates.length) {
-  const rawCandidate = candidates[cursor];
-  cursor += 1;
-
-  const candidate = normalizeLabelForRow(rawCandidate);
-  const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
-
-  if (isAcceptableFinancialLabel(candidate, statementType)) {
-    return {
-      ...entry,
-      label: candidate,
-      source: {
-        ...entry.source,
-        labelRecoveredFrom: "page_text"
-      }
-    };
-  }
-
-  if (
-    salvagedCandidate &&
-    isAcceptableFinancialLabel(salvagedCandidate, statementType)
-  ) {
-    return {
-      ...entry,
-      label: salvagedCandidate,
-      source: {
-        ...entry.source,
-        labelRecoveredFrom: "page_text_salvaged"
-      }
-    };
-  }
-}
-
-        return {
-          ...entry,
-          label: finalLabel
-        };
-      });
-    }
-
-    function extractRowsFromPageContext(pageCtx, statementType) {
-      if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
-        return [];
-      }
-
-      const rawEntries = collectNumericRows(pageCtx, statementType);
-      const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
-      const header = pageCtx.header || {};
-      const extracted = [];
-
-      for (const entry of repairedEntries) {
-        const label = normalizeLabelForRow(entry.label);
-
-        if (
-          shouldSkipExtractedRow({
-            row: entry.row,
-            rowIndex: entry.rowIndex,
-            label,
-            statementType,
-            pageCtx,
-            currentYearValue: entry.currentYearValue,
-            previousYearValue: entry.previousYearValue
-          })
-        ) {
-          continue;
-        }
-
-        extracted.push({
-          statementType,
-          pageNumber: pageCtx.pageNumber,
-          rowIndex: entry.rowIndex,
-          label,
-          note: entry.note,
-          currentYear: {
-            year: Number.isFinite(header.latest) ? header.latest : null,
-            value: entry.currentYearValue
-          },
-          previousYear: {
-            year: Number.isFinite(header.previous) ? header.previous : null,
-            value: entry.previousYearValue
-          },
-          source: entry.source,
-          rawRow: entry.row
-        });
-      }
-
-      return extracted;
-    }
-
-    function dedupeExtractedRows(rows) {
-      const seen = new Set();
-      const out = [];
-
-      for (const row of rows || []) {
-        const key = [
-          row.statementType,
-          row.pageNumber,
-          normalizeText(row.label),
-          row.currentYear?.year,
-          row.currentYear?.value,
-          row.previousYear?.year,
-          row.previousYear?.value
-        ].join("|");
-
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push(row);
-      }
-
-      return out;
-    }
-
-    function extractStatementRows(statementSelection) {
-      const result = {
-        income: [],
-        balance: [],
-        cashflow: []
-      };
-
-      for (const statementType of ["income", "balance", "cashflow"]) {
-        const entry = statementSelection?.[statementType];
-        const pageContextsForStatement = Array.isArray(entry?.pageContexts)
-          ? entry.pageContexts
-          : [];
-
-        const rows = pageContextsForStatement.flatMap((pageCtx) =>
-          extractRowsFromPageContext(pageCtx, statementType)
-        );
-
-        result[statementType] = dedupeExtractedRows(rows);
-      }
-
-      return result;
-    }
-
-    const financialRows = extractStatementRows(statementSelectionResolved);
-
-    return send(200, {
-      ok: true,
-      sector: finalSector,
-      sectorInfo,
-      activeSectorProfile: finalSectorProfile,
-      engine: "extract-financial-v6.8",
-      phase: "5_sector_keyword_ranking_safe_build",
-      fileName: body.fileName || normalized?.meta?.fileName || null,
-      statementProfile,
-
-      selectedPages: {
-        incomePage,
-        balancePage,
-        cashFlowPage
-      },
-
-      statementPageRanges,
-      statementSelection: {
-        income: {
-          basePage: incomePage,
-          pages: statementPageRanges.income
-        },
-        balance: {
-          basePage: balancePage,
-          pages: statementPageRanges.balance
-        },
-        cashflow: {
-          basePage: cashFlowPage,
-          pages: statementPageRanges.cashflow
-        }
-      },
-      statementSelectionResolved,
-      financialRows,
-
-      confidence,
-
-      debug: {
-        extraction: {
-          incomeRowsCount: financialRows.income.length,
-          balanceRowsCount: financialRows.balance.length,
-          cashflowRowsCount: financialRows.cashflow.length
-        },
-        continuation: {
-          income: incomeContinuation,
-          balance: balanceContinuation,
-          cashflow: cashflowContinuation
-        },
-        profileDetection,
-        activeProfileKeywords: {
-          income: incomeKeywords.slice(0, 12),
-          balance: balanceKeywords.slice(0, 12),
-          cashflow: cashflowKeywords.slice(0, 12)
-        },
-        ranking: {
-          balanceTop: calibratedBalance.slice(0, 5),
-          incomeTop: calibratedIncome.slice(0, 5),
-          cashFlowTop: calibratedCashflow.slice(0, 15)
-        }
-      },
-
-      meta: {
-        pages: normalized?.meta?.pages ?? pages.length ?? null,
-        tables: normalized?.meta?.tables ?? tablesPreview.length ?? null,
-        textLength: normalized?.meta?.textLength ?? null
-      },
-
-      normalizedPrevExists: !!normalizedPrev
-    });
-  } catch (err) {
-    return send(500, {
-      ok: false,
-      error: err?.message || "unknown error in extract-financial"
-    });
-  }
-};
-
-
-
-
-
-
-
+        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell
 
 
 
