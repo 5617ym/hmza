@@ -593,6 +593,33 @@ module.exports = async function (context, req) {
       return false;
     }
 
+    function salvageFinancialLabelCandidate(rawLabel) {
+  const clean = cleanupLabel(rawLabel);
+  if (!clean) return null;
+
+  let text = clean;
+
+  // remove Arabic/English years
+  text = text.replace(/\b(19|20)\d{2}\b/g, " ");
+  text = text.replace(/\b(١٩|٢٠)[٠-٩]{2}\b/g, " ");
+
+  // remove currencies / common header units
+  text = text.replace(/\b(ريال سعودي|ريال|ألف ريال|الف ريال|بالريال|sar|usd|دولار)\b/gi, " ");
+
+  // remove note/reference patterns like 14,12 / ١٤،١٢ / 12-14
+  text = text.replace(/\b[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}\b/g, " ");
+
+  // remove standalone numbers
+  text = text.replace(/\b[0-9٠-٩]+\b/g, " ");
+
+  // normalize spaces
+  text = text.replace(/\s+/g, " ").trim();
+
+  if (!text) return null;
+
+  return text;
+}
+
     function isAcceptableFinancialLabel(label, statementType) {
   const cleanLabel = cleanupLabel(label);
   const normalizedLabel = normalizeText(cleanLabel);
@@ -2508,22 +2535,37 @@ module.exports = async function (context, req) {
         }
 
         while (cursor < candidates.length) {
-          const candidate = normalizeLabelForRow(candidates[cursor]);
-          cursor += 1;
+  const rawCandidate = candidates[cursor];
+  cursor += 1;
 
-          if (!isAcceptableFinancialLabel(candidate, statementType)) {
-            continue;
-          }
+  const candidate = normalizeLabelForRow(rawCandidate);
+  const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
 
-          return {
-            ...entry,
-            label: candidate,
-            source: {
-              ...entry.source,
-              labelRecoveredFrom: "page_text"
-            }
-          };
-        }
+  if (isAcceptableFinancialLabel(candidate, statementType)) {
+    return {
+      ...entry,
+      label: candidate,
+      source: {
+        ...entry.source,
+        labelRecoveredFrom: "page_text"
+      }
+    };
+  }
+
+  if (
+    salvagedCandidate &&
+    isAcceptableFinancialLabel(salvagedCandidate, statementType)
+  ) {
+    return {
+      ...entry,
+      label: salvagedCandidate,
+      source: {
+        ...entry.source,
+        labelRecoveredFrom: "page_text_salvaged"
+      }
+    };
+  }
+}
 
         return {
           ...entry,
