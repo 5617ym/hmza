@@ -594,28 +594,68 @@ module.exports = async function (context, req) {
     }
 
     function isAcceptableFinancialLabel(label, statementType) {
-      const cleanLabel = cleanupLabel(label);
-      const normalizedLabel = normalizeText(cleanLabel);
+  const cleanLabel = cleanupLabel(label);
+  const normalizedLabel = normalizeText(cleanLabel);
 
-      if (!cleanLabel) return false;
-      if (!/[A-Za-z\u0600-\u06FF]/.test(cleanLabel)) return false;
-      if (normalizedLabel.length <= 1) return false;
-      if (isLikelyReferenceValue(cleanLabel)) return false;
-      if (isLikelyMetaOrHeaderLabel(cleanLabel)) return false;
-      if (isLikelyStatementTitleRow(cleanLabel, statementType)) return false;
-      if (isSectionHeaderOnlyLabel(cleanLabel, statementType)) return false;
+  if (!cleanLabel) return false;
 
-      if (
-        normalizedLabel.includes("الايضاحات المرفقه") ||
-        normalizedLabel.includes("الإيضاحات المرفقة") ||
-        normalizedLabel.includes("integral part") ||
-        normalizedLabel.includes("accompanying notes")
-      ) {
-        return false;
-      }
+  const trimmed = cleanLabel.trim();
+  const normalized = normalizedLabel.trim();
 
-      return true;
-    }
+  // must contain letters (Arabic or English)
+  if (!/[A-Za-z\u0600-\u06FF]/.test(trimmed)) return false;
+
+  // too short
+  if (normalized.length <= 2) return false;
+
+  // reject pure numbers or number-like
+  if (/^[\d\s,.\-()]+$/.test(trimmed)) return false;
+
+  // reject year-only labels
+  if (/^(19|20)\d{2}$/.test(trimmed)) return false;
+
+  // reject "2023 ريال سعودي" etc
+  if (/^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(normalized)) return false;
+
+  // reject currency headers
+  if (
+    normalized.includes("ريال سعودي") ||
+    normalized.includes("الف ريال") ||
+    normalized.includes("بالريال") ||
+    normalized.includes("sar") ||
+    normalized.includes("usd")
+  ) {
+    return false;
+  }
+
+  // reject reference-like labels
+  if (/^\d{1,3}[,\.\-]\d{1,3}$/.test(trimmed)) return false;
+
+  // reject note numbers
+  if (/^\d+$/.test(trimmed)) return false;
+
+  // reject very small tokens
+  const wordCount = normalized.split(/\s+/).length;
+  if (wordCount === 1 && normalized.length < 4) return false;
+
+  // existing filters
+  if (isLikelyReferenceValue(trimmed)) return false;
+  if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
+  if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
+  if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
+
+  // known meta phrases
+  if (
+    normalized.includes("الايضاحات المرفقه") ||
+    normalized.includes("الإيضاحات المرفقة") ||
+    normalized.includes("integral part") ||
+    normalized.includes("accompanying notes")
+  ) {
+    return false;
+  }
+
+  return true;
+}
 
     function extractLabelCandidatesFromPageText(pageCtx, statementType) {
       const textBlob = [
