@@ -284,7 +284,7 @@ module.exports = async function (context, req) {
       return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
     }
 
-        function extractTableRows(table) {
+    function extractTableRows(table) {
       // ============================================
       // Layer A: Full Table Row Reconstruction
       // ============================================
@@ -405,7 +405,7 @@ module.exports = async function (context, req) {
       }));
     }
 
-    function isLikelyOnlyReferenceText(value) {
+        function isLikelyOnlyReferenceText(value) {
       const raw = toEnglishDigits(String(value || "").trim());
       const s = normalizeText(raw);
       if (!raw) return false;
@@ -549,7 +549,7 @@ module.exports = async function (context, req) {
         });
     }
 
-        function isSectionHeaderOnlyLabel(label, statementType) {
+    function isSectionHeaderOnlyLabel(label, statementType) {
       const s = normalizeText(label);
 
       const genericHeaders = [
@@ -608,6 +608,21 @@ module.exports = async function (context, req) {
       return text;
     }
 
+    function isLikelyCurrencyOrUnitHeader(label) {
+      const s = normalizeText(label);
+      if (!s) return false;
+
+      return (
+        s.includes("ريال سعودي") ||
+        s.includes("الف ريال") ||
+        s.includes("ألف ريال") ||
+        s.includes("بالريال") ||
+        s === "sar" ||
+        s === "usd" ||
+        s === "دولار"
+      );
+    }
+
     function isAcceptableFinancialLabel(label, statementType) {
       const cleanLabel = cleanupLabel(label);
       const normalizedLabel = normalizeText(cleanLabel);
@@ -621,28 +636,17 @@ module.exports = async function (context, req) {
       if (normalized.length <= 2) return false;
 
       if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
-
       if (/^(19|20)\d{2}$/.test(trimmed)) return false;
       if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
 
       if (
-        /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(normalized) ||
-        /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(normalized)
+        /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed) ||
+        /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed)
       ) {
         return false;
       }
 
-      if (
-        normalized.includes("ريال سعودي") ||
-        normalized.includes("الف ريال") ||
-        normalized.includes("ألف ريال") ||
-        normalized.includes("بالريال") ||
-        normalized.includes("sar") ||
-        normalized.includes("usd")
-      ) {
-        return false;
-      }
-
+      if (isLikelyCurrencyOrUnitHeader(trimmed)) return false;
       if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
       if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
 
@@ -681,12 +685,30 @@ module.exports = async function (context, req) {
         .filter((line) => !isLikelyNarrativeLine(line))
         .filter((line) => !isQuarterOrPeriodCell(line))
         .filter((line) => !isPureNumericSymbolCell(line))
-        .filter((line) => !isLikelyOnlyReferenceText(line));
+        .filter((line) => !isLikelyOnlyReferenceText(line))
+        .filter((line) => /[A-Za-z\u0600-\u06FF]/.test(line));
 
-      return dedupePreserveOrder(candidates);
+      const enriched = [];
+
+      for (const line of candidates) {
+        enriched.push(line);
+
+        const salvaged = salvageFinancialLabelCandidate(line);
+        if (
+          salvaged &&
+          normalizeText(salvaged) !== normalizeText(line)
+        ) {
+          enriched.push(salvaged);
+        }
+      }
+
+      return dedupePreserveOrder(enriched).filter((line) => {
+        return !isLikelyMetaOrHeaderLabel(line) &&
+          !isLikelyStatementTitleRow(line, statementType);
+      });
     }
 
-    // =========================================================
+        // =========================================================
     // Layer 2: Page / Table Context Builder
     // =========================================================
 
@@ -747,7 +769,7 @@ module.exports = async function (context, req) {
       };
     }
 
-        function detectHeaderColumns(rows) {
+    function detectHeaderColumns(rows) {
       const headerRows = getHeaderRows(rows);
       const language = detectTableLanguageDirection(rows);
 
@@ -1694,7 +1716,7 @@ module.exports = async function (context, req) {
         reasons.push(`titleAll:+${s}`);
       }
 
-            if (structureHitsAll.length > 0) {
+      if (structureHitsAll.length > 0) {
         const s = Math.min(structureHitsAll.length, 10) * 16;
         score += s;
         reasons.push(`structureAll:+${s}`);
@@ -1720,7 +1742,7 @@ module.exports = async function (context, req) {
         reasons.push(`yearHeader:+${s}`);
       }
 
-      if (pageCtx.years && pageCtx.years.length >= 2) {
+            if (pageCtx.years && pageCtx.years.length >= 2) {
         const s = structureSupportCount > 0 ? 14 : 6;
         score += s;
         reasons.push(`yearsDetected:+${s}`);
@@ -1956,7 +1978,7 @@ module.exports = async function (context, req) {
       return getPageContextByNumber(basePageNumber + offset);
     }
 
-        function getContinuationConfig(kind) {
+    function getContinuationConfig(kind) {
       const cfg = mergeStatementConfigWithSectorKeywords(
         kind,
         ACTIVE_STATEMENT_CONFIGS[kind]
@@ -2004,7 +2026,7 @@ module.exports = async function (context, req) {
         reasons.push("noTitleNoFirstRows:-70");
       }
 
-      if (structureHitsFirstRows.length > 0) {
+            if (structureHitsFirstRows.length > 0) {
         const s = Math.min(structureHitsFirstRows.length, 5) * 20;
         score += s;
         reasons.push(`structureFirstRows:+${s}`);
@@ -2287,10 +2309,446 @@ module.exports = async function (context, req) {
         .filter((x) => !reserved.has(x.idx))
         .filter((x) => isLikelyTextLabelCell(x.cell))
         .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
-        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell
+        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
+        .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType));
 
+      if (textCandidates.length > 0) {
+        const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
+        return rtlPick?.cell || "";
+      }
 
+      const fallbackFromAnyText = cells
+        .filter((x) => !reserved.has(x.idx))
+        .filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
+        .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
+        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
+        .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType))
+        .sort((a, b) => b.idx - a.idx)[0];
 
+      return fallbackFromAnyText?.cell || "";
+    }
+
+    function normalizeLabelForRow(label) {
+      return cleanupLabel(
+        String(label || "")
+          .replace(/\.+$/g, "")
+          .replace(/\s{2,}/g, " ")
+          .trim()
+      );
+    }
+        function isLikelyStatementTitleRow(label, statementType) {
+      const s = normalizeText(label);
+
+      if (!s) return false;
+
+      const titleMap = {
+        income: [
+          "قائمة الدخل",
+          "قائمة الارباح والخسائر",
+          "قائمة الأرباح والخسائر",
+          "قائمة الدخل الشامل",
+          "statement of income",
+          "income statement",
+          "statement of profit or loss",
+          "statement of comprehensive income",
+          "profit or loss"
+        ],
+        balance: [
+          "قائمة المركز المالي",
+          "المركز المالي",
+          "قائمة الوضع المالي",
+          "statement of financial position",
+          "balance sheet",
+          "financial position"
+        ],
+        cashflow: [
+          "قائمة التدفقات النقدية",
+          "بيان التدفقات النقدية",
+          "التدفقات النقدية",
+          "statement of cash flows",
+          "cash flow statement"
+        ]
+      };
+
+      return (titleMap[statementType] || []).some((x) => s.includes(normalizeText(x)));
+    }
+
+    function isLikelyMetaOrHeaderLabel(label) {
+      const s = normalizeText(label);
+
+      if (!s) return true;
+
+      return (
+        isLikelyStatementDateText(s) ||
+        isLikelyStandardEffectiveDateText(s) ||
+        isLikelyNarrativeLine(s) ||
+        isQuarterOrPeriodCell(s) ||
+        s === "البيان" ||
+        s === "البيانات" ||
+        s === "description" ||
+        s === "particulars" ||
+        s === "item" ||
+        s === "البند" ||
+        s === "بنود" ||
+        s === "notes" ||
+        s === "note" ||
+        s === "ايضاح" ||
+        s === "الايضاح"
+      );
+    }
+
+    function rowHasUsefulNumericValue(row, header) {
+      const currentRaw = getCell(row, header?.currentCol);
+      const previousRaw = getCell(row, header?.previousCol);
+
+      const currentValue = parseNumberSmart(currentRaw);
+      const previousValue = parseNumberSmart(previousRaw);
+
+      return currentValue != null || previousValue != null;
+    }
+
+    function shouldSkipExtractedRow({
+      row,
+      rowIndex,
+      label,
+      statementType,
+      pageCtx,
+      currentYearValue,
+      previousYearValue
+    }) {
+      const cleanLabel = normalizeLabelForRow(label);
+
+      if (!cleanLabel) return true;
+      if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
+      if (!rowHasUsefulNumericValue(row, pageCtx?.header)) return true;
+
+      if (
+        statementType === "income" &&
+        currentYearValue == null &&
+        previousYearValue == null
+      ) {
+        return true;
+      }
+
+      if (!isAcceptableFinancialLabel(cleanLabel, statementType)) {
+        return true;
+      }
+
+      return false;
+    }
+
+    function collectNumericRows(pageCtx, statementType) {
+      const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
+      const header = pageCtx?.header || {};
+      const numericRows = [];
+
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex];
+        if (!Array.isArray(row) || !row.length) continue;
+        if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
+        if (!rowHasUsefulNumericValue(row, header)) continue;
+
+        const labelFromHeader = getCell(row, header.labelCol);
+        const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
+        const noteRaw = getCell(row, header.noteCol);
+
+        const noteLooksLikeLabel =
+          header.labelCol == null &&
+          !!noteRaw &&
+          isLikelyTextLabelCell(noteRaw) &&
+          !isLikelyReferenceValue(noteRaw) &&
+          !isLikelyMetaOrHeaderLabel(noteRaw) &&
+          !isLikelyStatementTitleRow(noteRaw, statementType) &&
+          !isSectionHeaderOnlyLabel(noteRaw, statementType);
+
+        const labelCandidate = normalizeLabelForRow(
+          labelFromHeader ||
+          fallbackLabel ||
+          (noteLooksLikeLabel ? noteRaw : "")
+        );
+
+        const note =
+          noteLooksLikeLabel
+            ? null
+            : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
+
+        const currentYearValueRaw = getCell(row, header.currentCol);
+        const previousYearValueRaw = getCell(row, header.previousCol);
+
+        const currentYearValue = parseNumberSmart(currentYearValueRaw);
+        const previousYearValue = parseNumberSmart(previousYearValueRaw);
+
+        numericRows.push({
+          statementType,
+          pageNumber: pageCtx.pageNumber,
+          rowIndex,
+          row,
+          labelCandidate,
+          note,
+          currentYearValue,
+          previousYearValue,
+          source: {
+            labelCol: Number.isFinite(header.labelCol) ? header.labelCol : null,
+            noteCol: Number.isFinite(header.noteCol) ? header.noteCol : null,
+            currentCol: Number.isFinite(header.currentCol) ? header.currentCol : null,
+            previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
+            resolutionMode: header.resolutionMode || null,
+            direction: header.direction || null
+          }
+        });
+      }
+
+      return numericRows;
+    }
+
+    function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
+      if (!Array.isArray(candidates) || !candidates.length) return null;
+
+      const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
+
+      for (const offset of offsets) {
+        const idx = startIndex + offset;
+        if (idx < 0 || idx >= candidates.length) continue;
+
+        const candidate = normalizeLabelForRow(candidates[idx]);
+        const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
+
+        if (isAcceptableFinancialLabel(candidate, statementType)) {
+          return {
+            label: candidate,
+            recoveredFrom: "page_text_nearby"
+          };
+        }
+
+        if (
+          salvagedCandidate &&
+          isAcceptableFinancialLabel(salvagedCandidate, statementType)
+        ) {
+          return {
+            label: salvagedCandidate,
+            recoveredFrom: "page_text_salvaged_nearby"
+          };
+        }
+      }
+
+      return null;
+    }
+
+    function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
+      if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
+
+      const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
+      if (!candidates.length) return rawEntries;
+
+      const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
+
+      return rawEntries.map((entry) => {
+        const finalLabel = normalizeLabelForRow(entry.labelCandidate);
+
+        if (isAcceptableFinancialLabel(finalLabel, statementType)) {
+          return {
+            ...entry,
+            label: finalLabel
+          };
+        }
+
+        const relativeRowIndex = Math.max(0, safeNumber(entry?.rowIndex, 0) - headerRowIndex - 1);
+        const nearby = findBestNearbyLabelCandidate(
+          candidates,
+          relativeRowIndex,
+          statementType
+        );
+
+        if (nearby) {
+          return {
+            ...entry,
+            label: nearby.label,
+            source: {
+              ...entry.source,
+              labelRecoveredFrom: nearby.recoveredFrom
+            }
+          };
+        }
+
+        return {
+          ...entry,
+          label: finalLabel
+        };
+      });
+    }
+
+    function extractRowsFromPageContext(pageCtx, statementType) {
+      if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
+        return [];
+      }
+
+      const rawEntries = collectNumericRows(pageCtx, statementType);
+      const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
+      const header = pageCtx.header || {};
+      const extracted = [];
+
+      for (const entry of repairedEntries) {
+        const label = normalizeLabelForRow(entry.label);
+
+        if (
+          shouldSkipExtractedRow({
+            row: entry.row,
+            rowIndex: entry.rowIndex,
+            label,
+            statementType,
+            pageCtx,
+            currentYearValue: entry.currentYearValue,
+            previousYearValue: entry.previousYearValue
+          })
+        ) {
+          continue;
+        }
+
+        extracted.push({
+          statementType,
+          pageNumber: pageCtx.pageNumber,
+          rowIndex: entry.rowIndex,
+          label,
+          note: entry.note,
+          currentYear: {
+            year: Number.isFinite(header.latest) ? header.latest : null,
+            value: entry.currentYearValue
+          },
+          previousYear: {
+            year: Number.isFinite(header.previous) ? header.previous : null,
+            value: entry.previousYearValue
+          },
+          source: entry.source,
+          rawRow: entry.row
+        });
+      }
+
+      return extracted;
+    }
+
+    function dedupeExtractedRows(rows) {
+      const seen = new Set();
+      const out = [];
+
+      for (const row of rows || []) {
+        const key = [
+          row.statementType,
+          row.pageNumber,
+          normalizeText(row.label),
+          row.currentYear?.year,
+          row.currentYear?.value,
+          row.previousYear?.year,
+          row.previousYear?.value
+        ].join("|");
+
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(row);
+      }
+
+      return out;
+    }
+
+    function extractStatementRows(statementSelection) {
+      const result = {
+        income: [],
+        balance: [],
+        cashflow: []
+      };
+
+      for (const statementType of ["income", "balance", "cashflow"]) {
+        const entry = statementSelection?.[statementType];
+        const pageContextsForStatement = Array.isArray(entry?.pageContexts)
+          ? entry.pageContexts
+          : [];
+
+        const rows = pageContextsForStatement.flatMap((pageCtx) =>
+          extractRowsFromPageContext(pageCtx, statementType)
+        );
+
+        result[statementType] = dedupeExtractedRows(rows);
+      }
+
+      return result;
+    }
+
+    const financialRows = extractStatementRows(statementSelectionResolved);
+
+    return send(200, {
+      ok: true,
+      sector: finalSector,
+      sectorInfo,
+      activeSectorProfile: finalSectorProfile,
+      engine: "extract-financial-v6.9",
+      phase: "5_financial_line_item_extraction_hardened",
+      fileName: body.fileName || normalized?.meta?.fileName || null,
+      statementProfile,
+
+      selectedPages: {
+        incomePage,
+        balancePage,
+        cashFlowPage
+      },
+
+      statementPageRanges,
+      statementSelection: {
+        income: {
+          basePage: incomePage,
+          pages: statementPageRanges.income
+        },
+        balance: {
+          basePage: balancePage,
+          pages: statementPageRanges.balance
+        },
+        cashflow: {
+          basePage: cashFlowPage,
+          pages: statementPageRanges.cashflow
+        }
+      },
+      statementSelectionResolved,
+      financialRows,
+
+      confidence,
+
+      debug: {
+        extraction: {
+          incomeRowsCount: financialRows.income.length,
+          balanceRowsCount: financialRows.balance.length,
+          cashflowRowsCount: financialRows.cashflow.length
+        },
+        continuation: {
+          income: incomeContinuation,
+          balance: balanceContinuation,
+          cashflow: cashflowContinuation
+        },
+        profileDetection,
+        activeProfileKeywords: {
+          income: incomeKeywords.slice(0, 12),
+          balance: balanceKeywords.slice(0, 12),
+          cashflow: cashflowKeywords.slice(0, 12)
+        },
+        ranking: {
+          balanceTop: calibratedBalance.slice(0, 5),
+          incomeTop: calibratedIncome.slice(0, 5),
+          cashFlowTop: calibratedCashflow.slice(0, 15)
+        }
+      },
+
+      meta: {
+        pages: normalized?.meta?.pages ?? pages.length ?? null,
+        tables: normalized?.meta?.tables ?? tablesPreview.length ?? null,
+        textLength: normalized?.meta?.textLength ?? null
+      },
+
+      normalizedPrevExists: !!normalizedPrev
+    });
+  } catch (err) {
+    return send(500, {
+      ok: false,
+      error: err?.message || "unknown error in extract-financial"
+    });
+  }
+};
 
 
 
