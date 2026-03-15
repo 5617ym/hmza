@@ -2245,7 +2245,7 @@ module.exports = async function (context, req) {
 
     const financialRows = extractStatementRows(statementSelectionResolved);
 
-    return send(200, {
+        return send(200, {
       ok: true,
       sector: finalSector,
       sectorInfo,
@@ -2276,25 +2276,17 @@ module.exports = async function (context, req) {
           pages: statementPageRanges.cashflow
         }
       },
-            statementSelectionResolved,
+      statementSelectionResolved,
       financialRows,
 
-      debug: {
-        incomeDebug: statementSelectionResolved?.income?.pageContexts?.[0]
-          ? {
-              header: statementSelectionResolved.income.pageContexts[0].header,
-              firstRows: (statementSelectionResolved.income.pageContexts[0].mainRows || []).slice(0, 8),
-              mainColumnCount: statementSelectionResolved.income.pageContexts[0].mainColumnCount,
-              mainRowCount: statementSelectionResolved.income.pageContexts[0].mainRowCount
-            }
-          : null,
+      confidence,
 
+      debug: {
         continuation: {
           income: incomeContinuation,
           balance: balanceContinuation,
           cashflow: cashflowContinuation
         },
-
         profileDetection,
         activeProfileKeywords: {
           income: incomeKeywords.slice(0, 12),
