@@ -289,7 +289,99 @@ module.exports = async function (context, req) {
       return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
     }
 
-    function extractTableRows(table) {
+        function extractTableRows(table) {
+      // ============================================
+      // Layer A: Full Table Row Reconstruction
+      // ============================================
+
+      const rawCells = Array.isArray(table?.cells)
+        ? table.cells
+        : Array.isArray(table?.tableCells)
+          ? table.tableCells
+          : Array.isArray(table?.entries)
+            ? table.entries
+            : [];
+
+      if (rawCells.length > 0) {
+        const rowMap = new Map();
+        let maxColIndex = -1;
+
+        for (const cell of rawCells) {
+          const rowIndex = safeNumber(
+            cell?.rowIndex ??
+            cell?.row ??
+            cell?.r,
+            null
+          );
+
+          const columnIndex = safeNumber(
+            cell?.columnIndex ??
+            cell?.colIndex ??
+            cell?.column ??
+            cell?.col ??
+            cell?.c,
+            null
+          );
+
+          if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
+            continue;
+          }
+
+          const content = String(
+            cell?.content ??
+            cell?.text ??
+            cell?.value ??
+            cell?.rawText ??
+            ""
+          ).trim();
+
+          const columnSpan = Math.max(
+            1,
+            safeNumber(cell?.columnSpan ?? cell?.colSpan ?? 1, 1)
+          );
+
+          if (!rowMap.has(rowIndex)) {
+            rowMap.set(rowIndex, {});
+          }
+
+          const rowObj = rowMap.get(rowIndex);
+
+          for (let offset = 0; offset < columnSpan; offset += 1) {
+            const targetCol = columnIndex + offset;
+
+            if (!rowObj[targetCol] || String(rowObj[targetCol]).trim() === "") {
+              rowObj[targetCol] = content;
+            }
+
+            if (targetCol > maxColIndex) {
+              maxColIndex = targetCol;
+            }
+          }
+        }
+
+        const reconstructedRows = Array.from(rowMap.keys())
+          .sort((a, b) => a - b)
+          .map((rowIndex) => {
+            const rowObj = rowMap.get(rowIndex) || {};
+            const row = [];
+
+            for (let c = 0; c <= maxColIndex; c += 1) {
+              row.push(String(rowObj[c] == null ? "" : rowObj[c]).trim());
+            }
+
+            return row;
+          })
+          .filter((r) => r.some((c) => !isBlank(c)));
+
+        if (reconstructedRows.length > 0) {
+          return reconstructedRows;
+        }
+      }
+
+      // ============================================
+      // Layer B: Fallback to Preview Rows
+      // ============================================
+
       const rows = [];
       const parts = [];
 
