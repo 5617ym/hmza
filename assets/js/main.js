@@ -381,10 +381,10 @@ if (DEV_MODE) {
     setStatus("تم التحليل ✅ — جاري استخراج البيانات المالية...", "info");
 
     const payload = {
-      normalized: dataA?.normalized,
-      period: ui.period,
-      compare: ui.compare,
-    };
+  normalized: dataA?.normalized || {},
+  period: ui.period,
+  compare: ui.compare,
+};
 
     if (dataB?.normalized) {
       payload.normalizedPrev = dataB.normalized;
