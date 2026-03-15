@@ -1377,6 +1377,7 @@ module.exports = async function (context, req) {
     }
 
     function statementRankScore(pageCtx, cfg, kind) {
+        
       let score = 0;
       const reasons = [];
       const signals = {};
@@ -1541,11 +1542,24 @@ module.exports = async function (context, req) {
         reasons.push(`noTitlePenalty:-${penalty}`);
       }
 
+      
       if (hasNoTitle && hasNoStructure) {
-        const penalty = kind === "balance" ? 140 : 260;
-        score -= penalty;
-        reasons.push(`noTitleNoStructure:-${penalty}`);
-      }
+  const penalty = kind === "balance" ? 140 : 260;
+  score -= penalty;
+  reasons.push(`noTitleNoStructure:-${penalty}`);
+}
+
+const isTitleOnlyCoverPage =
+  (titleHitsHeader.length > 0 || titleHitsAll.length > 0) &&
+  hasNoStructure &&
+  (!pageCtx.years || pageCtx.years.length === 0) &&
+  pageCtx.mainColumnCount <= 2 &&
+  pageCtx.mainRowCount <= 10;
+
+if (isTitleOnlyCoverPage) {
+  score -= 180;
+  reasons.push("titleOnlyCoverPagePenalty:-180");
+}
 
       if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
         score -= 120;
