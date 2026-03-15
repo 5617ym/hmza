@@ -12,11 +12,64 @@ module.exports = async function (context, req) {
   };
 
   try {
-    const body = req.body || {};
-    const normalized = body.normalized || {};
-    const normalizedPrev = body.normalizedPrev || null;
+    const fs = require("fs");
+    const path = require("path");
 
-    if (!normalized || typeof normalized !== "object") {
+    function readLocalTestPayload() {
+      const localPath = path.join(__dirname, "../jadwa-reit-layout.json");
+      if (!fs.existsSync(localPath)) return null;
+
+      const raw = fs.readFileSync(localPath, "utf8");
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    }
+
+    function resolveInputEnvelope(req) {
+      const reqBody =
+        req?.body && typeof req.body === "object"
+          ? req.body
+          : null;
+
+      const payload =
+        reqBody && Object.keys(reqBody).length > 0
+          ? reqBody
+          : readLocalTestPayload();
+
+      if (!payload || typeof payload !== "object") {
+        return {
+          body: {},
+          normalized: {},
+          normalizedPrev: null,
+          fileName: null
+        };
+      }
+
+      // Envelope format: { ok, fileName, normalized, ... }
+      if (payload.normalized && typeof payload.normalized === "object") {
+        return {
+          body: payload,
+          normalized: payload.normalized,
+          normalizedPrev: payload.normalizedPrev || null,
+          fileName: payload.fileName || payload.normalized?.meta?.fileName || null
+        };
+      }
+
+      // Raw normalized format مباشرة
+      return {
+        body: payload,
+        normalized: payload,
+        normalizedPrev: null,
+        fileName: payload.fileName || payload?.meta?.fileName || null
+      };
+    }
+
+    const resolvedInput = resolveInputEnvelope(req);
+    const body = resolvedInput.body;
+    const normalized = resolvedInput.normalized;
+    const normalizedPrev = resolvedInput.normalizedPrev;
+    const inputFileName = resolvedInput.fileName;
+
+    if (!normalized || typeof normalized !== "object" || !Object.keys(normalized).length) {
       return send(400, {
         ok: false,
         error: "normalized payload is required"
@@ -285,10 +338,6 @@ module.exports = async function (context, req) {
     }
 
     function extractTableRows(table) {
-      // ============================================
-      // Layer A: Full Table Row Reconstruction
-      // ============================================
-
       const rawCells = Array.isArray(table?.cells)
         ? table.cells
         : Array.isArray(table?.tableCells)
@@ -373,10 +422,6 @@ module.exports = async function (context, req) {
         }
       }
 
-      // ============================================
-      // Layer B: Fallback to Preview Rows
-      // ============================================
-
       const rows = [];
       const parts = [];
 
@@ -405,7 +450,7 @@ module.exports = async function (context, req) {
       }));
     }
 
-        function isLikelyOnlyReferenceText(value) {
+    function isLikelyOnlyReferenceText(value) {
       const raw = toEnglishDigits(String(value || "").trim());
       const s = normalizeText(raw);
       if (!raw) return false;
@@ -1444,7 +1489,7 @@ module.exports = async function (context, req) {
         }
       },
 
-            reit: {
+      reit: {
         balance: {
           key: "balance",
           titles: [
@@ -1659,7 +1704,7 @@ module.exports = async function (context, req) {
       ].join("\n");
     }
 
-    function statementRankScore(pageCtx, cfg, kind) {
+        function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
       const signals = {};
@@ -1742,7 +1787,7 @@ module.exports = async function (context, req) {
         reasons.push(`yearHeader:+${s}`);
       }
 
-            if (pageCtx.years && pageCtx.years.length >= 2) {
+      if (pageCtx.years && pageCtx.years.length >= 2) {
         const s = structureSupportCount > 0 ? 14 : 6;
         score += s;
         reasons.push(`yearsDetected:+${s}`);
@@ -2026,7 +2071,7 @@ module.exports = async function (context, req) {
         reasons.push("noTitleNoFirstRows:-70");
       }
 
-            if (structureHitsFirstRows.length > 0) {
+      if (structureHitsFirstRows.length > 0) {
         const s = Math.min(structureHitsFirstRows.length, 5) * 20;
         score += s;
         reasons.push(`structureFirstRows:+${s}`);
@@ -2099,7 +2144,7 @@ module.exports = async function (context, req) {
       return { score, reasons };
     }
 
-    function pageLooksLikeOtherStatementTitle(pageCtx, currentKind) {
+        function pageLooksLikeOtherStatementTitle(pageCtx, currentKind) {
       if (!pageCtx) return false;
 
       const kinds = ["income", "balance", "cashflow"].filter((k) => k !== currentKind);
@@ -2336,7 +2381,8 @@ module.exports = async function (context, req) {
           .trim()
       );
     }
-        function isLikelyStatementTitleRow(label, statementType) {
+
+    function isLikelyStatementTitleRow(label, statementType) {
       const s = normalizeText(label);
 
       if (!s) return false;
@@ -2501,7 +2547,7 @@ module.exports = async function (context, req) {
       return numericRows;
     }
 
-    function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
+        function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
       if (!Array.isArray(candidates) || !candidates.length) return null;
 
       const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
@@ -2552,7 +2598,11 @@ module.exports = async function (context, req) {
           };
         }
 
-        const relativeRowIndex = Math.max(0, safeNumber(entry?.rowIndex, 0) - headerRowIndex - 1);
+        const relativeRowIndex = Math.max(
+          0,
+          safeNumber(entry?.rowIndex, 0) - headerRowIndex - 1
+        );
+
         const nearby = findBestNearbyLabelCandidate(
           candidates,
           relativeRowIndex,
@@ -2650,69 +2700,69 @@ module.exports = async function (context, req) {
     }
 
     function buildExtractionDiagnostics(statementSelection) {
-  const diagnostics = {};
+      const diagnostics = {};
 
-  for (const statementType of ["income", "balance", "cashflow"]) {
-    const entry = statementSelection?.[statementType];
-    const pageContextsForStatement = Array.isArray(entry?.pageContexts)
-      ? entry.pageContexts
-      : [];
+      for (const statementType of ["income", "balance", "cashflow"]) {
+        const entry = statementSelection?.[statementType];
+        const pageContextsForStatement = Array.isArray(entry?.pageContexts)
+          ? entry.pageContexts
+          : [];
 
-    const perPage = pageContextsForStatement.map((pageCtx) => {
-      const rawEntries = collectNumericRows(pageCtx, statementType);
-      const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
+        const perPage = pageContextsForStatement.map((pageCtx) => {
+          const rawEntries = collectNumericRows(pageCtx, statementType);
+          const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
 
-      const acceptedEntries = repairedEntries.filter((row) => {
-        const label = normalizeLabelForRow(row.label);
-        return !shouldSkipExtractedRow({
-          row: row.row,
-          rowIndex: row.rowIndex,
-          label,
-          statementType,
-          pageCtx,
-          currentYearValue: row.currentYearValue,
-          previousYearValue: row.previousYearValue
+          const acceptedEntries = repairedEntries.filter((row) => {
+            const label = normalizeLabelForRow(row.label);
+            return !shouldSkipExtractedRow({
+              row: row.row,
+              rowIndex: row.rowIndex,
+              label,
+              statementType,
+              pageCtx,
+              currentYearValue: row.currentYearValue,
+              previousYearValue: row.previousYearValue
+            });
+          });
+
+          return {
+            pageNumber: pageCtx.pageNumber,
+            rawEntriesCount: rawEntries.length,
+            repairedEntriesCount: repairedEntries.length,
+            acceptedEntriesCount: acceptedEntries.length,
+            header: pageCtx.header,
+            sampleRaw: rawEntries.slice(0, 3).map((x) => ({
+              rowIndex: x.rowIndex,
+              labelCandidate: x.labelCandidate,
+              note: x.note,
+              currentYearValue: x.currentYearValue,
+              previousYearValue: x.previousYearValue,
+              source: x.source,
+              rawRow: x.row
+            })),
+            sampleRepaired: repairedEntries.slice(0, 3).map((x) => ({
+              rowIndex: x.rowIndex,
+              label: x.label,
+              note: x.note,
+              source: x.source
+            })),
+            sampleAccepted: acceptedEntries.slice(0, 3).map((x) => ({
+              rowIndex: x.rowIndex,
+              label: normalizeLabelForRow(x.label),
+              note: x.note,
+              source: x.source
+            }))
+          };
         });
-      });
 
-      return {
-        pageNumber: pageCtx.pageNumber,
-        rawEntriesCount: rawEntries.length,
-        repairedEntriesCount: repairedEntries.length,
-        acceptedEntriesCount: acceptedEntries.length,
-        header: pageCtx.header,
-        sampleRaw: rawEntries.slice(0, 3).map((x) => ({
-          rowIndex: x.rowIndex,
-          labelCandidate: x.labelCandidate,
-          note: x.note,
-          currentYearValue: x.currentYearValue,
-          previousYearValue: x.previousYearValue,
-          source: x.source,
-          rawRow: x.row
-        })),
-        sampleRepaired: repairedEntries.slice(0, 3).map((x) => ({
-          rowIndex: x.rowIndex,
-          label: x.label,
-          note: x.note,
-          source: x.source
-        })),
-        sampleAccepted: acceptedEntries.slice(0, 3).map((x) => ({
-          rowIndex: x.rowIndex,
-          label: normalizeLabelForRow(x.label),
-          note: x.note,
-          source: x.source
-        }))
-      };
-    });
+        diagnostics[statementType] = {
+          pages: pageContextsForStatement.map((p) => p.pageNumber),
+          perPage
+        };
+      }
 
-    diagnostics[statementType] = {
-      pages: pageContextsForStatement.map((p) => p.pageNumber),
-      perPage
-    };
-  }
-
-  return diagnostics;
-}
+      return diagnostics;
+    }
 
     function extractStatementRows(statementSelection) {
       const result = {
@@ -2745,9 +2795,9 @@ module.exports = async function (context, req) {
       sector: finalSector,
       sectorInfo,
       activeSectorProfile: finalSectorProfile,
-      engine: "extract-financial-v6.9",
-      phase: "5_financial_line_item_extraction_hardened",
-      fileName: body.fileName || normalized?.meta?.fileName || null,
+      engine: "extract-financial-v7.0",
+      phase: "5_financial_line_item_extraction_input_hardened",
+      fileName: inputFileName || null,
       statementProfile,
 
       selectedPages: {
@@ -2777,12 +2827,12 @@ module.exports = async function (context, req) {
       confidence,
 
       debug: {
-  extraction: {
-    incomeRowsCount: financialRows.income.length,
-    balanceRowsCount: financialRows.balance.length,
-    cashflowRowsCount: financialRows.cashflow.length
-  },
-  stageDiagnostics: extractionDiagnostics,
+        extraction: {
+          incomeRowsCount: financialRows.income.length,
+          balanceRowsCount: financialRows.balance.length,
+          cashflowRowsCount: financialRows.cashflow.length
+        },
+        stageDiagnostics: extractionDiagnostics,
         continuation: {
           income: incomeContinuation,
           balance: balanceContinuation,
@@ -2816,6 +2866,8 @@ module.exports = async function (context, req) {
     });
   }
 };
+
+
 
 
 
