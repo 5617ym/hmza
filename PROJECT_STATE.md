@@ -1,4 +1,4 @@
-PROJECT_STATE.md
+# PROJECT_STATE.md
 
 PROJECT:
 Financial Statement Extraction Engine
@@ -18,19 +18,19 @@ CURRENT_TASK:
 
 التركيز الحالي كان على:
 
-منع صفحات Audit Narrative من الفوز
-
-تقليل فوز الصفحات التي تحتوي أرقام فقط
-
-تحسين دقة اكتشاف القوائم المالية الثلاث.
+* منع صفحات **Audit Narrative** من الفوز
+* تقليل فوز الصفحات التي تحتوي أرقام فقط
+* تحسين دقة اكتشاف القوائم المالية الثلاث
 
 القوائم المستهدفة:
 
-Income Statement
-Balance Sheet
-Cash Flow Statement
+* Income Statement
+* Balance Sheet
+* Cash Flow Statement
 
-PHASE HISTORY
+---
+
+## PHASE HISTORY
 
 PHASE 4A
 Multi-Sector Validation
@@ -41,40 +41,30 @@ Multi-Sector Validation
 
 القطاعات التي تم اختبارها:
 
-شركة تشغيلية عربية
-
-شركة تشغيلية إنجليزية
-
-بنك عربي
-
-بنك إنجليزي
-
-شركة تأمين
-
-صندوق REIT
-
-شركة صناعية
+* شركة تشغيلية عربية
+* شركة تشغيلية إنجليزية
+* بنك عربي
+* بنك إنجليزي
+* شركة تأمين
+* صندوق REIT
+* شركة صناعية
 
 الشركات المستخدمة في الاختبار:
 
-جاهز
-
-المراعي
-
-مصرف الإنماء
-
-مصرف الراجحي
-
-التعاونية
-
-جدوى ريت
-
-المتقدمة
+* جاهز
+* المراعي
+* مصرف الإنماء
+* مصرف الراجحي
+* التعاونية
+* جدوى ريت
+* المتقدمة
 
 النتيجة:
 
 النظام أثبت القدرة على العمل عبر قطاعات متعددة
 مع اختلاف كبير في شكل القوائم المالية.
+
+---
 
 PHASE 4B
 Extraction Engine Hardening
@@ -94,20 +84,16 @@ Structure Signals
 
 أهم التحسينات:
 
-تحسين اكتشاف صفحة قائمة الدخل
+* تحسين اكتشاف صفحة قائمة الدخل
+* تحسين اكتشاف صفحة المركز المالي
+* تحسين اكتشاف صفحة التدفقات النقدية
+* إضافة penalties للصفحات المتأخرة
+* تقليل فوز صفحات الملاحظات
+* دعم أفضل لاختلاف القطاع
 
-تحسين اكتشاف صفحة المركز المالي
-
-تحسين اكتشاف صفحة التدفقات النقدية
-
-إضافة penalties للصفحات المتأخرة
-
-تقليل فوز صفحات الملاحظات
-
-دعم أفضل لاختلاف القطاع
+---
 
 PHASE 5
-
 Financial Statement Intelligence Layer
 
 بدأت هذه المرحلة لإضافة فهم مالي أعمق للنظام
@@ -126,10 +112,14 @@ Operating Company
 
 ثم يغير منطق التحليل بناءً على القطاع.
 
+---
+
 2️⃣ Sector-Aware Statement Ranking
 
 طريقة Ranking للقوائم المالية أصبحت تعتمد على القطاع
 وليس فقط الكلمات العامة.
+
+---
 
 3️⃣ Multi-Page Statement Continuation Detection
 
@@ -156,6 +146,8 @@ balance:
 cashflow:
 [14]
 
+---
+
 4️⃣ StatementSelectionResolved Layer
 
 تم إدخال طبقة جديدة داخل المخرجات النهائية للنظام:
@@ -174,6 +166,8 @@ pageContexts
 بالعمل على جميع صفحات القائمة
 وليس فقط صفحة البداية.
 
+---
+
 5️⃣ Ranking Stabilization Improvements
 
 تم تنفيذ تحسينات إضافية على Ranking
@@ -182,19 +176,15 @@ pageContexts
 
 أهم ما تم تحسينه:
 
-تقوية noTitle penalty
+* تقوية noTitle penalty
+* تقوية noTitleNoStructure penalty
+* تحسين حل التعارض بين Income و Balance
+* تقوية negativeHits penalty
+* تقليل تأثير years + numbers فقط
+* إضافة حماية خاصة لصفحات Cash Flow
+* إضافة fallback محدود لصفحات Cash Flow الطويلة
 
-تقوية noTitleNoStructure penalty
-
-تحسين حل التعارض بين Income و Balance
-
-تقوية negativeHits penalty
-
-تقليل تأثير years + numbers فقط
-
-إضافة حماية خاصة لصفحات Cash Flow
-
-إضافة fallback محدود لصفحات Cash Flow الطويلة
+---
 
 6️⃣ Audit Narrative Protection
 
@@ -212,6 +202,8 @@ auditNarrativePenalty
 
 الذي يمنع هذه الصفحات من الفوز حتى لو
 احتوت على كلمات مثل "قائمة الدخل".
+
+---
 
 7️⃣ Continuation Threshold Stabilization
 
@@ -233,7 +225,9 @@ nextEval.score >= 65
 التي قد تبدو مشابهة جزئيًا
 لكنها ليست استمرارًا فعليًا للقائمة.
 
-LATEST VALIDATION RESULT
+---
+
+## LATEST VALIDATION RESULT
 
 آخر اختبار للنظام أظهر النتائج التالية:
 
@@ -258,19 +252,16 @@ cashflow:
 
 النظام نجح في:
 
-اكتشاف Income Statement
+* اكتشاف Income Statement
+* اكتشاف Balance Sheet
+* اكتشاف Cash Flow Statement
+* منع صفحات Audit Narrative من الفوز
+* منع الصفحات العامة من الفوز على القوائم
+* الحفاظ على استقرار Continuation Detection
 
-اكتشاف Balance Sheet
+---
 
-اكتشاف Cash Flow Statement
-
-منع صفحات Audit Narrative من الفوز
-
-منع الصفحات العامة من الفوز على القوائم
-
-الحفاظ على استقرار Continuation Detection
-
-CURRENT_STATUS
+## CURRENT_STATUS
 
 المحرك الآن قادر على:
 
@@ -288,7 +279,9 @@ CURRENT_STATUS
 
 المعمارية الحالية مستقرة.
 
-NEXT STEP
+---
+
+## NEXT STEP
 
 الخطوة القادمة:
 
@@ -307,29 +300,25 @@ Financial Line Item Extraction
 وهي المرحلة التي يبدأ فيها النظام
 بفهم بنود القوائم المالية نفسها.
 
-DEFINITION OF DONE
+---
+
+## DEFINITION OF DONE
 
 تعتبر هذه المرحلة مكتملة عندما يصبح النظام قادرًا على:
 
-اكتشاف القطاع
+* اكتشاف القطاع
+* اختيار نوع القوائم حسب القطاع
+* تحديد صفحة بداية القائمة
+* اكتشاف امتداد القائمة عبر الصفحات
+* إرجاع Page Range للقائمة
+* تقليل فوز الصفحات العامة في Ranking
+* منع صفحات Audit Narrative من الفوز
+* منع ضم صفحة قائمة أخرى كاستمرار خاطئ
+* الحفاظ على استقرار المعمارية الحالية
 
-اختيار نوع القوائم حسب القطاع
+---
 
-تحديد صفحة بداية القائمة
-
-اكتشاف امتداد القائمة عبر الصفحات
-
-إرجاع Page Range للقائمة
-
-تقليل فوز الصفحات العامة في Ranking
-
-منع صفحات Audit Narrative من الفوز
-
-منع ضم صفحة قائمة أخرى كاستمرار خاطئ
-
-الحفاظ على استقرار المعمارية الحالية
-
-KNOWN RULE
+## KNOWN RULE
 
 لا يتم تغيير المعمارية العامة.
 
