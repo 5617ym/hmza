@@ -11,17 +11,38 @@ module.exports = async function (context, req) {
     };
   };
 
-  try {
+    try {
     const fs = require("fs");
     const path = require("path");
 
-    function readLocalTestPayload() {
-      const localPath = path.join(__dirname, "../jadwa-reit-layout.json");
-      if (!fs.existsSync(localPath)) return null;
+    const LOCAL_TEST_FILE = "jadwa-reit-layout.json";
+    const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
 
-      const raw = fs.readFileSync(localPath, "utf8");
+    function isNonEmptyObject(value) {
+      return !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
+    }
+
+    function safeObjectKeys(value) {
+      return value && typeof value === "object" ? Object.keys(value) : [];
+    }
+
+    function readLocalTestPayload() {
+      if (!fs.existsSync(localTestPath)) {
+        return {
+          ok: false,
+          exists: false,
+          payload: null
+        };
+      }
+
+      const raw = fs.readFileSync(localTestPath, "utf8");
       const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed : null;
+
+      return {
+        ok: true,
+        exists: true,
+        payload: parsed
+      };
     }
 
     function resolveInputEnvelope(req) {
@@ -30,36 +51,91 @@ module.exports = async function (context, req) {
           ? req.body
           : null;
 
-      const payload =
-        reqBody && Object.keys(reqBody).length > 0
-          ? reqBody
-          : readLocalTestPayload();
+      if (isNonEmptyObject(reqBody)) {
+        if (isNonEmptyObject(reqBody.normalized)) {
+          return {
+            source: "req.body.normalized",
+            body: reqBody,
+            envelope: reqBody,
+            normalized: reqBody.normalized,
+            normalizedPrev: reqBody.normalizedPrev || null,
+            fileName: reqBody.fileName || reqBody.normalized?.meta?.fileName || null,
+            diagnostics: {
+              localFileExists: fs.existsSync(localTestPath),
+              reqBodyKeys: safeObjectKeys(reqBody),
+              envelopeKeys: safeObjectKeys(reqBody),
+              normalizedKeys: safeObjectKeys(reqBody.normalized)
+            }
+          };
+        }
 
-      if (!payload || typeof payload !== "object") {
         return {
-          body: {},
-          normalized: {},
+          source: "req.body.raw",
+          body: reqBody,
+          envelope: reqBody,
+          normalized: reqBody,
           normalizedPrev: null,
-          fileName: null
+          fileName: reqBody.fileName || reqBody?.meta?.fileName || null,
+          diagnostics: {
+            localFileExists: fs.existsSync(localTestPath),
+            reqBodyKeys: safeObjectKeys(reqBody),
+            envelopeKeys: safeObjectKeys(reqBody),
+            normalizedKeys: safeObjectKeys(reqBody)
+          }
         };
       }
 
-      // Envelope format: { ok, fileName, normalized, ... }
-      if (payload.normalized && typeof payload.normalized === "object") {
+      const localRead = readLocalTestPayload();
+
+      if (localRead.ok && isNonEmptyObject(localRead.payload)) {
+        const payload = localRead.payload;
+
+        if (isNonEmptyObject(payload.normalized)) {
+          return {
+            source: "local.envelope.normalized",
+            body: payload,
+            envelope: payload,
+            normalized: payload.normalized,
+            normalizedPrev: payload.normalizedPrev || null,
+            fileName: payload.fileName || payload.normalized?.meta?.fileName || null,
+            diagnostics: {
+              localFileExists: true,
+              reqBodyKeys: [],
+              envelopeKeys: safeObjectKeys(payload),
+              normalizedKeys: safeObjectKeys(payload.normalized)
+            }
+          };
+        }
+
         return {
+          source: "local.raw",
           body: payload,
-          normalized: payload.normalized,
-          normalizedPrev: payload.normalizedPrev || null,
-          fileName: payload.fileName || payload.normalized?.meta?.fileName || null
+          envelope: payload,
+          normalized: payload,
+          normalizedPrev: null,
+          fileName: payload.fileName || payload?.meta?.fileName || null,
+          diagnostics: {
+            localFileExists: true,
+            reqBodyKeys: [],
+            envelopeKeys: safeObjectKeys(payload),
+            normalizedKeys: safeObjectKeys(payload)
+          }
         };
       }
 
-      // Raw normalized format مباشرة
       return {
-        body: payload,
-        normalized: payload,
+        source: "none",
+        body: {},
+        envelope: {},
+        normalized: {},
         normalizedPrev: null,
-        fileName: payload.fileName || payload?.meta?.fileName || null
+        fileName: null,
+        diagnostics: {
+          localFileExists: fs.existsSync(localTestPath),
+          reqBodyKeys: safeObjectKeys(reqBody),
+          envelopeKeys: [],
+          normalizedKeys: []
+        }
       };
     }
 
@@ -69,10 +145,15 @@ module.exports = async function (context, req) {
     const normalizedPrev = resolvedInput.normalizedPrev;
     const inputFileName = resolvedInput.fileName;
 
-    if (!normalized || typeof normalized !== "object" || !Object.keys(normalized).length) {
+    if (!isNonEmptyObject(normalized)) {
       return send(400, {
         ok: false,
-        error: "normalized payload is required"
+        error: "normalized payload is required",
+        debugInput: {
+          source: resolvedInput.source,
+          localTestPath,
+          ...resolvedInput.diagnostics
+        }
       });
     }
 
@@ -100,30 +181,25 @@ module.exports = async function (context, req) {
         ? activeSectorProfile.cashFlow
         : [];
 
-    // =========================================================
-// Robust Normalized Input Resolver
-// =========================================================
+    const pages =
+      Array.isArray(normalized.pages)
+        ? normalized.pages
+        : Array.isArray(normalized.layout?.pages)
+          ? normalized.layout.pages
+          : [];
 
-const pages =
-  Array.isArray(normalized.pages)
-    ? normalized.pages
-    : Array.isArray(normalized.layout?.pages)
-      ? normalized.layout.pages
-      : [];
-
-const tablesPreview =
-  Array.isArray(normalized.tablesPreview)
-    ? normalized.tablesPreview
-    : Array.isArray(normalized.tables)
-      ? normalized.tables
-      : Array.isArray(normalized.pageTables)
-        ? normalized.pageTables
-        : Array.isArray(normalized.layout?.tables)
-          ? normalized.layout.tables
-          : Array.isArray(normalized.layout?.pageTables)
-            ? normalized.layout.pageTables
-            : [];
-
+    const tablesPreview =
+      Array.isArray(normalized.tablesPreview)
+        ? normalized.tablesPreview
+        : Array.isArray(normalized.tables)
+          ? normalized.tables
+          : Array.isArray(normalized.pageTables)
+            ? normalized.pageTables
+            : Array.isArray(normalized.layout?.tables)
+              ? normalized.layout.tables
+              : Array.isArray(normalized.layout?.pageTables)
+                ? normalized.layout.pageTables
+                : [];
     // =========================================================
     // Layer 1: Normalization Helpers
     // =========================================================
@@ -2605,19 +2681,19 @@ const tablesPreview =
 
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
 
-      return rawEntries.map((entry) => {
-        const finalLabel = normalizeLabelForRow(entry.labelCandidate);
+      return rawEntries.map((en) => {
+        const finalLabel = normalizeLabelForRow(en.labelCandidate);
 
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
-            ...entry,
+            ...en,
             label: finalLabel
           };
         }
 
         const relativeRowIndex = Math.max(
           0,
-          safeNumber(entry?.rowIndex, 0) - headerRowIndex - 1
+          safeNumber(en?.rowIndex, 0) - headerRowIndex - 1
         );
 
         const nearby = findBestNearbyLabelCandidate(
@@ -2628,17 +2704,17 @@ const tablesPreview =
 
         if (nearby) {
           return {
-            ...entry,
+            ...en,
             label: nearby.label,
             source: {
-              ...entry.source,
+              ...en.source,
               labelRecoveredFrom: nearby.recoveredFrom
             }
           };
         }
 
         return {
-          ...entry,
+          ...en,
           label: finalLabel
         };
       });
@@ -2654,18 +2730,18 @@ const tablesPreview =
       const header = pageCtx.header || {};
       const extracted = [];
 
-      for (const entry of repairedEntries) {
-        const label = normalizeLabelForRow(entry.label);
+      for (const en of repairedEntries) {
+        const label = normalizeLabelForRow(en.label);
 
         if (
           shouldSkipExtractedRow({
-            row: entry.row,
-            rowIndex: entry.rowIndex,
+            row: en.row,
+            rowIndex: en.rowIndex,
             label,
             statementType,
             pageCtx,
-            currentYearValue: entry.currentYearValue,
-            previousYearValue: entry.previousYearValue
+            currentYearValue: en.currentYearValue,
+            previousYearValue: en.previousYearValue
           })
         ) {
           continue;
@@ -2674,19 +2750,19 @@ const tablesPreview =
         extracted.push({
           statementType,
           pageNumber: pageCtx.pageNumber,
-          rowIndex: entry.rowIndex,
+          rowIndex: en.rowIndex,
           label,
-          note: entry.note,
+          note: en.note,
           currentYear: {
             year: Number.isFinite(header.latest) ? header.latest : null,
-            value: entry.currentYearValue
+            value: en.currentYearValue
           },
           previousYear: {
             year: Number.isFinite(header.previous) ? header.previous : null,
-            value: entry.previousYearValue
+            value: en.previousYearValue
           },
-          source: entry.source,
-          rawRow: entry.row
+          source: en.source,
+          rawRow: en.row
         });
       }
 
@@ -2720,9 +2796,9 @@ const tablesPreview =
       const diagnostics = {};
 
       for (const statementType of ["income", "balance", "cashflow"]) {
-        const entry = statementSelection?.[statementType];
-        const pageContextsForStatement = Array.isArray(entry?.pageContexts)
-          ? entry.pageContexts
+        const en = statementSelection?.[statementType];
+        const pageContextsForStatement = Array.isArray(en?.pageContexts)
+          ? en.pageContexts
           : [];
 
         const perPage = pageContextsForStatement.map((pageCtx) => {
