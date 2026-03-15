@@ -2010,26 +2010,40 @@ if (isTitleOnlyCoverPage) {
     }
 
     function pickFallbackLabelCell(row, header, statementType) {
-      if (!Array.isArray(row) || !row.length) return "";
+  if (!Array.isArray(row) || !row.length) return "";
 
-      const reserved = new Set(
-        [
-          header?.currentCol,
-          header?.previousCol,
-          header?.noteCol
-        ].filter((x) => Number.isFinite(x))
-      );
+  const cells = row.map((cell, idx) => ({
+    idx,
+    cell: String(cell == null ? "" : cell).trim()
+  }));
 
-      const candidates = row
-        .map((cell, idx) => ({ idx, cell: String(cell == null ? "" : cell).trim() }))
-        .filter((x) => !reserved.has(x.idx))
-        .filter((x) => isLikelyTextLabelCell(x.cell))
-        .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
-        .sort((a, b) => a.idx - b.idx);
+  const reserved = new Set(
+    [
+      header?.currentCol,
+      header?.previousCol
+    ].filter((x) => Number.isFinite(x))
+  );
 
-      return candidates[0]?.cell || "";
-    }
+  const textCandidates = cells
+    .filter((x) => !reserved.has(x.idx))
+    .filter((x) => isLikelyTextLabelCell(x.cell))
+    .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
+    .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell));
 
+  if (textCandidates.length > 0) {
+    const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
+    return rtlPick?.cell || "";
+  }
+
+  const fallbackFromAnyText = cells
+    .filter((x) => !reserved.has(x.idx))
+    .filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
+    .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
+    .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
+    .sort((a, b) => b.idx - a.idx)[0];
+
+  return fallbackFromAnyText?.cell || "";
+}
     function normalizeLabelForRow(label) {
       return cleanupLabel(
         String(label || "")
