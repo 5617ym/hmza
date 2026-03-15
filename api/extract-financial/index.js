@@ -11,19 +11,48 @@ module.exports = async function (context, req) {
     };
   };
 
-    try {
+  try {
     const fs = require("fs");
     const path = require("path");
 
     const LOCAL_TEST_FILE = "jadwa-reit-layout.json";
     const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
 
+    function isPlainObject(value) {
+      return !!value && typeof value === "object" && !Array.isArray(value);
+    }
+
     function isNonEmptyObject(value) {
-      return !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
+      return isPlainObject(value) && Object.keys(value).length > 0;
     }
 
     function safeObjectKeys(value) {
-      return value && typeof value === "object" ? Object.keys(value) : [];
+      return isPlainObject(value) ? Object.keys(value) : [];
+    }
+
+    function looksLikeNormalizedPayload(value) {
+      if (!isPlainObject(value)) return false;
+
+      if (Array.isArray(value.pages) && value.pages.length > 0) return true;
+      if (Array.isArray(value.tablesPreview) && value.tablesPreview.length > 0) return true;
+      if (Array.isArray(value.tables) && value.tables.length > 0) return true;
+      if (Array.isArray(value.pageTables) && value.pageTables.length > 0) return true;
+      if (Array.isArray(value.layout?.pages) && value.layout.pages.length > 0) return true;
+      if (Array.isArray(value.layout?.tables) && value.layout.tables.length > 0) return true;
+      if (Array.isArray(value.layout?.pageTables) && value.layout.pageTables.length > 0) return true;
+
+      if (
+        isPlainObject(value.meta) &&
+        (
+          Number(value.meta.pages) > 0 ||
+          Number(value.meta.tables) > 0 ||
+          Number(value.meta.textLength) > 0
+        )
+      ) {
+        return true;
+      }
+
+      return false;
     }
 
     function readLocalTestPayload() {
@@ -45,87 +74,103 @@ module.exports = async function (context, req) {
       };
     }
 
-    function resolveInputEnvelope(req) {
+    function extractNormalizedCandidate(payload) {
+      if (!isPlainObject(payload)) return null;
+
+      const candidates = [
+        payload.normalized,
+        payload.data?.normalized,
+        payload.payload?.normalized,
+        payload.result?.normalized,
+        payload.analysis?.normalized,
+        payload.lastNormalized,
+        payload.normalizedResult,
+        payload
+      ];
+
+      for (const candidate of candidates) {
+        if (looksLikeNormalizedPayload(candidate)) {
+          return candidate;
+        }
+      }
+
+      return null;
+    }
+
+        function resolveInputEnvelope(req) {
       const reqBody =
         req?.body && typeof req.body === "object"
           ? req.body
           : null;
 
-      if (isNonEmptyObject(reqBody)) {
-        if (isNonEmptyObject(reqBody.normalized)) {
-          return {
-            source: "req.body.normalized",
-            body: reqBody,
-            envelope: reqBody,
-            normalized: reqBody.normalized,
-            normalizedPrev: reqBody.normalizedPrev || null,
-            fileName: reqBody.fileName || reqBody.normalized?.meta?.fileName || null,
-            diagnostics: {
-              localFileExists: fs.existsSync(localTestPath),
-              reqBodyKeys: safeObjectKeys(reqBody),
-              envelopeKeys: safeObjectKeys(reqBody),
-              normalizedKeys: safeObjectKeys(reqBody.normalized)
-            }
-          };
-        }
+      const reqNormalized = extractNormalizedCandidate(reqBody);
 
+      if (reqNormalized) {
         return {
-          source: "req.body.raw",
-          body: reqBody,
-          envelope: reqBody,
-          normalized: reqBody,
-          normalizedPrev: null,
-          fileName: reqBody.fileName || reqBody?.meta?.fileName || null,
+          source:
+            reqNormalized === reqBody
+              ? "req.body.raw_normalized"
+              : "req.body.envelope_normalized",
+          body: reqBody || {},
+          envelope: reqBody || {},
+          normalized: reqNormalized,
+          normalizedPrev:
+            reqBody?.normalizedPrev ||
+            reqBody?.data?.normalizedPrev ||
+            reqBody?.payload?.normalizedPrev ||
+            reqBody?.result?.normalizedPrev ||
+            null,
+          fileName:
+            reqBody?.fileName ||
+            reqBody?.data?.fileName ||
+            reqBody?.payload?.fileName ||
+            reqNormalized?.meta?.fileName ||
+            null,
           diagnostics: {
             localFileExists: fs.existsSync(localTestPath),
             reqBodyKeys: safeObjectKeys(reqBody),
             envelopeKeys: safeObjectKeys(reqBody),
-            normalizedKeys: safeObjectKeys(reqBody)
+            normalizedKeys: safeObjectKeys(reqNormalized)
           }
         };
       }
 
       const localRead = readLocalTestPayload();
+      const localPayload = localRead?.payload || null;
+      const localNormalized = extractNormalizedCandidate(localPayload);
 
-      if (localRead.ok && isNonEmptyObject(localRead.payload)) {
-        const payload = localRead.payload;
-
-        if (isNonEmptyObject(payload.normalized)) {
-          return {
-            source: "local.envelope.normalized",
-            body: payload,
-            envelope: payload,
-            normalized: payload.normalized,
-            normalizedPrev: payload.normalizedPrev || null,
-            fileName: payload.fileName || payload.normalized?.meta?.fileName || null,
-            diagnostics: {
-              localFileExists: true,
-              reqBodyKeys: [],
-              envelopeKeys: safeObjectKeys(payload),
-              normalizedKeys: safeObjectKeys(payload.normalized)
-            }
-          };
-        }
-
+      if (localRead.ok && localNormalized) {
         return {
-          source: "local.raw",
-          body: payload,
-          envelope: payload,
-          normalized: payload,
-          normalizedPrev: null,
-          fileName: payload.fileName || payload?.meta?.fileName || null,
+          source:
+            localNormalized === localPayload
+              ? "local.raw_normalized"
+              : "local.envelope_normalized",
+          body: localPayload || {},
+          envelope: localPayload || {},
+          normalized: localNormalized,
+          normalizedPrev:
+            localPayload?.normalizedPrev ||
+            localPayload?.data?.normalizedPrev ||
+            localPayload?.payload?.normalizedPrev ||
+            null,
+          fileName:
+            localPayload?.fileName ||
+            localPayload?.data?.fileName ||
+            localPayload?.payload?.fileName ||
+            localNormalized?.meta?.fileName ||
+            null,
           diagnostics: {
             localFileExists: true,
-            reqBodyKeys: [],
-            envelopeKeys: safeObjectKeys(payload),
-            normalizedKeys: safeObjectKeys(payload)
+            reqBodyKeys: safeObjectKeys(reqBody),
+            envelopeKeys: safeObjectKeys(localPayload),
+            normalizedKeys: safeObjectKeys(localNormalized)
           }
         };
       }
 
       return {
         source: "none",
-        body: {},
+        body: reqBody || {},
         envelope: {},
         normalized: {},
         normalizedPrev: null,
@@ -181,7 +226,7 @@ module.exports = async function (context, req) {
         ? activeSectorProfile.cashFlow
         : [];
 
-    const pages =
+        const pages =
       Array.isArray(normalized.pages)
         ? normalized.pages
         : Array.isArray(normalized.layout?.pages)
@@ -200,7 +245,644 @@ module.exports = async function (context, req) {
               : Array.isArray(normalized.layout?.pageTables)
                 ? normalized.layout.pageTables
                 : [];
+
     // =========================================================
+    // Layer 1: Normalization Helpers
+    // =========================================================
+
+    const DIGIT_MAP = {
+      "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+      "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+      "٫": ".", "٬": ",", "−": "-", "–": "-", "—": "-", "ـ": ""
+    };
+
+    function toEnglishDigits(value) {
+      return String(value || "").replace(/[٠-٩٫٬−–—ـ]/g, (m) => DIGIT_MAP[m] || m);
+    }
+
+    function normalizeArabic(text) {
+      return String(text || "")
+        .replace(/[\u064B-\u065F\u0670]/g, "")
+        .replace(/[إأآا]/g, "ا")
+        .replace(/ى/g, "ي")
+        .replace(/ة/g, "ه")
+        .replace(/ؤ/g, "و")
+        .replace(/ئ/g, "ي");
+    }
+
+    function normalizeText(value) {
+      return normalizeArabic(toEnglishDigits(String(value || "")))
+        .replace(/[^\S\r\n]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+    }
+
+    function unique(arr) {
+      return Array.from(new Set((arr || []).filter(Boolean)));
+    }
+
+    function safeNumber(v, fallback = 0) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function flattenValue(v) {
+      if (v == null) return "";
+      if (Array.isArray(v)) return v.map(flattenValue).join("\n");
+      if (typeof v === "object") return Object.values(v).map(flattenValue).join("\n");
+      return String(v);
+    }
+
+    function parseNumberSmart(value) {
+      if (value == null) return null;
+
+      let s = String(value).trim();
+      if (!s) return null;
+
+      s = toEnglishDigits(s)
+        .replace(/\s/g, "")
+        .replace(/[ ريالرسعوديةsarusd$]/gi, "")
+        .replace(/[^\d.,()\-]/g, "");
+
+      if (!s) return null;
+
+      let negative = false;
+      if (s.includes("(") && s.includes(")")) negative = true;
+      s = s.replace(/[()]/g, "");
+
+      const hasDot = s.includes(".");
+      const hasComma = s.includes(",");
+
+            if (hasDot && hasComma) {
+        const lastDot = s.lastIndexOf(".");
+        const lastComma = s.lastIndexOf(",");
+        if (lastDot > lastComma) {
+          s = s.replace(/,/g, "");
+        } else {
+          s = s.replace(/\./g, "").replace(",", ".");
+        }
+      } else if (hasComma && !hasDot) {
+        const parts = s.split(",");
+        const last = parts[parts.length - 1];
+        if (last.length === 1 || last.length === 2) {
+          s = parts.slice(0, -1).join("") + "." + last;
+        } else {
+          s = s.replace(/,/g, "");
+        }
+      } else if (hasDot && !hasComma) {
+        const parts = s.split(".");
+        const last = parts[parts.length - 1];
+        if (!(last.length === 1 || last.length === 2)) {
+          s = s.replace(/\./g, "");
+        }
+      }
+
+      const n = Number(s);
+      if (!Number.isFinite(n)) return null;
+      return negative ? -n : n;
+    }
+
+    function extractYears(text) {
+      const s = toEnglishDigits(String(text || ""));
+      const years = s.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+      return unique(years.map(Number)).sort((a, b) => b - a);
+    }
+
+    function isYearCell(cell) {
+      return /^(19|20)\d{2}$/.test(toEnglishDigits(String(cell || "").trim()));
+    }
+
+    function getYearFromCell(cell) {
+      const raw = toEnglishDigits(String(cell || "").trim());
+      if (!raw) return null;
+
+      if (/^(19|20)\d{2}$/.test(raw)) {
+        return Number(raw);
+      }
+
+      const years = raw.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+      if (years.length === 1) {
+        const n = Number(years[0]);
+        if (Number.isFinite(n)) return n;
+      }
+
+      return null;
+    }
+
+    function isNoteHeaderCell(cell) {
+      const s = normalizeText(cell);
+      return s === "ايضاح" || s === "الايضاح" || s === "notes" || s === "note";
+    }
+
+    function isQuarterOrPeriodCell(cell) {
+      const s = normalizeText(cell);
+      return (
+        s.includes("ثلاثه اشهر") ||
+        s.includes("ثلاثة اشهر") ||
+        s.includes("3 اشهر") ||
+        s.includes("for the year ended") ||
+        s.includes("for the period ended") ||
+        s.includes("for the year") ||
+        s.includes("for the period") ||
+        s.includes("3 months") ||
+        s.includes("12 months") ||
+        s.includes("السنه المنتهيه") ||
+        s.includes("الفتره المنتهيه") ||
+        s.includes("as of") ||
+        s.includes("كما في") ||
+        s.includes("المنتهيه في")
+      );
+    }
+
+    function countNumbers(text) {
+      const s = toEnglishDigits(String(text || ""));
+      const matches = s.match(/(?:\(?-?\d[\d,]*\.?\d*\)?)/g);
+      return matches ? matches.length : 0;
+    }
+
+    function containsAny(text, phrases) {
+      const s = normalizeText(text);
+      return (phrases || []).some((p) => s.includes(normalizeText(p)));
+    }
+
+        function keywordHits(text, phrases) {
+      const s = normalizeText(text);
+      let score = 0;
+      for (const p of (phrases || [])) {
+        const x = normalizeText(p);
+        if (!x) continue;
+        if (s.includes(x)) score += 1;
+      }
+      return score;
+    }
+
+    function countDistinctPhraseHits(text, phrases) {
+      const s = normalizeText(text);
+      const hits = [];
+      for (const phrase of (phrases || [])) {
+        const p = normalizeText(phrase);
+        if (!p) continue;
+        if (s.includes(p)) hits.push(p);
+      }
+      return unique(hits);
+    }
+
+    function isBlank(v) {
+      return String(v == null ? "" : v).trim() === "";
+    }
+
+    function cleanupLabel(label) {
+      let s = String(label || "").trim();
+      s = s.replace(/\s+/g, " ").trim();
+      s = s.replace(/^[\-\–\—•·*]+\s*/, "");
+      s = s.replace(/\s*[:：]\s*$/, "");
+      return s.trim();
+    }
+
+    function pageNumFromObj(obj) {
+      return safeNumber(
+        obj?.pageNumber ??
+        obj?.page ??
+        obj?.pageIndex ??
+        obj?.page_no ??
+        obj?.pageNum,
+        null
+      );
+    }
+
+    function tableText(table) {
+      return [
+        table?.sample,
+        table?.sampleHead,
+        table?.sampleTail,
+        table?.text,
+        table?.content,
+        table?.markdown,
+        table?.preview,
+        table?.tableText,
+        table?.rawText
+      ]
+        .filter(Boolean)
+        .map(flattenValue)
+        .join("\n");
+    }
+
+    function getTableRowCount(table) {
+      return safeNumber(table?.rowCount ?? table?.rows ?? table?.nRows ?? 0, 0);
+    }
+
+    function getTableColumnCount(table) {
+      return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
+    }
+
+    function extractTableRows(table) {
+      const rawCells = Array.isArray(table?.cells)
+        ? table.cells
+        : Array.isArray(table?.tableCells)
+          ? table.tableCells
+          : Array.isArray(table?.entries)
+            ? table.entries
+            : [];
+
+      if (rawCells.length > 0) {
+        const rowMap = new Map();
+        let maxColIndex = -1;
+
+        for (const cell of rawCells) {
+          const rowIndex = safeNumber(
+            cell?.rowIndex ??
+            cell?.row ??
+            cell?.r,
+            null
+          );
+
+          const columnIndex = safeNumber(
+            cell?.columnIndex ??
+            cell?.colIndex ??
+            cell?.column ??
+            cell?.col ??
+            cell?.c,
+            null
+          );
+
+                    if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
+            continue;
+          }
+
+          const content = String(
+            cell?.content ??
+            cell?.text ??
+            cell?.value ??
+            cell?.rawText ??
+            ""
+          ).trim();
+
+          const columnSpan = Math.max(
+            1,
+            safeNumber(cell?.columnSpan ?? cell?.colSpan ?? 1, 1)
+          );
+
+          if (!rowMap.has(rowIndex)) {
+            rowMap.set(rowIndex, {});
+          }
+
+          const rowObj = rowMap.get(rowIndex);
+
+          for (let offset = 0; offset < columnSpan; offset += 1) {
+            const targetCol = columnIndex + offset;
+
+            if (!rowObj[targetCol] || String(rowObj[targetCol]).trim() === "") {
+              rowObj[targetCol] = content;
+            }
+
+            if (targetCol > maxColIndex) {
+              maxColIndex = targetCol;
+            }
+          }
+        }
+
+        const reconstructedRows = Array.from(rowMap.keys())
+          .sort((a, b) => a - b)
+          .map((rowIndex) => {
+            const rowObj = rowMap.get(rowIndex) || {};
+            const row = [];
+
+            for (let c = 0; c <= maxColIndex; c += 1) {
+              row.push(String(rowObj[c] == null ? "" : rowObj[c]).trim());
+            }
+
+            return row;
+          })
+          .filter((r) => r.some((c) => !isBlank(c)));
+
+        if (reconstructedRows.length > 0) {
+          return reconstructedRows;
+        }
+      }
+
+      const rows = [];
+      const parts = [];
+
+      if (Array.isArray(table?.sampleHead)) parts.push(...table.sampleHead);
+      if (Array.isArray(table?.sample)) parts.push(...table.sample);
+      if (Array.isArray(table?.sampleTail)) parts.push(...table.sampleTail);
+
+      for (const row of parts) {
+        if (Array.isArray(row)) {
+          rows.push(row.map((x) => String(x == null ? "" : x).trim()));
+        } else if (row != null) {
+          rows.push([String(row).trim()]);
+        }
+      }
+
+      return rows.filter((r) => r.some((c) => !isBlank(c)));
+    }
+
+    function rowsWithMeta(table) {
+      const rows = extractTableRows(table);
+      return rows.map((cells, index) => ({
+        index,
+        cells,
+        joined: cells.join(" | "),
+        normalized: normalizeText(cells.join(" | "))
+      }));
+    }
+
+    function isLikelyOnlyReferenceText(value) {
+      const raw = toEnglishDigits(String(value || "").trim());
+      const s = normalizeText(raw);
+      if (!raw) return false;
+
+      if (/^\(?\d{1,3}[a-zA-Z]?\)?$/.test(raw)) return true;
+      if (/^[a-zA-Z]\d{1,3}$/.test(raw)) return true;
+      if (/^\d{1,2}(\.\d{1,2})?$/.test(raw)) return true;
+      if (/^\d+\s*\/\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*-\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*(,|&)\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*and\s*\d+$/i.test(raw)) return true;
+
+            if (/^\d+\s*و\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*و\d+$/.test(raw)) return true;
+      if (/^\(?\d{1,3}\)?\s*(و|and|\/|-)\s*\(?\d{1,3}\)?$/i.test(raw)) return true;
+      if (s === "n/a") return false;
+
+      return false;
+    }
+
+    function isLikelyReferenceValue(cell) {
+      const raw = String(cell || "").trim();
+      if (!raw) return false;
+      if (isNoteHeaderCell(raw)) return true;
+      if (isYearCell(raw)) return false;
+      return isLikelyOnlyReferenceText(raw);
+    }
+
+    function isLikelyStatementDateText(text) {
+      const s = normalizeText(text);
+      return (
+        s.includes("31 december") ||
+        s.includes("31 ديسمبر") ||
+        s.includes("كما في") ||
+        s.includes("as of") ||
+        s.includes("for the year ended") ||
+        s.includes("for the period ended") ||
+        s.includes("السنه المنتهيه") ||
+        s.includes("الفتره المنتهيه")
+      );
+    }
+
+    function isLikelyStandardEffectiveDateText(text) {
+      const s = normalizeText(text);
+      return (
+        s.includes("effective date") ||
+        s.includes("effective dates") ||
+        s.includes("1 january") ||
+        s.includes("1 يناير") ||
+        s.includes("تاريخ سريان") ||
+        s.includes("ifrs amendments") ||
+        s.includes("international accounting standard") ||
+        s.includes("international financial reporting standard")
+      );
+    }
+
+    function isLikelyNarrativeLine(text) {
+      const s = normalizeText(text);
+      if (!s) return false;
+      return (
+        s.includes("تم تاجيل") ||
+        s.includes("لم يتم تحديد") ||
+        s.includes("تعتبر الايضاحات") ||
+        s.includes("تشكل الايضاحات") ||
+        s.includes("integral part of these consolidated financial statements") ||
+        s.includes("accompanying notes") ||
+        s.includes("تشكل الايضاحات المرفقة") ||
+        s.includes("جزءا لا يتجزا")
+      );
+    }
+
+    function isPureNumericSymbolCell(text) {
+      const raw = toEnglishDigits(String(text || "").trim());
+      if (!raw) return false;
+      return /^[\d,.\-()]+$/.test(raw);
+    }
+
+    function hasArabicChars(text) {
+      return /[\u0600-\u06FF]/.test(String(text || ""));
+    }
+
+    function hasLatinChars(text) {
+      return /[A-Za-z]/.test(String(text || ""));
+    }
+
+    function isLikelyTextLabelCell(cell) {
+      const raw = String(cell || "").trim();
+      if (!raw) return false;
+      if (isNoteHeaderCell(raw)) return false;
+      if (getYearFromCell(raw) != null) return false;
+      if (isLikelyReferenceValue(raw)) return false;
+      if (isLikelyStatementDateText(raw)) return false;
+      if (isLikelyStandardEffectiveDateText(raw)) return false;
+      if (isLikelyNarrativeLine(raw)) return false;
+      if (isQuarterOrPeriodCell(raw)) return false;
+      if (isPureNumericSymbolCell(raw)) return false;
+
+      const n = parseNumberSmart(raw);
+      if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return false;
+
+      return /[A-Za-z\u0600-\u06FF]/.test(raw);
+    }
+
+        function countLikelyTextLabels(rows, limit = 24) {
+      let count = 0;
+      for (const row of (rows || []).slice(0, limit)) {
+        if (!Array.isArray(row)) continue;
+        for (const cell of row) {
+          if (isLikelyTextLabelCell(cell)) count += 1;
+        }
+      }
+      return count;
+    }
+
+    function dedupePreserveOrder(arr) {
+      const seen = new Set();
+      const out = [];
+
+      for (const item of arr || []) {
+        const key = normalizeText(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(String(item).trim());
+      }
+
+      return out;
+    }
+
+    function splitTextIntoLogicalLines(text) {
+      return String(text || "")
+        .split(/\r?\n+/)
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+        .flatMap((line) => {
+          if (line.includes(" | ")) {
+            return line
+              .split("|")
+              .map((x) => String(x || "").trim())
+              .filter(Boolean);
+          }
+          return [line];
+        });
+    }
+
+    function isSectionHeaderOnlyLabel(label, statementType) {
+      const s = normalizeText(label);
+
+      const genericHeaders = [
+        "الايرادات",
+        "الإيرادات",
+        "المصاريف",
+        "الموجودات",
+        "المطلوبات",
+        "حقوق الملكيه",
+        "حقوق الملكية",
+        "الموجودات غير المتداوله",
+        "الموجودات غير المتداولة",
+        "الموجودات المتداوله",
+        "الموجودات المتداولة",
+        "المطلوبات غير المتداوله",
+        "المطلوبات غير المتداولة",
+        "المطلوبات المتداوله",
+        "المطلوبات المتداولة",
+        "other income",
+        "expenses",
+        "revenue"
+      ].map(normalizeText);
+
+      if (genericHeaders.includes(s)) return true;
+
+      if (statementType === "income") {
+        return (
+          s === normalizeText("الإيرادات") ||
+          s === normalizeText("الايرادات") ||
+          s === normalizeText("المصاريف")
+        );
+      }
+
+      return false;
+    }
+
+    function salvageFinancialLabelCandidate(rawLabel) {
+      const clean = cleanupLabel(rawLabel);
+      if (!clean) return null;
+
+      let text = clean;
+      text = text.replace(/\b(19|20)\d{2}\b/g, " ");
+      text = text.replace(/\b(١٩|٢٠)[٠-٩]{2}\b/g, " ");
+      text = text.replace(/\b(ريال سعودي|ريال|ألف ريال|الف ريال|بالريال|sar|usd|دولار)\b/gi, " ");
+      text = text.replace(/\b[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}\b/g, " ");
+      text = text.replace(/\b[0-9٠-٩]+\b/g, " ");
+      text = text.replace(/\s+/g, " ").trim();
+
+      if (!text) return null;
+      return text;
+    }
+
+    function isLikelyCurrencyOrUnitHeader(label) {
+      const s = normalizeText(label);
+      if (!s) return false;
+
+            return (
+        s.includes("ريال سعودي") ||
+        s.includes("الف ريال") ||
+        s.includes("ألف ريال") ||
+        s.includes("بالريال") ||
+        s === "sar" ||
+        s === "usd" ||
+        s === "دولار"
+      );
+    }
+
+    function isAcceptableFinancialLabel(label, statementType) {
+      const cleanLabel = cleanupLabel(label);
+      const normalizedLabel = normalizeText(cleanLabel);
+
+      if (!cleanLabel) return false;
+
+      const trimmed = cleanLabel.trim();
+      const normalized = (normalizedLabel || "").trim();
+
+      if (!/[A-Za-z\u0600-\u06FF]/.test(trimmed)) return false;
+      if (normalized.length <= 2) return false;
+      if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
+      if (/^(19|20)\d{2}$/.test(trimmed)) return false;
+      if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
+
+      if (
+        /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed) ||
+        /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed)
+      ) {
+        return false;
+      }
+
+      if (isLikelyCurrencyOrUnitHeader(trimmed)) return false;
+      if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
+      if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
+
+      const words = normalized.split(/\s+/).filter(Boolean);
+      if (words.length === 1 && normalized.length < 4) return false;
+
+      if (isLikelyReferenceValue(trimmed)) return false;
+      if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
+      if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
+      if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
+
+      if (
+        normalized.includes("الايضاحات المرفقه") ||
+        normalized.includes("الإيضاحات المرفقة") ||
+        normalized.includes("integral part") ||
+        normalized.includes("accompanying notes")
+      ) {
+        return false;
+      }
+
+      return true;
+    }
+
+    function extractLabelCandidatesFromPageText(pageCtx, statementType) {
+      const textBlob = [
+        pageCtx?.mainTableText || "",
+        pageCtx?.text || "",
+        pageCtx?.structuralText || ""
+      ].join("\n");
+
+      const candidates = splitTextIntoLogicalLines(textBlob)
+        .map((line) => cleanupLabel(line))
+        .filter(Boolean)
+        .filter((line) => !isLikelyStatementDateText(line))
+        .filter((line) => !isLikelyStandardEffectiveDateText(line))
+        .filter((line) => !isLikelyNarrativeLine(line))
+        .filter((line) => !isQuarterOrPeriodCell(line))
+        .filter((line) => !isPureNumericSymbolCell(line))
+        .filter((line) => !isLikelyOnlyReferenceText(line))
+        .filter((line) => /[A-Za-z\u0600-\u06FF]/.test(line));
+
+      const enriched = [];
+
+      for (const line of candidates) {
+        enriched.push(line);
+        const salvaged = salvageFinancialLabelCandidate(line);
+        if (salvaged && normalizeText(salvaged) !== normalizeText(line)) {
+          enriched.push(salvaged);
+        }
+      }
+
+      return dedupePreserveOrder(enriched).filter((line) => {
+        return !isLikelyMetaOrHeaderLabel(line) &&
+          !isLikelyStatementTitleRow(line, statementType);
+      });
+    }
+
+     // =========================================================
     // Layer 1: Normalization Helpers
     // =========================================================
 
@@ -2879,8 +3561,7 @@ module.exports = async function (context, req) {
 
       return result;
     }
-
-    const financialRows = extractStatementRows(statementSelectionResolved);
+        const financialRows = extractStatementRows(statementSelectionResolved);
     const extractionDiagnostics = buildExtractionDiagnostics(statementSelectionResolved);
 
     return send(200, {
@@ -2888,8 +3569,8 @@ module.exports = async function (context, req) {
       sector: finalSector,
       sectorInfo,
       activeSectorProfile: finalSectorProfile,
-      engine: "extract-financial-v7.0",
-      phase: "5_financial_line_item_extraction_input_hardened",
+      engine: "extract-financial-v7.1",
+      phase: "5_financial_line_item_extraction_professional_input_resolution",
       fileName: inputFileName || null,
       statementProfile,
 
@@ -2920,6 +3601,16 @@ module.exports = async function (context, req) {
       confidence,
 
       debug: {
+        inputResolution: {
+          source: resolvedInput.source,
+          localTestPath,
+          localFileExists: resolvedInput.diagnostics.localFileExists,
+          reqBodyKeys: resolvedInput.diagnostics.reqBodyKeys,
+          envelopeKeys: resolvedInput.diagnostics.envelopeKeys,
+          normalizedKeys: resolvedInput.diagnostics.normalizedKeys,
+          resolvedPagesCount: pages.length,
+          resolvedTablesCount: tablesPreview.length
+        },
         extraction: {
           incomeRowsCount: financialRows.income.length,
           balanceRowsCount: financialRows.balance.length,
@@ -2959,6 +3650,13 @@ module.exports = async function (context, req) {
     });
   }
 };
+
+
+
+
+
+
+
 
 
 
