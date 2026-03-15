@@ -15,7 +15,7 @@ module.exports = async function (context, req) {
     const fs = require("fs");
 const path = require("path");
 
-const testCompany = "almarai"; // almarai أو jadwa
+const testCompany = "jadwa-reit"; // almarai أو jadwa
 
 const filePath = path.join(__dirname, `../${testCompany}-layout.json`);
 const raw = fs.readFileSync(filePath, "utf8");
