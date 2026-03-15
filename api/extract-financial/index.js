@@ -1643,7 +1643,7 @@ module.exports = async function (context, req) {
       const second = rankList[1].score;
       const diff = top - second;
 
-      if (diff > 200) return 0.95;
+      if (diff > ) return 0.95;
       if (diff > 120) return 0.9;
       if (diff > 60) return 0.8;
       if (diff > 30) return 0.7;
@@ -2276,17 +2276,25 @@ module.exports = async function (context, req) {
           pages: statementPageRanges.cashflow
         }
       },
-      statementSelectionResolved,
+            statementSelectionResolved,
       financialRows,
 
-      confidence,
-
       debug: {
+        incomeDebug: statementSelectionResolved?.income?.pageContexts?.[0]
+          ? {
+              header: statementSelectionResolved.income.pageContexts[0].header,
+              firstRows: (statementSelectionResolved.income.pageContexts[0].mainRows || []).slice(0, 8),
+              mainColumnCount: statementSelectionResolved.income.pageContexts[0].mainColumnCount,
+              mainRowCount: statementSelectionResolved.income.pageContexts[0].mainRowCount
+            }
+          : null,
+
         continuation: {
           income: incomeContinuation,
           balance: balanceContinuation,
           cashflow: cashflowContinuation
         },
+
         profileDetection,
         activeProfileKeywords: {
           income: incomeKeywords.slice(0, 12),
