@@ -2156,11 +2156,27 @@ if (isTitleOnlyCoverPage) {
         if (!Array.isArray(row) || !row.length) continue;
 
         const labelFromHeader = getCell(row, header.labelCol);
-        const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
-        const label = normalizeLabelForRow(labelFromHeader || fallbackLabel);
+const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
+const noteRaw = getCell(row, header.noteCol);
 
-        const noteRaw = getCell(row, header.noteCol);
-        const note = isLikelyReferenceValue(noteRaw) ? noteRaw : null;
+const noteLooksLikeLabel =
+  header.labelCol == null &&
+  !!noteRaw &&
+  isLikelyTextLabelCell(noteRaw) &&
+  !isLikelyReferenceValue(noteRaw) &&
+  !isLikelyMetaOrHeaderLabel(noteRaw) &&
+  !isLikelyStatementTitleRow(noteRaw, statementType);
+
+const label = normalizeLabelForRow(
+  labelFromHeader ||
+  fallbackLabel ||
+  (noteLooksLikeLabel ? noteRaw : "")
+);
+
+const note =
+  noteLooksLikeLabel
+    ? null
+    : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
 
         const currentYearValueRaw = getCell(row, header.currentCol);
         const previousYearValueRaw = getCell(row, header.previousCol);
