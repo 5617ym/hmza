@@ -1,4 +1,4 @@
-const DEV_MODE = false; // true أثناء التطوير، false للإنتاج
+const DEV_MODE = true; // true أثناء التطوير، false للإنتاج
 console.log("MAIN_JS_VERSION = 3B_COMPARE_NORMALIZE_AND_2FILES_WITH_LASTNORMALIZED_2026-03-04_UI_REFRESH");
 console.log("main.js loaded ✅");
 
