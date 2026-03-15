@@ -1,3 +1,4 @@
+const DEV_MODE = true; // true أثناء التطوير، false للإنتاج
 console.log("MAIN_JS_VERSION = 3B_COMPARE_NORMALIZE_AND_2FILES_WITH_LASTNORMALIZED_2026-03-04_UI_REFRESH");
 console.log("main.js loaded ✅");
 
@@ -331,7 +332,13 @@ btnShow?.addEventListener("click", async () => {
   try {
     resultsSection?.classList.remove("hidden");
 
-    const dataA = { normalized: { meta: { pages: 0, tables: 0, textLength: 0 }, tablesPreview: [] } };
+    let dataA;
+
+if (DEV_MODE) {
+  dataA = { normalized: { meta: { pages: 0, tables: 0, textLength: 0 }, tablesPreview: [] } };
+} else {
+  dataA = await analyzeSingleFile(selectedFiles[0], ui);
+}
 
     window.lastAnalyzeA = dataA;
     window.lastNormalized = dataA?.normalized || null;
