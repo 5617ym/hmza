@@ -15,7 +15,7 @@ module.exports = async function (context, req) {
     const fs = require("fs");
     const path = require("path");
 
-    const testCompany = "jadwa-reit"; // almarai أو jadwa-reit أو bank file name
+    const testCompany = "jadwa-reit"; // almarai | jadwa-reit | bank-file
     const filePath = path.join(__dirname, `../${testCompany}-layout.json`);
     const raw = fs.readFileSync(filePath, "utf8");
     const body = JSON.parse(raw);
@@ -41,11 +41,13 @@ module.exports = async function (context, req) {
       : Array.isArray(activeSectorProfile.incomeStatement)
         ? activeSectorProfile.incomeStatement
         : [];
+
     const balanceKeywords = Array.isArray(sectorStatements.balance)
       ? sectorStatements.balance
       : Array.isArray(activeSectorProfile.balanceSheet)
         ? activeSectorProfile.balanceSheet
         : [];
+
     const cashflowKeywords = Array.isArray(sectorStatements.cashflow)
       ? sectorStatements.cashflow
       : Array.isArray(activeSectorProfile.cashFlow)
@@ -241,7 +243,7 @@ module.exports = async function (context, req) {
       return unique(hits);
     }
 
-        function isBlank(v) {
+    function isBlank(v) {
       return String(v == null ? "" : v).trim() === "";
     }
 
@@ -289,7 +291,7 @@ module.exports = async function (context, req) {
       return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
     }
 
-        function extractTableRows(table) {
+    function extractTableRows(table) {
       // ============================================
       // Layer A: Full Table Row Reconstruction
       // ============================================
@@ -400,7 +402,7 @@ module.exports = async function (context, req) {
       return rows.filter((r) => r.some((c) => !isBlank(c)));
     }
 
-    function rowsWithMeta(table) {
+        function rowsWithMeta(table) {
       const rows = extractTableRows(table);
       return rows.map((cells, index) => ({
         index,
@@ -522,6 +524,118 @@ module.exports = async function (context, req) {
         }
       }
       return count;
+    }
+
+    function dedupePreserveOrder(arr) {
+      const seen = new Set();
+      const out = [];
+
+      for (const item of arr || []) {
+        const key = normalizeText(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(String(item).trim());
+      }
+
+      return out;
+    }
+
+    function splitTextIntoLogicalLines(text) {
+      return String(text || "")
+        .split(/\r?\n+/)
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+        .flatMap((line) => {
+          if (line.includes(" | ")) {
+            return line
+              .split("|")
+              .map((x) => String(x || "").trim())
+              .filter(Boolean);
+          }
+          return [line];
+        });
+    }
+
+    function isSectionHeaderOnlyLabel(label, statementType) {
+      const s = normalizeText(label);
+
+      const genericHeaders = [
+        "الايرادات",
+        "الإيرادات",
+        "المصاريف",
+        "الموجودات",
+        "المطلوبات",
+        "حقوق الملكيه",
+        "حقوق الملكية",
+        "الموجودات غير المتداوله",
+        "الموجودات غير المتداولة",
+        "الموجودات المتداوله",
+        "الموجودات المتداولة",
+        "المطلوبات غير المتداوله",
+        "المطلوبات غير المتداولة",
+        "المطلوبات المتداوله",
+        "المطلوبات المتداولة",
+        "other income",
+        "expenses",
+        "revenue"
+      ].map(normalizeText);
+
+      if (genericHeaders.includes(s)) return true;
+
+      if (statementType === "income") {
+        return (
+          s === normalizeText("الإيرادات") ||
+          s === normalizeText("الايرادات") ||
+          s === normalizeText("المصاريف")
+        );
+      }
+
+      return false;
+    }
+
+    function isAcceptableFinancialLabel(label, statementType) {
+      const cleanLabel = cleanupLabel(label);
+      const normalizedLabel = normalizeText(cleanLabel);
+
+      if (!cleanLabel) return false;
+      if (!/[A-Za-z\u0600-\u06FF]/.test(cleanLabel)) return false;
+      if (normalizedLabel.length <= 1) return false;
+      if (isLikelyReferenceValue(cleanLabel)) return false;
+      if (isLikelyMetaOrHeaderLabel(cleanLabel)) return false;
+      if (isLikelyStatementTitleRow(cleanLabel, statementType)) return false;
+      if (isSectionHeaderOnlyLabel(cleanLabel, statementType)) return false;
+
+      if (
+        normalizedLabel.includes("الايضاحات المرفقه") ||
+        normalizedLabel.includes("الإيضاحات المرفقة") ||
+        normalizedLabel.includes("integral part") ||
+        normalizedLabel.includes("accompanying notes")
+      ) {
+        return false;
+      }
+
+      return true;
+    }
+
+    function extractLabelCandidatesFromPageText(pageCtx, statementType) {
+      const textBlob = [
+        pageCtx?.mainTableText || "",
+        pageCtx?.text || "",
+        pageCtx?.structuralText || ""
+      ].join("\n");
+
+      const candidates = splitTextIntoLogicalLines(textBlob)
+        .map((line) => cleanupLabel(line))
+        .filter(Boolean)
+        .filter((line) => !isLikelyStatementDateText(line))
+        .filter((line) => !isLikelyStandardEffectiveDateText(line))
+        .filter((line) => !isLikelyNarrativeLine(line))
+        .filter((line) => !isQuarterOrPeriodCell(line))
+        .filter((line) => !isPureNumericSymbolCell(line))
+        .filter((line) => !isLikelyOnlyReferenceText(line))
+        .filter((line) => isAcceptableFinancialLabel(line, statementType));
+
+      return dedupePreserveOrder(candidates);
     }
 
     // =========================================================
@@ -648,8 +762,14 @@ module.exports = async function (context, req) {
         }
       }
 
-      const maxColCount = Math.max(0, ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0)));
-      const reservedCols = new Set([currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x)));
+      const maxColCount = Math.max(
+        0,
+        ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0))
+      );
+
+      const reservedCols = new Set(
+        [currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x))
+      );
 
       const freeCols = [];
       for (let c = 0; c < maxColCount; c += 1) {
@@ -845,7 +965,7 @@ module.exports = async function (context, req) {
     // Layer 3: Statement Profile Detection
     // =========================================================
 
-        const PROFILE_CONFIG = {
+    const PROFILE_CONFIG = {
       bank: {
         key: "bank",
         positive: [
@@ -1017,7 +1137,7 @@ module.exports = async function (context, req) {
             sector: finalSector
           };
 
-    // =========================================================
+        // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
@@ -1254,7 +1374,7 @@ module.exports = async function (context, req) {
         }
       },
 
-            reit: {
+      reit: {
         balance: {
           key: "balance",
           titles: [
@@ -1293,6 +1413,7 @@ module.exports = async function (context, req) {
             "statement of income",
             "income statement",
             "statement of profit or loss",
+            "statement of comprehensive income",
             "consolidated statement of profit or loss"
           ],
           structure: [
@@ -1305,11 +1426,11 @@ module.exports = async function (context, req) {
             "rental income",
             "operating profit",
             "net income",
-            "revenue"
+            "revenue",
+            "total comprehensive income",
+            "comprehensive income"
           ],
           negatives: [
-            "statement of comprehensive income",
-            "other comprehensive income",
             "statement of cash flows",
             "changes in equity"
           ]
@@ -1468,8 +1589,7 @@ module.exports = async function (context, req) {
       ].join("\n");
     }
 
-    function statementRankScore(pageCtx, cfg, kind) {
-        
+        function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
       const signals = {};
@@ -1580,7 +1700,7 @@ module.exports = async function (context, req) {
         reasons.push(`columnRange:+${s}`);
       }
 
-            if (pageCtx.positionRatio <= 0.30) {
+      if (pageCtx.positionRatio <= 0.30) {
         const s = structureSupportCount > 0 ? 8 : 3;
         score += s;
         reasons.push(`earlyPage:+${s}`);
@@ -1634,24 +1754,23 @@ module.exports = async function (context, req) {
         reasons.push(`noTitlePenalty:-${penalty}`);
       }
 
-      
       if (hasNoTitle && hasNoStructure) {
-  const penalty = kind === "balance" ? 140 : 260;
-  score -= penalty;
-  reasons.push(`noTitleNoStructure:-${penalty}`);
-}
+        const penalty = kind === "balance" ? 140 : 260;
+        score -= penalty;
+        reasons.push(`noTitleNoStructure:-${penalty}`);
+      }
 
-const isTitleOnlyCoverPage =
-  (titleHitsHeader.length > 0 || titleHitsAll.length > 0) &&
-  hasNoStructure &&
-  (!pageCtx.years || pageCtx.years.length === 0) &&
-  pageCtx.mainColumnCount <= 2 &&
-  pageCtx.mainRowCount <= 10;
+      const isTitleOnlyCoverPage =
+        (titleHitsHeader.length > 0 || titleHitsAll.length > 0) &&
+        hasNoStructure &&
+        (!pageCtx.years || pageCtx.years.length === 0) &&
+        pageCtx.mainColumnCount <= 2 &&
+        pageCtx.mainRowCount <= 10;
 
-if (isTitleOnlyCoverPage) {
-  score -= 180;
-  reasons.push("titleOnlyCoverPagePenalty:-180");
-}
+      if (isTitleOnlyCoverPage) {
+        score -= 180;
+        reasons.push("titleOnlyCoverPagePenalty:-180");
+      }
 
       if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
         score -= 120;
@@ -1789,7 +1908,7 @@ if (isTitleOnlyCoverPage) {
       return getPageContextByNumber(basePageNumber + offset);
     }
 
-    function getContinuationConfig(kind) {
+        function getContinuationConfig(kind) {
       const cfg = mergeStatementConfigWithSectorKeywords(
         kind,
         ACTIVE_STATEMENT_CONFIGS[kind]
@@ -2102,40 +2221,43 @@ if (isTitleOnlyCoverPage) {
     }
 
     function pickFallbackLabelCell(row, header, statementType) {
-  if (!Array.isArray(row) || !row.length) return "";
+      if (!Array.isArray(row) || !row.length) return "";
 
-  const cells = row.map((cell, idx) => ({
-    idx,
-    cell: String(cell == null ? "" : cell).trim()
-  }));
+      const cells = row.map((cell, idx) => ({
+        idx,
+        cell: String(cell == null ? "" : cell).trim()
+      }));
 
-  const reserved = new Set(
-    [
-      header?.currentCol,
-      header?.previousCol
-    ].filter((x) => Number.isFinite(x))
-  );
+      const reserved = new Set(
+        [
+          header?.currentCol,
+          header?.previousCol
+        ].filter((x) => Number.isFinite(x))
+      );
 
-  const textCandidates = cells
-    .filter((x) => !reserved.has(x.idx))
-    .filter((x) => isLikelyTextLabelCell(x.cell))
-    .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
-    .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell));
+      const textCandidates = cells
+        .filter((x) => !reserved.has(x.idx))
+        .filter((x) => isLikelyTextLabelCell(x.cell))
+        .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
+        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
+        .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType));
 
-  if (textCandidates.length > 0) {
-    const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
-    return rtlPick?.cell || "";
-  }
+      if (textCandidates.length > 0) {
+        const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
+        return rtlPick?.cell || "";
+      }
 
-  const fallbackFromAnyText = cells
-    .filter((x) => !reserved.has(x.idx))
-    .filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
-    .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
-    .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
-    .sort((a, b) => b.idx - a.idx)[0];
+      const fallbackFromAnyText = cells
+        .filter((x) => !reserved.has(x.idx))
+        .filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
+        .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
+        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
+        .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType))
+        .sort((a, b) => b.idx - a.idx)[0];
 
-  return fallbackFromAnyText?.cell || "";
-}
+      return fallbackFromAnyText?.cell || "";
+    }
+
     function normalizeLabelForRow(label) {
       return cleanupLabel(
         String(label || "")
@@ -2155,9 +2277,11 @@ if (isTitleOnlyCoverPage) {
           "قائمة الدخل",
           "قائمة الارباح والخسائر",
           "قائمة الأرباح والخسائر",
+          "قائمة الدخل الشامل",
           "statement of income",
           "income statement",
           "statement of profit or loss",
+          "statement of comprehensive income",
           "profit or loss"
         ],
         balance: [
@@ -2214,27 +2338,19 @@ if (isTitleOnlyCoverPage) {
       return currentValue != null || previousValue != null;
     }
 
-    function shouldSkipExtractedRow({ row, rowIndex, label, statementType, pageCtx, currentYearValue, previousYearValue }) {
+    function shouldSkipExtractedRow({
+      row,
+      rowIndex,
+      label,
+      statementType,
+      pageCtx,
+      currentYearValue,
+      previousYearValue
+    }) {
       const cleanLabel = normalizeLabelForRow(label);
-      const normalizedLabel = normalizeText(cleanLabel);
 
       if (!cleanLabel) return true;
       if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
-      if (isLikelyMetaOrHeaderLabel(cleanLabel)) return true;
-      if (isLikelyStatementTitleRow(cleanLabel, statementType)) return true;
-      if (isLikelyReferenceValue(cleanLabel)) return true;
-      if (normalizedLabel.length <= 1) return true;
-      if (!/[A-Za-z\u0600-\u06FF]/.test(cleanLabel)) return true;
-
-      if (
-        normalizedLabel.includes("الايضاحات المرفقه") ||
-        normalizedLabel.includes("الإيضاحات المرفقة") ||
-        normalizedLabel.includes("integral part") ||
-        normalizedLabel.includes("accompanying notes")
-      ) {
-        return true;
-      }
-
       if (!rowHasUsefulNumericValue(row, pageCtx?.header)) return true;
 
       if (
@@ -2245,44 +2361,47 @@ if (isTitleOnlyCoverPage) {
         return true;
       }
 
+      if (!isAcceptableFinancialLabel(cleanLabel, statementType)) {
+        return true;
+      }
+
       return false;
     }
 
-    function extractRowsFromPageContext(pageCtx, statementType) {
-      if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
-        return [];
-      }
-
-      const rows = pageCtx.mainRows;
-      const header = pageCtx.header || {};
-      const extracted = [];
+    function collectNumericRows(pageCtx, statementType) {
+      const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
+      const header = pageCtx?.header || {};
+      const numericRows = [];
 
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
         const row = rows[rowIndex];
         if (!Array.isArray(row) || !row.length) continue;
+        if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
+        if (!rowHasUsefulNumericValue(row, header)) continue;
 
         const labelFromHeader = getCell(row, header.labelCol);
-const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
-const noteRaw = getCell(row, header.noteCol);
+        const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
+        const noteRaw = getCell(row, header.noteCol);
 
-const noteLooksLikeLabel =
-  header.labelCol == null &&
-  !!noteRaw &&
-  isLikelyTextLabelCell(noteRaw) &&
-  !isLikelyReferenceValue(noteRaw) &&
-  !isLikelyMetaOrHeaderLabel(noteRaw) &&
-  !isLikelyStatementTitleRow(noteRaw, statementType);
+        const noteLooksLikeLabel =
+          header.labelCol == null &&
+          !!noteRaw &&
+          isLikelyTextLabelCell(noteRaw) &&
+          !isLikelyReferenceValue(noteRaw) &&
+          !isLikelyMetaOrHeaderLabel(noteRaw) &&
+          !isLikelyStatementTitleRow(noteRaw, statementType) &&
+          !isSectionHeaderOnlyLabel(noteRaw, statementType);
 
-const label = normalizeLabelForRow(
-  labelFromHeader ||
-  fallbackLabel ||
-  (noteLooksLikeLabel ? noteRaw : "")
-);
+        const labelCandidate = normalizeLabelForRow(
+          labelFromHeader ||
+          fallbackLabel ||
+          (noteLooksLikeLabel ? noteRaw : "")
+        );
 
-const note =
-  noteLooksLikeLabel
-    ? null
-    : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
+        const note =
+          noteLooksLikeLabel
+            ? null
+            : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
 
         const currentYearValueRaw = getCell(row, header.currentCol);
         const previousYearValueRaw = getCell(row, header.previousCol);
@@ -2290,15 +2409,102 @@ const note =
         const currentYearValue = parseNumberSmart(currentYearValueRaw);
         const previousYearValue = parseNumberSmart(previousYearValueRaw);
 
+        numericRows.push({
+          statementType,
+          pageNumber: pageCtx.pageNumber,
+          rowIndex,
+          row,
+          labelCandidate,
+          note,
+          currentYearValue,
+          previousYearValue,
+          source: {
+            labelCol: Number.isFinite(header.labelCol) ? header.labelCol : null,
+            noteCol: Number.isFinite(header.noteCol) ? header.noteCol : null,
+            currentCol: Number.isFinite(header.currentCol) ? header.currentCol : null,
+            previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
+            resolutionMode: header.resolutionMode || null,
+            direction: header.direction || null
+          }
+        });
+      }
+
+      return numericRows;
+    }
+
+    function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
+      if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
+
+      const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
+      if (!candidates.length) return rawEntries;
+
+      let cursor = 0;
+
+      return rawEntries.map((entry) => {
+        let finalLabel = normalizeLabelForRow(entry.labelCandidate);
+
+        if (isAcceptableFinancialLabel(finalLabel, statementType)) {
+          while (cursor < candidates.length) {
+            const candidateNorm = normalizeText(candidates[cursor]);
+            if (candidateNorm === normalizeText(finalLabel)) {
+              cursor += 1;
+              break;
+            }
+            cursor += 1;
+          }
+          return {
+            ...entry,
+            label: finalLabel
+          };
+        }
+
+        while (cursor < candidates.length) {
+          const candidate = normalizeLabelForRow(candidates[cursor]);
+          cursor += 1;
+
+          if (!isAcceptableFinancialLabel(candidate, statementType)) {
+            continue;
+          }
+
+          return {
+            ...entry,
+            label: candidate,
+            source: {
+              ...entry.source,
+              labelRecoveredFrom: "page_text"
+            }
+          };
+        }
+
+        return {
+          ...entry,
+          label: finalLabel
+        };
+      });
+    }
+
+    function extractRowsFromPageContext(pageCtx, statementType) {
+      if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
+        return [];
+      }
+
+      const rawEntries = collectNumericRows(pageCtx, statementType);
+      const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
+      const header = pageCtx.header || {};
+      const extracted = [];
+
+      for (const entry of repairedEntries) {
+        const label = normalizeLabelForRow(entry.label);
+
         if (
           shouldSkipExtractedRow({
-            row,
-            rowIndex,
+            row: entry.row,
+            rowIndex: entry.rowIndex,
             label,
             statementType,
             pageCtx,
-            currentYearValue,
-            previousYearValue
+            currentYearValue: entry.currentYearValue,
+            previousYearValue: entry.previousYearValue
           })
         ) {
           continue;
@@ -2307,26 +2513,19 @@ const note =
         extracted.push({
           statementType,
           pageNumber: pageCtx.pageNumber,
-          rowIndex,
+          rowIndex: entry.rowIndex,
           label,
-          note,
+          note: entry.note,
           currentYear: {
             year: Number.isFinite(header.latest) ? header.latest : null,
-            value: currentYearValue
+            value: entry.currentYearValue
           },
           previousYear: {
             year: Number.isFinite(header.previous) ? header.previous : null,
-            value: previousYearValue
+            value: entry.previousYearValue
           },
-          source: {
-            labelCol: Number.isFinite(header.labelCol) ? header.labelCol : null,
-            noteCol: Number.isFinite(header.noteCol) ? header.noteCol : null,
-            currentCol: Number.isFinite(header.currentCol) ? header.currentCol : null,
-            previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
-            resolutionMode: header.resolutionMode || null,
-            direction: header.direction || null
-          },
-          rawRow: row
+          source: entry.source,
+          rawRow: entry.row
         });
       }
 
@@ -2341,7 +2540,7 @@ const note =
         const key = [
           row.statementType,
           row.pageNumber,
-          row.label,
+          normalizeText(row.label),
           row.currentYear?.year,
           row.currentYear?.value,
           row.previousYear?.year,
@@ -2381,7 +2580,7 @@ const note =
 
     const financialRows = extractStatementRows(statementSelectionResolved);
 
-        return send(200, {
+    return send(200, {
       ok: true,
       sector: finalSector,
       sectorInfo,
@@ -2418,6 +2617,11 @@ const note =
       confidence,
 
       debug: {
+        extraction: {
+          incomeRowsCount: financialRows.income.length,
+          balanceRowsCount: financialRows.balance.length,
+          cashflowRowsCount: financialRows.cashflow.length
+        },
         continuation: {
           income: incomeContinuation,
           balance: balanceContinuation,
@@ -2451,6 +2655,12 @@ const note =
     });
   }
 };
+
+
+
+
+
+
 
 
 
