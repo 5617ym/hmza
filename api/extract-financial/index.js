@@ -1643,7 +1643,7 @@ module.exports = async function (context, req) {
       const second = rankList[1].score;
       const diff = top - second;
 
-      if (diff > ) return 0.95;
+      if (diff > 200) return 0.95;
       if (diff > 120) return 0.9;
       if (diff > 60) return 0.8;
       if (diff > 30) return 0.7;
