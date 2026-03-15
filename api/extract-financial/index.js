@@ -13,16 +13,15 @@ module.exports = async function (context, req) {
 
   try {
     const fs = require("fs");
-const path = require("path");
+    const path = require("path");
 
-const testCompany = "jadwa-reit"; // almarai أو jadwa
+    const testCompany = "jadwa-reit"; // almarai أو jadwa-reit أو bank file name
+    const filePath = path.join(__dirname, `../${testCompany}-layout.json`);
+    const raw = fs.readFileSync(filePath, "utf8");
+    const body = JSON.parse(raw);
 
-const filePath = path.join(__dirname, `../${testCompany}-layout.json`);
-const raw = fs.readFileSync(filePath, "utf8");
-const body = JSON.parse(raw);
-
-const normalized = body.normalized || {};
-const normalizedPrev = null;
+    const normalized = body.normalized || {};
+    const normalizedPrev = null;
 
     if (!normalized || typeof normalized !== "object") {
       return send(400, {
@@ -242,7 +241,7 @@ const normalizedPrev = null;
       return unique(hits);
     }
 
-    function isBlank(v) {
+        function isBlank(v) {
       return String(v == null ? "" : v).trim() === "";
     }
 
@@ -347,7 +346,7 @@ const normalizedPrev = null;
       return isLikelyOnlyReferenceText(raw);
     }
 
-        function isLikelyStatementDateText(text) {
+    function isLikelyStatementDateText(text) {
       const s = normalizeText(text);
       return (
         s.includes("31 december") ||
@@ -472,7 +471,7 @@ const normalizedPrev = null;
         .sort((a, b) => b.score - a.score || a.idx - b.idx);
     }
 
-    function detectTableLanguageDirection(rows) {
+        function detectTableLanguageDirection(rows) {
       let arabicScore = 0;
       let latinScore = 0;
 
@@ -590,7 +589,7 @@ const normalizedPrev = null;
       };
     }
 
-        function buildPageContext(pageNumber, orderedPageNumbers) {
+    function buildPageContext(pageNumber, orderedPageNumbers) {
       const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
       const pageTables = getTablesForPage(pageNumber);
       const mainTable = pickMainTable(pageTables);
@@ -744,17 +743,17 @@ const normalizedPrev = null;
     const pageContexts = allPageNumbers.map((pageNumber) =>
       buildPageContext(pageNumber, allPageNumbers)
     );
+
     function getPageContextsByNumbers(pageNumbers) {
-  const wanted = new Set((pageNumbers || []).filter((n) => Number.isFinite(n)));
-  return pageContexts.filter((p) => wanted.has(p.pageNumber));
-}
-    
+      const wanted = new Set((pageNumbers || []).filter((n) => Number.isFinite(n)));
+      return pageContexts.filter((p) => wanted.has(p.pageNumber));
+    }
 
     // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
 
-    const PROFILE_CONFIG = {
+        const PROFILE_CONFIG = {
       bank: {
         key: "bank",
         positive: [
@@ -925,7 +924,8 @@ const normalizedPrev = null;
             ...rawSectorInfo,
             sector: finalSector
           };
-        // =========================================================
+
+    // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
 
@@ -1162,7 +1162,7 @@ const normalizedPrev = null;
         }
       },
 
-      reit: {
+            reit: {
         balance: {
           key: "balance",
           titles: [
@@ -1356,7 +1356,7 @@ const normalizedPrev = null;
       };
     }
 
-        function getHeaderSearchText(pageCtx) {
+    function getHeaderSearchText(pageCtx) {
       return flattenValue(pageCtx?.header || "");
     }
 
@@ -1377,215 +1377,215 @@ const normalizedPrev = null;
     }
 
     function statementRankScore(pageCtx, cfg, kind) {
-  let score = 0;
-  const reasons = [];
-  const signals = {};
+      let score = 0;
+      const reasons = [];
+      const signals = {};
 
-  if (!pageCtx) {
-    return { score, reasons, signals };
-  }
+      if (!pageCtx) {
+        return { score, reasons, signals };
+      }
 
-  const headerText = getHeaderSearchText(pageCtx);
-  const wholeText = getPageStatementText(pageCtx);
-  const firstRowsText = (pageCtx.mainRows || [])
-    .slice(0, 6)
-    .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-    .join("\n");
+      const headerText = getHeaderSearchText(pageCtx);
+      const wholeText = getPageStatementText(pageCtx);
+      const firstRowsText = (pageCtx.mainRows || [])
+        .slice(0, 6)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
 
-  const pageText = normalizeText(
-    [
-      pageCtx.text || "",
-      pageCtx.headerText || "",
-      pageCtx.mainTableText || "",
-      firstRowsText
-    ].join("\n")
-  );
+      const pageText = normalizeText(
+        [
+          pageCtx.text || "",
+          pageCtx.headerText || "",
+          pageCtx.mainTableText || "",
+          firstRowsText
+        ].join("\n")
+      );
 
-  const titleHitsHeader = countDistinctPhraseHits(
-    `${headerText}\n${pageCtx.headerText || ""}\n${pageCtx.mainTableText || ""}`,
-    cfg.titles || []
-  );
-  const titleHitsAll = countDistinctPhraseHits(wholeText, cfg.titles || []);
-  const structureHitsAll = countDistinctPhraseHits(wholeText, cfg.structure || []);
-  const structureHitsFirstRows = countDistinctPhraseHits(
-    `${firstRowsText}\n${pageCtx.mainTableText || ""}`,
-    cfg.structure || []
-  );
-  const negativeHits = countDistinctPhraseHits(wholeText, cfg.negatives || []);
+      const titleHitsHeader = countDistinctPhraseHits(
+        `${headerText}\n${pageCtx.headerText || ""}\n${pageCtx.mainTableText || ""}`,
+        cfg.titles || []
+      );
+      const titleHitsAll = countDistinctPhraseHits(wholeText, cfg.titles || []);
+      const structureHitsAll = countDistinctPhraseHits(wholeText, cfg.structure || []);
+      const structureHitsFirstRows = countDistinctPhraseHits(
+        `${firstRowsText}\n${pageCtx.mainTableText || ""}`,
+        cfg.structure || []
+      );
+      const negativeHits = countDistinctPhraseHits(wholeText, cfg.negatives || []);
 
-  signals.titleHitsHeader = titleHitsHeader;
-  signals.titleHitsAll = titleHitsAll;
-  signals.structureHitsAll = structureHitsAll;
-  signals.structureHitsFirstRows = structureHitsFirstRows;
-  signals.negativeHits = negativeHits;
+      signals.titleHitsHeader = titleHitsHeader;
+      signals.titleHitsAll = titleHitsAll;
+      signals.structureHitsAll = structureHitsAll;
+      signals.structureHitsFirstRows = structureHitsFirstRows;
+      signals.negativeHits = negativeHits;
 
-  if (titleHitsHeader.length > 0) {
-    const base = titleHitsHeader.length * 90;
-    const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
-    const s = Math.round(base * multiplier);
-    score += s;
-    reasons.push(`titleHeader:+${s}`);
-  } else if (titleHitsAll.length > 0) {
-    const base = titleHitsAll.length * 40;
-    const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
-    const s = Math.round(base * multiplier);
-    score += s;
-    reasons.push(`titleAll:+${s}`);
-  }
+      if (titleHitsHeader.length > 0) {
+        const base = titleHitsHeader.length * 90;
+        const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
+        const s = Math.round(base * multiplier);
+        score += s;
+        reasons.push(`titleHeader:+${s}`);
+      } else if (titleHitsAll.length > 0) {
+        const base = titleHitsAll.length * 40;
+        const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
+        const s = Math.round(base * multiplier);
+        score += s;
+        reasons.push(`titleAll:+${s}`);
+      }
 
-  if (structureHitsAll.length > 0) {
-    const s = Math.min(structureHitsAll.length, 10) * 16;
-    score += s;
-    reasons.push(`structureAll:+${s}`);
-  }
+      if (structureHitsAll.length > 0) {
+        const s = Math.min(structureHitsAll.length, 10) * 16;
+        score += s;
+        reasons.push(`structureAll:+${s}`);
+      }
 
-  if (structureHitsFirstRows.length > 0) {
-    const s = Math.min(structureHitsFirstRows.length, 6) * 18;
-    score += s;
-    reasons.push(`structureFirstRows:+${s}`);
-  }
+      if (structureHitsFirstRows.length > 0) {
+        const s = Math.min(structureHitsFirstRows.length, 6) * 18;
+        score += s;
+        reasons.push(`structureFirstRows:+${s}`);
+      }
 
-  const structureSupportCount =
-    structureHitsAll.length + structureHitsFirstRows.length;
+      const structureSupportCount =
+        structureHitsAll.length + structureHitsFirstRows.length;
 
-  if (structureSupportCount >= 5 && pageCtx.positionRatio <= 0.35) {
-    score += 25;
-    reasons.push("strongStructureBonus:+25");
-  }
+      if (structureSupportCount >= 5 && pageCtx.positionRatio <= 0.35) {
+        score += 25;
+        reasons.push("strongStructureBonus:+25");
+      }
 
-  if (pageCtx.hasYearLikeHeader) {
-    const s = structureSupportCount > 0 ? 22 : 10;
-    score += s;
-    reasons.push(`yearHeader:+${s}`);
-  }
+      if (pageCtx.hasYearLikeHeader) {
+        const s = structureSupportCount > 0 ? 22 : 10;
+        score += s;
+        reasons.push(`yearHeader:+${s}`);
+      }
 
-  if (pageCtx.years && pageCtx.years.length >= 2) {
-    const s = structureSupportCount > 0 ? 14 : 6;
-    score += s;
-    reasons.push(`yearsDetected:+${s}`);
-  } else if (pageCtx.years && pageCtx.years.length === 1) {
-    const s = structureSupportCount > 0 ? 5 : 2;
-    score += s;
-    reasons.push(`singleYearDetected:+${s}`);
-  }
+      if (pageCtx.years && pageCtx.years.length >= 2) {
+        const s = structureSupportCount > 0 ? 14 : 6;
+        score += s;
+        reasons.push(`yearsDetected:+${s}`);
+      } else if (pageCtx.years && pageCtx.years.length === 1) {
+        const s = structureSupportCount > 0 ? 5 : 2;
+        score += s;
+        reasons.push(`singleYearDetected:+${s}`);
+      }
 
-  if (pageCtx.numbersCount > 20) {
-    const s = structureSupportCount > 0 ? 10 : 4;
-    score += s;
-    reasons.push(`numbersDensity:+${s}`);
-  }
+      if (pageCtx.numbersCount > 20) {
+        const s = structureSupportCount > 0 ? 10 : 4;
+        score += s;
+        reasons.push(`numbersDensity:+${s}`);
+      }
 
-  if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
-    const s = structureSupportCount > 0 ? 8 : 3;
-    score += s;
-    reasons.push(`rowRange:+${s}`);
-  }
+      if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
+        const s = structureSupportCount > 0 ? 8 : 3;
+        score += s;
+        reasons.push(`rowRange:+${s}`);
+      }
 
-  if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
-    const s = structureSupportCount > 0 ? 8 : 3;
-    score += s;
-    reasons.push(`columnRange:+${s}`);
-  }
+      if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
+        const s = structureSupportCount > 0 ? 8 : 3;
+        score += s;
+        reasons.push(`columnRange:+${s}`);
+      }
 
-  if (pageCtx.positionRatio <= 0.30) {
-    const s = structureSupportCount > 0 ? 8 : 3;
-    score += s;
-    reasons.push(`earlyPage:+${s}`);
-  } else if (pageCtx.positionRatio >= 0.35) {
-    score -= 180;
-    reasons.push("latePagePenalty:-180");
-  }
+            if (pageCtx.positionRatio <= 0.30) {
+        const s = structureSupportCount > 0 ? 8 : 3;
+        score += s;
+        reasons.push(`earlyPage:+${s}`);
+      } else if (pageCtx.positionRatio >= 0.35) {
+        score -= 180;
+        reasons.push("latePagePenalty:-180");
+      }
 
-  if (pageCtx.isLikelyIndexPage) {
-    score -= 220;
-    reasons.push("indexPenalty:-220");
-  }
+      if (pageCtx.isLikelyIndexPage) {
+        score -= 220;
+        reasons.push("indexPenalty:-220");
+      }
 
-  if (pageCtx.isLikelyStandardsPage) {
-    score -= 190;
-    reasons.push("standardsPenalty:-190");
-  }
+      if (pageCtx.isLikelyStandardsPage) {
+        score -= 190;
+        reasons.push("standardsPenalty:-190");
+      }
 
-  if (pageCtx.isLikelyNarrativePage) {
-    score -= 170;
-    reasons.push("narrativePenalty:-170");
-  }
+      if (pageCtx.isLikelyNarrativePage) {
+        score -= 170;
+        reasons.push("narrativePenalty:-170");
+      }
 
-  if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
-    score -= 140;
-    reasons.push("comprehensiveIncomePenalty:-140");
-  }
+      if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
+        score -= 140;
+        reasons.push("comprehensiveIncomePenalty:-140");
+      }
 
-  if (kind !== "income" && pageCtx.isLikelyComprehensiveIncome) {
-    score -= 60;
-    reasons.push("crossStatementComprehensivePenalty:-60");
-  }
+      if (kind !== "income" && pageCtx.isLikelyComprehensiveIncome) {
+        score -= 60;
+        reasons.push("crossStatementComprehensivePenalty:-60");
+      }
 
-  if (pageCtx.isLikelyEquityStatement) {
-    score -= 120;
-    reasons.push("equityStatementPenalty:-120");
-  }
+      if (pageCtx.isLikelyEquityStatement) {
+        score -= 120;
+        reasons.push("equityStatementPenalty:-120");
+      }
 
-  if (negativeHits.length > 0) {
-    const s = Math.min(negativeHits.length, 8) * 22;
-    score -= s;
-    reasons.push(`negativeHits:-${s}`);
-  }
+      if (negativeHits.length > 0) {
+        const s = Math.min(negativeHits.length, 8) * 22;
+        score -= s;
+        reasons.push(`negativeHits:-${s}`);
+      }
 
-  const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
-  const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
+      const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
+      const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
 
-  if (hasNoTitle) {
-    const penalty = kind === "balance" ? 90 : 170;
-    score -= penalty;
-    reasons.push(`noTitlePenalty:-${penalty}`);
-  }
+      if (hasNoTitle) {
+        const penalty = kind === "balance" ? 90 : 170;
+        score -= penalty;
+        reasons.push(`noTitlePenalty:-${penalty}`);
+      }
 
-  if (hasNoTitle && hasNoStructure) {
-    const penalty = kind === "balance" ? 140 : 260;
-    score -= penalty;
-    reasons.push(`noTitleNoStructure:-${penalty}`);
-  }
+      if (hasNoTitle && hasNoStructure) {
+        const penalty = kind === "balance" ? 140 : 260;
+        score -= penalty;
+        reasons.push(`noTitleNoStructure:-${penalty}`);
+      }
 
-  if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
-    score -= 120;
-    reasons.push("cashflowTitleWithoutStructurePenalty:-120");
-  }
+      if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
+        score -= 120;
+        reasons.push("cashflowTitleWithoutStructurePenalty:-120");
+      }
 
-  if (
-    kind === "cashflow" &&
-    hasNoTitle &&
-    hasNoStructure &&
-    pageCtx.mainColumnCount === 3 &&
-    pageCtx.mainRowCount >= 40 &&
-    (pageCtx.years || []).length >= 2
-  ) {
-    score += 40;
-    reasons.push("cashflowTall3ColFallbackBonus:+40");
-  }
+      if (
+        kind === "cashflow" &&
+        hasNoTitle &&
+        hasNoStructure &&
+        pageCtx.mainColumnCount === 3 &&
+        pageCtx.mainRowCount >= 40 &&
+        (pageCtx.years || []).length >= 2
+      ) {
+        score += 40;
+        reasons.push("cashflowTall3ColFallbackBonus:+40");
+      }
 
-  const auditNarrativeHits =
-    pageText.includes("امر المراجعه") ||
-    pageText.includes("امور المراجعه") ||
-    pageText.includes("كيفيه معالجه هذا الامر اثناء مراجعتنا") ||
-    pageText.includes("المراجع") ||
-    pageText.includes("تقرير المراجع") ||
-    pageText.includes("key audit") ||
-    pageText.includes("key audit matters") ||
-    pageText.includes("auditor") ||
-    pageText.includes("independent auditor");
+      const auditNarrativeHits =
+        pageText.includes("امر المراجعه") ||
+        pageText.includes("امور المراجعه") ||
+        pageText.includes("كيفيه معالجه هذا الامر اثناء مراجعتنا") ||
+        pageText.includes("المراجع") ||
+        pageText.includes("تقرير المراجع") ||
+        pageText.includes("key audit") ||
+        pageText.includes("key audit matters") ||
+        pageText.includes("auditor") ||
+        pageText.includes("independent auditor");
 
-  if (auditNarrativeHits) {
-    score -= 220;
-    reasons.push("auditNarrativePenalty:-220");
-  }
+      if (auditNarrativeHits) {
+        score -= 220;
+        reasons.push("auditNarrativePenalty:-220");
+      }
 
-  return {
-    score,
-    reasons,
-    signals
-  };
-}
+      return {
+        score,
+        reasons,
+        signals
+      };
+    }
 
     function rankPages(kind) {
       const cfg = mergeStatementConfigWithSectorKeywords(
@@ -1619,10 +1619,6 @@ const normalizedPrev = null;
     const rankedIncome = rankPages("income");
     const rankedCashflow = rankPages("cashflow");
 
-    // =========================================================
-    // Score Calibration Layer
-    // =========================================================
-
     function normalizeRankingScores(list) {
       if (!Array.isArray(list) || !list.length) return [];
 
@@ -1639,10 +1635,6 @@ const normalizedPrev = null;
     const calibratedIncome = normalizeRankingScores(rankedIncome);
     const calibratedBalance = normalizeRankingScores(rankedBalance);
     const calibratedCashflow = normalizeRankingScores(rankedCashflow);
-
-    // =========================================================
-    // Confidence Score
-    // =========================================================
 
     function computeConfidence(rankList) {
       if (!rankList || rankList.length < 2) return 0.5;
@@ -1733,10 +1725,11 @@ const normalizedPrev = null;
         score += s;
         reasons.push(`structureAll:+${s}`);
       }
+
       if (titleHits.length === 0 && structureHitsFirstRows.length === 0) {
-  score -= 70;
-  reasons.push("noTitleNoFirstRows:-70");
-}
+        score -= 70;
+        reasons.push("noTitleNoFirstRows:-70");
+      }
 
       if (structureHitsFirstRows.length > 0) {
         const s = Math.min(structureHitsFirstRows.length, 5) * 20;
@@ -1745,14 +1738,14 @@ const normalizedPrev = null;
       }
 
       if (titleHits.length > 0) {
-  const base = Math.min(titleHits.length, 2) * 20;
-  const multiplier = structureHitsAll.length > 0 || structureHitsFirstRows.length > 0 ? 1 : 0.5;
-  const s = Math.round(base * multiplier);
-  score += s;
-  reasons.push(`title:+${s}`);
-}
+        const base = Math.min(titleHits.length, 2) * 20;
+        const multiplier = structureHitsAll.length > 0 || structureHitsFirstRows.length > 0 ? 1 : 0.5;
+        const s = Math.round(base * multiplier);
+        score += s;
+        reasons.push(`title:+${s}`);
+      }
 
-            if (candidateCtx.hasYearLikeHeader) {
+      if (candidateCtx.hasYearLikeHeader) {
         score += 15;
         reasons.push("yearHeader:+15");
       }
@@ -1831,8 +1824,8 @@ const normalizedPrev = null;
 
         const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
         if (otherTitleHits.length >= 1) {
-  return true;
-}
+          return true;
+        }
       }
 
       return false;
@@ -1843,35 +1836,11 @@ const normalizedPrev = null;
 
       let score = 0;
 
-      if (
-        Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1
-      ) {
-        score += 20;
-      }
-
-      if (
-        Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20
-      ) {
-        score += 20;
-      }
-
-      if (
-        Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20
-      ) {
-        score += 20;
-      }
-
-      if (
-        baseCtx.years &&
-        candidateCtx.years &&
-        baseCtx.years.some((y) => candidateCtx.years.includes(y))
-      ) {
-        score += 20;
-      }
-
-      if ((baseCtx.mainRowCount || 0) > 5 && (candidateCtx.mainRowCount || 0) > 5) {
-        score += 20;
-      }
+      if (Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1) score += 20;
+      if (Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20) score += 20;
+      if (Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20) score += 20;
+      if (baseCtx.years && candidateCtx.years && baseCtx.years.some((y) => candidateCtx.years.includes(y))) score += 20;
+      if ((baseCtx.mainRowCount || 0) > 5 && (candidateCtx.mainRowCount || 0) > 5) score += 20;
 
       return score >= 60;
     }
@@ -1902,10 +1871,7 @@ const normalizedPrev = null;
         prevCtx &&
         prevEval.score >= 55 &&
         !pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
-        (
-  looksLikeSameStatement(baseCtx, prevCtx) ||
-  prevEval.score >= 120
-)
+        (looksLikeSameStatement(baseCtx, prevCtx) || prevEval.score >= 120)
       ) {
         pages.unshift(prevCtx.pageNumber);
       }
@@ -1914,36 +1880,33 @@ const normalizedPrev = null;
         nextCtx &&
         nextEval.score >= 65 &&
         !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
-        (
-  looksLikeSameStatement(baseCtx, nextCtx) ||
-  nextEval.score >= 120
-)
+        (looksLikeSameStatement(baseCtx, nextCtx) || nextEval.score >= 120)
       ) {
         pages.push(nextCtx.pageNumber);
       }
 
       return {
-  basePage: basePageNumber,
-  pages: unique(pages).sort((a, b) => a - b),
-  details: {
-    acceptedPrevious: pages.includes(prevCtx?.pageNumber),
-    acceptedNext: pages.includes(nextCtx?.pageNumber),
-    previousPage: prevCtx
-      ? {
-          pageNumber: prevCtx.pageNumber,
-          score: prevEval.score,
-          reasons: prevEval.reasons
+        basePage: basePageNumber,
+        pages: unique(pages).sort((a, b) => a - b),
+        details: {
+          acceptedPrevious: pages.includes(prevCtx?.pageNumber),
+          acceptedNext: pages.includes(nextCtx?.pageNumber),
+          previousPage: prevCtx
+            ? {
+                pageNumber: prevCtx.pageNumber,
+                score: prevEval.score,
+                reasons: prevEval.reasons
+              }
+            : null,
+          nextPage: nextCtx
+            ? {
+                pageNumber: nextCtx.pageNumber,
+                score: nextEval.score,
+                reasons: nextEval.reasons
+              }
+            : null
         }
-      : null,
-    nextPage: nextCtx
-      ? {
-          pageNumber: nextCtx.pageNumber,
-          score: nextEval.score,
-          reasons: nextEval.reasons
-        }
-      : null
-  }
-};
+      };
     }
 
     if (incomePage && balancePage && incomePage === balancePage) {
@@ -1951,52 +1914,47 @@ const normalizedPrev = null;
       const balanceScore = rankedBalance.find((p) => p.pageNumber === balancePage)?.score ?? -999999;
 
       if (balanceScore >= incomeScore) {
-        incomePage = findAlternative(
-  rankedIncome,
-  new Set([balancePage, cashFlowPage].filter(Boolean))
-) || incomePage;
+        incomePage =
+          findAlternative(rankedIncome, new Set([balancePage, cashFlowPage].filter(Boolean))) || incomePage;
       } else {
-        balancePage = findAlternative(
-          rankedBalance,
-          new Set([incomePage, ...strongIncomePages, cashFlowPage].filter(Boolean))
-        ) || balancePage;
+        balancePage =
+          findAlternative(
+            rankedBalance,
+            new Set([incomePage, ...strongIncomePages, cashFlowPage].filter(Boolean))
+          ) || balancePage;
       }
     }
 
     if (incomePage && cashFlowPage && incomePage === cashFlowPage) {
-      cashFlowPage = findAlternative(
-        rankedCashflow,
-        new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
-      ) || cashFlowPage;
+      cashFlowPage =
+        findAlternative(
+          rankedCashflow,
+          new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
+        ) || cashFlowPage;
     }
 
     if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
-      cashFlowPage = findAlternative(
-        rankedCashflow,
-        new Set([balancePage, incomePage, ...strongBalancePages].filter(Boolean))
-      ) || cashFlowPage;
+      cashFlowPage =
+        findAlternative(
+          rankedCashflow,
+          new Set([balancePage, incomePage, ...strongBalancePages].filter(Boolean))
+        ) || cashFlowPage;
     }
 
-    if (
-      incomePage &&
-      strongCashflowPages.has(incomePage) &&
-      !strongIncomePages.has(incomePage)
-    ) {
-      incomePage = findAlternative(
-        rankedIncome,
-        new Set([balancePage, cashFlowPage, ...strongCashflowPages].filter(Boolean))
-      ) || incomePage;
+    if (incomePage && strongCashflowPages.has(incomePage) && !strongIncomePages.has(incomePage)) {
+      incomePage =
+        findAlternative(
+          rankedIncome,
+          new Set([balancePage, cashFlowPage, ...strongCashflowPages].filter(Boolean))
+        ) || incomePage;
     }
 
-    if (
-      cashFlowPage &&
-      strongIncomePages.has(cashFlowPage) &&
-      !strongCashflowPages.has(cashFlowPage)
-    ) {
-      cashFlowPage = findAlternative(
-        rankedCashflow,
-        new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
-      ) || cashFlowPage;
+    if (cashFlowPage && strongIncomePages.has(cashFlowPage) && !strongCashflowPages.has(cashFlowPage)) {
+      cashFlowPage =
+        findAlternative(
+          rankedCashflow,
+          new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
+        ) || cashFlowPage;
     }
 
     const incomeContinuation = detectStatementContinuation(incomePage, "income");
@@ -2004,29 +1962,30 @@ const normalizedPrev = null;
     const cashflowContinuation = detectStatementContinuation(cashFlowPage, "cashflow");
 
     const statementPageRanges = {
-      
       income: incomeContinuation.pages,
       balance: balanceContinuation.pages,
       cashflow: cashflowContinuation.pages
     };
-    const  = {
-  income: {
-    basePage: incomePage,
-    pages: statementPageRanges.income,
-    pageContexts: getPageContextsByNumbers(statementPageRanges.income)
-  },
-  balance: {
-    basePage: balancePage,
-    pages: statementPageRanges.balance,
-    pageContexts: getPageContextsByNumbers(statementPageRanges.balance)
-  },
-  cashflow: {
-    basePage: cashFlowPage,
-    pages: statementPageRanges.cashflow,
-    pageContexts: getPageContextsByNumbers(statementPageRanges.cashflow)
-  }
-};
-        // =========================================================
+
+    const statementSelectionResolved = {
+      income: {
+        basePage: incomePage,
+        pages: statementPageRanges.income,
+        pageContexts: getPageContextsByNumbers(statementPageRanges.income)
+      },
+      balance: {
+        basePage: balancePage,
+        pages: statementPageRanges.balance,
+        pageContexts: getPageContextsByNumbers(statementPageRanges.balance)
+      },
+      cashflow: {
+        basePage: cashFlowPage,
+        pages: statementPageRanges.cashflow,
+        pageContexts: getPageContextsByNumbers(statementPageRanges.cashflow)
+      }
+    };
+
+    // =========================================================
     // Layer 5: Raw Financial Row Extraction
     // =========================================================
 
@@ -2036,7 +1995,7 @@ const normalizedPrev = null;
       return String(row[idx] == null ? "" : row[idx]).trim();
     }
 
-    function pickFallbackLabelCell(row, header) {
+    function pickFallbackLabelCell(row, header, statementType) {
       if (!Array.isArray(row) || !row.length) return "";
 
       const reserved = new Set(
@@ -2051,6 +2010,7 @@ const normalizedPrev = null;
         .map((cell, idx) => ({ idx, cell: String(cell == null ? "" : cell).trim() }))
         .filter((x) => !reserved.has(x.idx))
         .filter((x) => isLikelyTextLabelCell(x.cell))
+        .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
         .sort((a, b) => a.idx - b.idx);
 
       return candidates[0]?.cell || "";
@@ -2134,22 +2094,16 @@ const normalizedPrev = null;
       return currentValue != null || previousValue != null;
     }
 
-    function shouldSkipExtractedRow({ row, rowIndex, label, statementType, pageCtx }) {
+    function shouldSkipExtractedRow({ row, rowIndex, label, statementType, pageCtx, currentYearValue, previousYearValue }) {
       const cleanLabel = normalizeLabelForRow(label);
       const normalizedLabel = normalizeText(cleanLabel);
 
       if (!cleanLabel) return true;
-
       if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
-
       if (isLikelyMetaOrHeaderLabel(cleanLabel)) return true;
-
       if (isLikelyStatementTitleRow(cleanLabel, statementType)) return true;
-
       if (isLikelyReferenceValue(cleanLabel)) return true;
-
       if (normalizedLabel.length <= 1) return true;
-
       if (!/[A-Za-z\u0600-\u06FF]/.test(cleanLabel)) return true;
 
       if (
@@ -2162,6 +2116,14 @@ const normalizedPrev = null;
       }
 
       if (!rowHasUsefulNumericValue(row, pageCtx?.header)) return true;
+
+      if (
+        statementType === "income" &&
+        currentYearValue == null &&
+        previousYearValue == null
+      ) {
+        return true;
+      }
 
       return false;
     }
@@ -2180,7 +2142,7 @@ const normalizedPrev = null;
         if (!Array.isArray(row) || !row.length) continue;
 
         const labelFromHeader = getCell(row, header.labelCol);
-        const fallbackLabel = pickFallbackLabelCell(row, header);
+        const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
         const label = normalizeLabelForRow(labelFromHeader || fallbackLabel);
 
         const noteRaw = getCell(row, header.noteCol);
@@ -2198,7 +2160,9 @@ const normalizedPrev = null;
             rowIndex,
             label,
             statementType,
-            pageCtx
+            pageCtx,
+            currentYearValue,
+            previousYearValue
           })
         ) {
           continue;
@@ -2256,7 +2220,7 @@ const normalizedPrev = null;
       return out;
     }
 
-    function extractStatementRows() {
+    function extractStatementRows(statementSelection) {
       const result = {
         income: [],
         balance: [],
@@ -2264,7 +2228,7 @@ const normalizedPrev = null;
       };
 
       for (const statementType of ["income", "balance", "cashflow"]) {
-        const entry = ?.[statementType];
+        const entry = statementSelection?.[statementType];
         const pageContextsForStatement = Array.isArray(entry?.pageContexts)
           ? entry.pageContexts
           : [];
@@ -2279,14 +2243,14 @@ const normalizedPrev = null;
       return result;
     }
 
-    const financialRows = extractStatementRows();
+    const financialRows = extractStatementRows(statementSelectionResolved);
 
     return send(200, {
       ok: true,
       sector: finalSector,
       sectorInfo,
       activeSectorProfile: finalSectorProfile,
-      engine: "extract-financial-v6.7",
+      engine: "extract-financial-v6.8",
       phase: "5_sector_keyword_ranking_safe_build",
       fileName: body.fileName || normalized?.meta?.fileName || null,
       statementProfile,
@@ -2299,25 +2263,23 @@ const normalizedPrev = null;
 
       statementPageRanges,
       statementSelection: {
-  income: {
-    basePage: incomePage,
-    pages: statementPageRanges.income
-  },
-  balance: {
-    basePage: balancePage,
-    pages: statementPageRanges.balance
-  },
-  cashflow: {
-    basePage: cashFlowPage,
-    pages: statementPageRanges.cashflow
-  }
-},
+        income: {
+          basePage: incomePage,
+          pages: statementPageRanges.income
+        },
+        balance: {
+          basePage: balancePage,
+          pages: statementPageRanges.balance
+        },
+        cashflow: {
+          basePage: cashFlowPage,
+          pages: statementPageRanges.cashflow
+        }
+      },
       statementSelectionResolved,
       financialRows,
-    
 
       confidence,
-      
 
       debug: {
         continuation: {
@@ -2353,7 +2315,6 @@ const normalizedPrev = null;
     });
   }
 };
-
 
 
 
