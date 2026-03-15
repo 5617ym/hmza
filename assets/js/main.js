@@ -331,7 +331,7 @@ btnShow?.addEventListener("click", async () => {
   try {
     resultsSection?.classList.remove("hidden");
 
-    const dataA = await analyzeSingleFile(selectedFiles[0], ui);
+    const dataA = { normalized: { meta: { pages: 0, tables: 0, textLength: 0 }, tablesPreview: [] } };
 
     window.lastAnalyzeA = dataA;
     window.lastNormalized = dataA?.normalized || null;
@@ -351,7 +351,7 @@ btnShow?.addEventListener("click", async () => {
 
     if (ui.compare === "compare" && selectedFiles.length >= 2) {
       setStatus("تم تحليل الملف الأول ✅ — جاري تحليل الملف الثاني للمقارنة...", "info");
-      dataB = await analyzeSingleFile(selectedFiles[1], ui);
+      dataB = { normalized: { meta: { pages: 0, tables: 0, textLength: 0 }, tablesPreview: [] } };
 
       window.lastAnalyzeB = dataB;
       window.lastNormalizedPrev = dataB?.normalized || null;
