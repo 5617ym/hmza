@@ -2026,6 +2026,260 @@ const normalizedPrev = null;
     pageContexts: getPageContextsByNumbers(statementPageRanges.cashflow)
   }
 };
+        // =========================================================
+    // Layer 5: Raw Financial Row Extraction
+    // =========================================================
+
+    function getCell(row, idx) {
+      if (!Array.isArray(row)) return "";
+      if (!Number.isFinite(idx)) return "";
+      return String(row[idx] == null ? "" : row[idx]).trim();
+    }
+
+    function pickFallbackLabelCell(row, header) {
+      if (!Array.isArray(row) || !row.length) return "";
+
+      const reserved = new Set(
+        [
+          header?.currentCol,
+          header?.previousCol,
+          header?.noteCol
+        ].filter((x) => Number.isFinite(x))
+      );
+
+      const candidates = row
+        .map((cell, idx) => ({ idx, cell: String(cell == null ? "" : cell).trim() }))
+        .filter((x) => !reserved.has(x.idx))
+        .filter((x) => isLikelyTextLabelCell(x.cell))
+        .sort((a, b) => a.idx - b.idx);
+
+      return candidates[0]?.cell || "";
+    }
+
+    function normalizeLabelForRow(label) {
+      return cleanupLabel(
+        String(label || "")
+          .replace(/\.+$/g, "")
+          .replace(/\s{2,}/g, " ")
+          .trim()
+      );
+    }
+
+    function isLikelyStatementTitleRow(label, statementType) {
+      const s = normalizeText(label);
+
+      if (!s) return false;
+
+      const titleMap = {
+        income: [
+          "قائمة الدخل",
+          "قائمة الارباح والخسائر",
+          "قائمة الأرباح والخسائر",
+          "statement of income",
+          "income statement",
+          "statement of profit or loss",
+          "profit or loss"
+        ],
+        balance: [
+          "قائمة المركز المالي",
+          "المركز المالي",
+          "قائمة الوضع المالي",
+          "statement of financial position",
+          "balance sheet",
+          "financial position"
+        ],
+        cashflow: [
+          "قائمة التدفقات النقدية",
+          "بيان التدفقات النقدية",
+          "التدفقات النقدية",
+          "statement of cash flows",
+          "cash flow statement"
+        ]
+      };
+
+      return (titleMap[statementType] || []).some((x) => s.includes(normalizeText(x)));
+    }
+
+    function isLikelyMetaOrHeaderLabel(label) {
+      const s = normalizeText(label);
+
+      if (!s) return true;
+
+      return (
+        isLikelyStatementDateText(s) ||
+        isLikelyStandardEffectiveDateText(s) ||
+        isLikelyNarrativeLine(s) ||
+        isQuarterOrPeriodCell(s) ||
+        s === "البيان" ||
+        s === "البيانات" ||
+        s === "description" ||
+        s === "particulars" ||
+        s === "item" ||
+        s === "البند" ||
+        s === "بنود" ||
+        s === "notes" ||
+        s === "note" ||
+        s === "ايضاح" ||
+        s === "الايضاح"
+      );
+    }
+
+    function rowHasUsefulNumericValue(row, header) {
+      const currentRaw = getCell(row, header?.currentCol);
+      const previousRaw = getCell(row, header?.previousCol);
+
+      const currentValue = parseNumberSmart(currentRaw);
+      const previousValue = parseNumberSmart(previousRaw);
+
+      return currentValue != null || previousValue != null;
+    }
+
+    function shouldSkipExtractedRow({ row, rowIndex, label, statementType, pageCtx }) {
+      const cleanLabel = normalizeLabelForRow(label);
+      const normalizedLabel = normalizeText(cleanLabel);
+
+      if (!cleanLabel) return true;
+
+      if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
+
+      if (isLikelyMetaOrHeaderLabel(cleanLabel)) return true;
+
+      if (isLikelyStatementTitleRow(cleanLabel, statementType)) return true;
+
+      if (isLikelyReferenceValue(cleanLabel)) return true;
+
+      if (normalizedLabel.length <= 1) return true;
+
+      if (!/[A-Za-z\u0600-\u06FF]/.test(cleanLabel)) return true;
+
+      if (
+        normalizedLabel.includes("الايضاحات المرفقه") ||
+        normalizedLabel.includes("الإيضاحات المرفقة") ||
+        normalizedLabel.includes("integral part") ||
+        normalizedLabel.includes("accompanying notes")
+      ) {
+        return true;
+      }
+
+      if (!rowHasUsefulNumericValue(row, pageCtx?.header)) return true;
+
+      return false;
+    }
+
+    function extractRowsFromPageContext(pageCtx, statementType) {
+      if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
+        return [];
+      }
+
+      const rows = pageCtx.mainRows;
+      const header = pageCtx.header || {};
+      const extracted = [];
+
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex];
+        if (!Array.isArray(row) || !row.length) continue;
+
+        const labelFromHeader = getCell(row, header.labelCol);
+        const fallbackLabel = pickFallbackLabelCell(row, header);
+        const label = normalizeLabelForRow(labelFromHeader || fallbackLabel);
+
+        const noteRaw = getCell(row, header.noteCol);
+        const note = isLikelyReferenceValue(noteRaw) ? noteRaw : null;
+
+        const currentYearValueRaw = getCell(row, header.currentCol);
+        const previousYearValueRaw = getCell(row, header.previousCol);
+
+        const currentYearValue = parseNumberSmart(currentYearValueRaw);
+        const previousYearValue = parseNumberSmart(previousYearValueRaw);
+
+        if (
+          shouldSkipExtractedRow({
+            row,
+            rowIndex,
+            label,
+            statementType,
+            pageCtx
+          })
+        ) {
+          continue;
+        }
+
+        extracted.push({
+          statementType,
+          pageNumber: pageCtx.pageNumber,
+          rowIndex,
+          label,
+          note,
+          currentYear: {
+            year: Number.isFinite(header.latest) ? header.latest : null,
+            value: currentYearValue
+          },
+          previousYear: {
+            year: Number.isFinite(header.previous) ? header.previous : null,
+            value: previousYearValue
+          },
+          source: {
+            labelCol: Number.isFinite(header.labelCol) ? header.labelCol : null,
+            noteCol: Number.isFinite(header.noteCol) ? header.noteCol : null,
+            currentCol: Number.isFinite(header.currentCol) ? header.currentCol : null,
+            previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
+            resolutionMode: header.resolutionMode || null,
+            direction: header.direction || null
+          },
+          rawRow: row
+        });
+      }
+
+      return extracted;
+    }
+
+    function dedupeExtractedRows(rows) {
+      const seen = new Set();
+      const out = [];
+
+      for (const row of rows || []) {
+        const key = [
+          row.statementType,
+          row.pageNumber,
+          row.label,
+          row.currentYear?.year,
+          row.currentYear?.value,
+          row.previousYear?.year,
+          row.previousYear?.value
+        ].join("|");
+
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(row);
+      }
+
+      return out;
+    }
+
+    function extractStatementRows(statementSelectionResolved) {
+      const result = {
+        income: [],
+        balance: [],
+        cashflow: []
+      };
+
+      for (const statementType of ["income", "balance", "cashflow"]) {
+        const entry = statementSelectionResolved?.[statementType];
+        const pageContextsForStatement = Array.isArray(entry?.pageContexts)
+          ? entry.pageContexts
+          : [];
+
+        const rows = pageContextsForStatement.flatMap((pageCtx) =>
+          extractRowsFromPageContext(pageCtx, statementType)
+        );
+
+        result[statementType] = dedupeExtractedRows(rows);
+      }
+
+      return result;
+    }
+
+    const financialRows = extractStatementRows(statementSelectionResolved);
 
     return send(200, {
       ok: true,
@@ -2059,8 +2313,10 @@ const normalizedPrev = null;
   }
 },
       statementSelectionResolved,
+      financialRows,
 
       confidence,
+      
 
       debug: {
         continuation: {
