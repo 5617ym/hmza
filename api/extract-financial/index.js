@@ -2377,6 +2377,11 @@ module.exports = async function (context, req) {
     function hasReliableCashflowEvidence(rankedEntry, pageCtx) {
       if (!rankedEntry || !pageCtx) return false;
       if (isLikelyAssetRollforwardPage(pageCtx)) return false;
+      if (pageCtx.isLikelyIndexPage) return false;
+      if (pageCtx.isLikelyNarrativePage) return false;
+
+      const header = pageCtx?.header || {};
+      const resolutionMode = String(header?.resolutionMode || "").trim();
 
       const titleHitsCount =
         (rankedEntry?.signals?.titleHitsHeader?.length || 0) +
@@ -2416,8 +2421,23 @@ module.exports = async function (context, req) {
         .filter(Boolean);
 
       const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
-        return hasLetterChars(label) && isAcceptableFinancialLabel(label, "cashflow");
+        return (
+          hasLetterChars(label) &&
+          isAcceptableFinancialLabel(label, "cashflow") &&
+          !isLikelyMetaOrHeaderLabel(label) &&
+          !isLikelyStatementTitleRow(label, "cashflow")
+        );
       }).length;
+
+      const weakSingleNumericColumn =
+        resolutionMode === "single_numeric_column" &&
+        titleHitsCount === 0 &&
+        structureHitsCount === 0 &&
+        cashflowCoreHits.length === 0;
+
+      if (weakSingleNumericColumn) {
+        return false;
+      }
 
       if (titleHitsCount > 0 || structureHitsCount > 0 || cashflowCoreHits.length > 0) {
         return true;
@@ -2940,6 +2960,32 @@ module.exports = async function (context, req) {
         previousYearValue == null
       ) {
         return true;
+      }
+
+      if (statementType === "cashflow") {
+        const resolutionMode = String(pageCtx?.header?.resolutionMode || "").trim();
+
+        if (pageCtx?.isLikelyIndexPage || pageCtx?.isLikelyNarrativePage) {
+          return true;
+        }
+
+        if (
+          resolutionMode === "single_numeric_column" &&
+          !containsAny(
+            cleanLabel,
+            [
+              "التدفقات النقدية",
+              "صافي النقد",
+              "النقدية وما يعادلها",
+              "النقد وما في حكمه",
+              "cash flow",
+              "net cash",
+              "cash and cash equivalents"
+            ]
+          )
+        ) {
+          return true;
+        }
       }
 
       if (!isAcceptableFinancialLabel(cleanLabel, statementType)) {
