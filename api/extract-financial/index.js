@@ -2211,6 +2211,11 @@ module.exports = async function (context, req) {
         reasons.push("auditNarrativePenalty:-220");
       }
 
+      if (kind === "cashflow" && isLikelyAssetRollforwardPage(pageCtx)) {
+        score -= 260;
+        reasons.push("assetRollforwardPenalty:-260");
+      }
+
       return {
         score,
         reasons,
@@ -2879,53 +2884,6 @@ module.exports = async function (context, req) {
 
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
 
-      const acceptableCandidates = candidates
-        .map((candidate) => normalizeLabelForRow(candidate))
-        .filter((candidate) => isAcceptableFinancialLabel(candidate, statementType));
-
-      const missingLabelsCount = rawEntries.filter((en) => {
-        const finalLabel = normalizeLabelForRow(en?.labelCandidate);
-        return !isAcceptableFinancialLabel(finalLabel, statementType);
-      }).length;
-
-      const shouldUseSequentialRecovery =
-        statementType === "income" &&
-        !Number.isFinite(pageCtx?.header?.labelCol) &&
-        missingLabelsCount > 0 &&
-        acceptableCandidates.length >= rawEntries.length &&
-        missingLabelsCount >= Math.ceil(rawEntries.length * 0.5);
-
-      if (shouldUseSequentialRecovery) {
-        return rawEntries.map((en, index) => {
-          const finalLabel = normalizeLabelForRow(en.labelCandidate);
-
-          if (isAcceptableFinancialLabel(finalLabel, statementType)) {
-            return {
-              ...en,
-              label: finalLabel
-            };
-          }
-
-          const sequentialLabel = acceptableCandidates[index] || "";
-
-          if (isAcceptableFinancialLabel(sequentialLabel, statementType)) {
-            return {
-              ...en,
-              label: sequentialLabel,
-              source: {
-                ...en.source,
-                labelRecoveredFrom: "page_text_sequential"
-              }
-            };
-          }
-
-          return {
-            ...en,
-            label: finalLabel
-          };
-        });
-      }
-
       return rawEntries.map((en) => {
         const finalLabel = normalizeLabelForRow(en.labelCandidate);
 
@@ -3037,6 +2995,39 @@ module.exports = async function (context, req) {
       return out;
     }
 
+    function buildMissingLabelDiagnostics(rawEntries, repairedEntries, pageCtx, statementType) {
+      const acceptableTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType)
+        .filter((label) => isAcceptableFinancialLabel(label, statementType));
+
+      const noteLikeRawCount = (rawEntries || []).filter((entry) => {
+        const candidate = normalizeLabelForRow(entry?.labelCandidate);
+        return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
+      }).length;
+
+      const acceptedCount = (repairedEntries || []).filter((entry) => {
+        const label = normalizeLabelForRow(entry?.label);
+        return isAcceptableFinancialLabel(label, statementType);
+      }).length;
+
+      const header = pageCtx?.header || {};
+      const likelyMissingLabelsInPayload =
+        statementType === "income" &&
+        !Number.isFinite(header.labelCol) &&
+        rawEntries.length > 0 &&
+        acceptedCount === 0 &&
+        acceptableTextCandidates.length === 0;
+
+      return {
+        likelyMissingLabelsInPayload,
+        acceptableTextCandidatesCount: acceptableTextCandidates.length,
+        noteLikeOrRejectedRawLabelsCount: noteLikeRawCount,
+        acceptedLabelCountAfterRepair: acceptedCount,
+        reason: likelyMissingLabelsInPayload
+          ? "income_labels_missing_from_payload"
+          : null
+      };
+    }
+
     function buildExtractionDiagnostics(statementSelection) {
       const diagnostics = {};
 
@@ -3063,12 +3054,20 @@ module.exports = async function (context, req) {
             });
           });
 
+          const missingLabelDiagnostics = buildMissingLabelDiagnostics(
+            rawEntries,
+            repairedEntries,
+            pageCtx,
+            statementType
+          );
+
           return {
             pageNumber: pageCtx.pageNumber,
             rawEntriesCount: rawEntries.length,
             repairedEntriesCount: repairedEntries.length,
             acceptedEntriesCount: acceptedEntries.length,
             header: pageCtx.header,
+            missingLabelDiagnostics,
             sampleRaw: rawEntries.slice(0, 3).map((x) => ({
               rowIndex: x.rowIndex,
               labelCandidate: x.labelCandidate,
