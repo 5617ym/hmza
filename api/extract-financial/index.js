@@ -1367,6 +1367,62 @@ module.exports = async function (context, req) {
       return pageContexts.filter((p) => wanted.has(p.pageNumber));
     }
 
+    function isLikelyAssetRollforwardPage(pageCtx) {
+      const text = normalizeText(
+        [
+          pageCtx?.headerText || "",
+          pageCtx?.mainTableText || "",
+          pageCtx?.structuralText || "",
+          pageCtx?.text || ""
+        ].join("\n")
+      );
+
+      if (!text) return false;
+
+      const rollforwardHeaderHits = countDistinctPhraseHits(text, [
+        "صافي القيمة الدفترية",
+        "خسارة الانخفاض في القيمة",
+        "الانخفاض في القيمة خسائر",
+        "الاستهلاك المتراكم",
+        "مجمع الاستهلاك",
+        "التكلفة",
+        "cost",
+        "accumulated depreciation",
+        "accumulated amortization",
+        "impairment loss",
+        "net book value",
+        "carrying amount"
+      ]);
+
+      const cashflowCoreHits = countDistinctPhraseHits(text, [
+        "التدفقات النقدية من الانشطة التشغيلية",
+        "التدفقات النقدية من الانشطه التشغيليه",
+        "التدفقات النقدية من الأنشطة التشغيلية",
+        "التدفقات النقدية من الانشطة الاستثمارية",
+        "التدفقات النقدية من الأنشطة الاستثمارية",
+        "التدفقات النقدية من الانشطة التمويلية",
+        "التدفقات النقدية من الأنشطة التمويلية",
+        "صافي النقد الناتج من",
+        "صافي النقد المستخدم في",
+        "cash flows from operating activities",
+        "cash flows from investing activities",
+        "cash flows from financing activities",
+        "net cash from operating activities",
+        "net cash used in investing activities",
+        "net cash from financing activities"
+      ]);
+
+      const hasRollforwardHeader =
+        rollforwardHeaderHits.length >= 3 &&
+        (pageCtx?.mainColumnCount || 0) >= 4 &&
+        (pageCtx?.mainRowCount || 0) >= 8;
+
+      const lacksCashflowLanguage = cashflowCoreHits.length === 0;
+
+      return hasRollforwardHeader && lacksCashflowLanguage;
+    }
+
+
         // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
