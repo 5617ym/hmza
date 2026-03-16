@@ -840,6 +840,10 @@ module.exports = async function (context, req) {
       return /[A-Za-z]/.test(String(text || ""));
     }
 
+    function hasLetterChars(text) {
+      return /[A-Za-z\u0621-\u064A]/.test(String(text || ""));
+    }
+
     function isLikelyTextLabelCell(cell) {
       const raw = String(cell || "").trim();
       if (!raw) return false;
@@ -855,7 +859,7 @@ module.exports = async function (context, req) {
       const n = parseNumberSmart(raw);
       if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return false;
 
-      return /[A-Za-z\u0600-\u06FF]/.test(raw);
+      return hasLetterChars(raw);
     }
 
         function countLikelyTextLabels(rows, limit = 24) {
@@ -976,7 +980,7 @@ module.exports = async function (context, req) {
       const trimmed = cleanLabel.trim();
       const normalized = (normalizedLabel || "").trim();
 
-      if (!/[A-Za-z\u0600-\u06FF]/.test(trimmed)) return false;
+      if (!hasLetterChars(trimmed)) return false;
       if (normalized.length <= 2) return false;
       if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
       if (/^(19|20)\d{2}$/.test(trimmed)) return false;
@@ -1029,7 +1033,7 @@ module.exports = async function (context, req) {
         .filter((line) => !isQuarterOrPeriodCell(line))
         .filter((line) => !isPureNumericSymbolCell(line))
         .filter((line) => !isLikelyOnlyReferenceText(line))
-        .filter((line) => /[A-Za-z\u0600-\u06FF]/.test(line));
+        .filter((line) => hasLetterChars(line));
 
       const enriched = [];
 
@@ -2370,6 +2374,62 @@ module.exports = async function (context, req) {
       return pageContexts.find((p) => p.pageNumber === pageNumber) || null;
     }
 
+    function hasReliableCashflowEvidence(rankedEntry, pageCtx) {
+      if (!rankedEntry || !pageCtx) return false;
+      if (isLikelyAssetRollforwardPage(pageCtx)) return false;
+
+      const titleHitsCount =
+        (rankedEntry?.signals?.titleHitsHeader?.length || 0) +
+        (rankedEntry?.signals?.titleHitsAll?.length || 0);
+
+      const structureHitsCount =
+        (rankedEntry?.signals?.structureHitsAll?.length || 0) +
+        (rankedEntry?.signals?.structureHitsFirstRows?.length || 0);
+
+      const cashflowCoreHits = countDistinctPhraseHits(
+        getPageStatementText(pageCtx),
+        [
+          "التدفقات النقدية من الانشطة التشغيلية",
+          "التدفقات النقدية من الأنشطة التشغيلية",
+          "التدفقات النقدية من الانشطه التشغيليه",
+          "التدفقات النقدية من الانشطة الاستثمارية",
+          "التدفقات النقدية من الأنشطة الاستثمارية",
+          "التدفقات النقدية من الانشطة التمويلية",
+          "التدفقات النقدية من الأنشطة التمويلية",
+          "صافي النقد الناتج من",
+          "صافي النقد المستخدم في",
+          "النقدية وما يعادلها",
+          "النقد وما في حكمه",
+          "cash flows from operating activities",
+          "cash flows from investing activities",
+          "cash flows from financing activities",
+          "net cash from operating activities",
+          "net cash used in investing activities",
+          "net cash from financing activities",
+          "cash and cash equivalents"
+        ]
+      );
+
+      const topRecoveredLabels = extractRowsFromPageContext(pageCtx, "cashflow")
+        .slice(0, 5)
+        .map((row) => normalizeLabelForRow(row?.label))
+        .filter(Boolean);
+
+      const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
+        return hasLetterChars(label) && isAcceptableFinancialLabel(label, "cashflow");
+      }).length;
+
+      if (titleHitsCount > 0 || structureHitsCount > 0 || cashflowCoreHits.length > 0) {
+        return true;
+      }
+
+      if ((rankedEntry?.score ?? -999) >= 80 && validRecoveredLabelCount >= 3) {
+        return true;
+      }
+
+      return false;
+    }
+
     function getNeighborPageContext(basePageNumber, offset = 1) {
       if (!Number.isFinite(basePageNumber)) return null;
       return getPageContextByNumber(basePageNumber + offset);
@@ -2648,6 +2708,60 @@ module.exports = async function (context, req) {
           new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
         ) || cashFlowPage;
     }
+
+    const cashflowSelectionDiagnostics = (() => {
+      const selectedEntry = rankedCashflow.find((p) => p.pageNumber === cashFlowPage) || null;
+      const selectedPageCtx = getPageContextByNumber(cashFlowPage);
+
+      const reliableEntries = rankedCashflow.filter((entry) =>
+        hasReliableCashflowEvidence(entry, getPageContextByNumber(entry.pageNumber))
+      );
+
+      if (!selectedEntry || !selectedPageCtx) {
+        return {
+          reliableCandidateFound: false,
+          selectedPageReliable: false,
+          reason: "cashflow_page_not_selected",
+          topReliablePages: []
+        };
+      }
+
+      const selectedReliable = hasReliableCashflowEvidence(selectedEntry, selectedPageCtx);
+
+      if (selectedReliable) {
+        return {
+          reliableCandidateFound: true,
+          selectedPageReliable: true,
+          reason: null,
+          topReliablePages: reliableEntries.slice(0, 5).map((x) => x.pageNumber)
+        };
+      }
+
+      const fallbackReliable = reliableEntries.find((entry) =>
+        ![incomePage, balancePage].filter(Boolean).includes(entry.pageNumber)
+      ) || reliableEntries[0] || null;
+
+      if (fallbackReliable) {
+        cashFlowPage = fallbackReliable.pageNumber;
+        return {
+          reliableCandidateFound: true,
+          selectedPageReliable: false,
+          replacedWithReliablePage: fallbackReliable.pageNumber,
+          originalSelectedPage: selectedEntry.pageNumber,
+          reason: "cashflow_false_positive_replaced",
+          topReliablePages: reliableEntries.slice(0, 5).map((x) => x.pageNumber)
+        };
+      }
+
+      cashFlowPage = null;
+      return {
+        reliableCandidateFound: false,
+        selectedPageReliable: false,
+        originalSelectedPage: selectedEntry.pageNumber,
+        reason: "cashflow_no_reliable_candidate",
+        topReliablePages: []
+      };
+    })();
 
     const incomeContinuation = detectStatementContinuation(incomePage, "income");
     const balanceContinuation = detectStatementContinuation(balancePage, "balance");
