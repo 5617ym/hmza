@@ -4,23 +4,35 @@ PROJECT:
 Financial Statement Extraction Engine
 
 LAST_UPDATE:
-2026-03-14
+2026-03-16
 
 CURRENT_ENGINE_VERSION:
-extract-financial-v6.8
+extract-financial-v7.1
 
 CURRENT_PHASE:
 PHASE 5 – Financial Statement Intelligence Layer
 
 CURRENT_TASK:
-تثبيت استقرار Ranking و Multi-Page Statement Continuation Detection
-بعد إدخال تحسينات إضافية لمنع الصفحات غير المالية من الفوز في Ranking.
+تشخيص وحل مشكلة Input Resolution داخل extract-financial
+بعد ظهور أن النظام لا يقرأ normalized payload بشكل صحيح
+في بعض الاختبارات، مما أدى إلى:
+
+* meta.pages = 0
+* meta.tables = 0
+* selectedPages = null
+* ranking arrays فارغة
+* financialRows فارغة
 
 التركيز الحالي كان على:
 
-* منع صفحات **Audit Narrative** من الفوز
-* تقليل فوز الصفحات التي تحتوي أرقام فقط
-* تحسين دقة اكتشاف القوائم المالية الثلاث
+* التأكد من مصدر البيانات الداخلة إلى extract-financial
+* منع الاعتماد الأعمى على req.body.normalized فقط
+* دعم أكثر من شكل محتمل للـ payload
+* إضافة طبقة Debug واضحة لمعرفة هل المشكلة من:
+  * input payload
+  * local test file
+  * input envelope
+  * normalized resolution
 
 القوائم المستهدفة:
 
@@ -227,57 +239,173 @@ nextEval.score >= 65
 
 ---
 
+8️⃣ Financial Line Item Extraction Preparation
+
+تم البدء في بناء طبقة استخراج البنود المالية نفسها،
+وليس فقط اختيار صفحات القوائم.
+
+تم العمل على:
+
+* collectNumericRows
+* repairMissingLabelsFromPageText
+* extractRowsFromPageContext
+* dedupeExtractedRows
+* buildExtractionDiagnostics
+
+الهدف كان:
+
+استخراج صفوف القوائم المالية مع:
+
+label
++
+note
++
+currentYear
++
+previousYear
++
+source
++
+rawRow
+
+لكن هذه الطبقة لم تُعتبر مستقرة بعد
+لأن المشكلة الأساسية ظهرت في Input Resolution
+قبل الوصول إلى اختبار نهائي موثوق للاستخراج.
+
+---
+
+9️⃣ Input Resolution Hardening
+
+أثناء اختبار ملف:
+
+jadwa-reit-layout.json
+
+ظهر أن النظام في بعض الحالات يرجع:
+
+* pages = 0
+* tables = 0
+* selectedPages = null
+* ranking = []
+* stageDiagnostics = []
+* financialRows = []
+
+رغم أن ملف الاختبار نفسه يحتوي فعليًا على:
+
+* pages = 34
+* tables = 32
+* textLength = 77227
+
+لذلك تم إدخال طبقة جديدة لفهم المدخلات بشكل أكثر احترافية:
+
+* isPlainObject
+* isNonEmptyObject
+* looksLikeNormalizedPayload
+* extractNormalizedCandidate
+* resolveInputEnvelope
+* readLocalTestPayload
+
+الهدف من هذه الطبقة:
+
+حل مشكلة أن extract-financial كان أحيانًا
+يفترض شكلًا واحدًا فقط للمدخلات،
+بينما الواقع أن الـ payload قد يصل بأكثر من شكل مثل:
+
+* req.body.normalized
+* req.body
+* local file envelope
+* local raw normalized
+* data.normalized
+* payload.normalized
+* result.normalized
+
+---
+
+🔟 Debug Input Resolution Layer
+
+تم إضافة debug واضح إلى المخرجات النهائية
+حتى نعرف بدقة أين الخلل عند كل اختبار.
+
+الطبقة الجديدة داخل debug:
+
+inputResolution
+
+وتعرض:
+
+* source
+* localTestPath
+* localFileExists
+* reqBodyKeys
+* envelopeKeys
+* normalizedKeys
+* resolvedPagesCount
+* resolvedTablesCount
+
+الهدف:
+
+منع العمل الأعمى
+وجعل أي فشل لاحق واضح المصدر:
+هل المشكلة من الكود؟
+أم من شكل payload؟
+أم من الملف المحلي؟
+أم من طريقة الاستدعاء؟
+
+---
+
 ## LATEST VALIDATION RESULT
 
-آخر اختبار للنظام أظهر النتائج التالية:
+آخر عمل اليوم لم يثبت نجاحًا نهائيًا في اختيار الصفحات
+أو استخراج البنود على ملف جدوى ريت بعد إدخال
+طبقة Input Resolution الجديدة.
 
-selectedPages:
+آخر نتيجة مهمة أظهرت:
 
-incomePage = 4
-balancePage = 7
-cashFlowPage = 9
+* meta.pages = 0
+* meta.tables = 0
+* textLength = 0
+* selectedPages = null
+* ranking arrays فارغة
+* stageDiagnostics فارغة
+* financialRows فارغة
 
-statementPageRanges:
+وهذا أكد أن المشكلة الحالية ليست في Ranking فقط،
+وليست في Continuation فقط،
+بل في مرحلة أسبق وهي:
 
-income:
-[4]
-
-balance:
-[7]
-
-cashflow:
-[9]
+Input Resolution / Normalized Payload Resolution
 
 النتيجة المهمة:
 
-النظام نجح في:
-
-* اكتشاف Income Statement
-* اكتشاف Balance Sheet
-* اكتشاف Cash Flow Statement
-* منع صفحات Audit Narrative من الفوز
-* منع الصفحات العامة من الفوز على القوائم
-* الحفاظ على استقرار Continuation Detection
+تم تحديد أن الأولوية الحالية يجب أن تكون
+تثبيت قراءة المدخلات بشكل صحيح أولًا
+قبل الحكم على طبقات Ranking أو Financial Row Extraction.
 
 ---
 
 ## CURRENT_STATUS
 
-المحرك الآن قادر على:
+المحرك الآن يمتلك فعليًا:
 
-✔ اكتشاف القطاع
-✔ تغيير منطق التحليل حسب القطاع
-✔ ترتيب الصفحات باستخدام Ranking متقدم
-✔ تقليل التقاط صفحات الإيضاحات
-✔ تقليل فوز الصفحات العامة
-✔ منع صفحات Audit Narrative
-✔ اكتشاف امتداد القوائم المالية
-✔ إرجاع نطاق الصفحات بدلاً من صفحة واحدة
-✔ توفير pageContexts لكل صفحة في القائمة
-✔ إرجاع statementSelectionResolved داخل المخرجات النهائية
-✔ تثبيت اختيار القوائم الثلاث في آخر عينة اختبار
+✔ Sector Detection
+✔ Sector-Aware Ranking
+✔ Continuation Detection
+✔ StatementSelectionResolved
+✔ بداية طبقة Financial Line Item Extraction
+✔ طبقة Input Resolution Debugging
+✔ تشخيص أوضح لنقطة الفشل الحالية
 
-المعمارية الحالية مستقرة.
+لكن ما زال غير محسوم بالكامل في هذه اللحظة:
+
+✖ ثبات قراءة normalized payload في جميع حالات الاختبار
+✖ ثبات selectedPages بعد إدخال تعديلات input resolution
+✖ ثبات ranking outputs بعد نفس التعديلات
+✖ تفعيل Financial Line Item Extraction على مخرجات صحيحة
+✖ اعتماد نتيجة نهائية مستقرة على ملف جدوى ريت في آخر اختبار
+
+المعنى العملي:
+
+المعمارية الأساسية قوية،
+لكن يوجد اختناق حالي في نقطة ربط المدخلات
+قبل انتقال البيانات لباقي الطبقات.
 
 ---
 
@@ -285,20 +413,30 @@ cashflow:
 
 الخطوة القادمة:
 
-إجراء مجموعة اختبارات إضافية
-على ملفات جديدة من قطاعات مختلفة
-للتأكد من استقرار:
+تثبيت Input Resolution بشكل نهائي
+ثم إعادة اختبار نفس ملف:
 
+jadwa-reit-layout.json
+
+بحيث يتحقق التالي أولًا:
+
+* meta.pages > 0
+* meta.tables > 0
+* pageContexts يتم بناؤها فعليًا
+* ranking arrays تحتوي نتائج
+* selectedPages لا تكون null
+
+بعد ذلك فقط:
+
+إعادة تقييم
 Ranking
 +
 Continuation Detection
-
-قبل الانتقال إلى المرحلة التالية:
-
++
 Financial Line Item Extraction
 
-وهي المرحلة التي يبدأ فيها النظام
-بفهم بنود القوائم المالية نفسها.
+على نفس الملف
+قبل الانتقال لاختبارات أوسع على ملفات أخرى.
 
 ---
 
@@ -306,6 +444,7 @@ Financial Line Item Extraction
 
 تعتبر هذه المرحلة مكتملة عندما يصبح النظام قادرًا على:
 
+* قراءة normalized payload بشكل صحيح من جميع مصادر الإدخال المعتمدة
 * اكتشاف القطاع
 * اختيار نوع القوائم حسب القطاع
 * تحديد صفحة بداية القائمة
@@ -314,6 +453,9 @@ Financial Line Item Extraction
 * تقليل فوز الصفحات العامة في Ranking
 * منع صفحات Audit Narrative من الفوز
 * منع ضم صفحة قائمة أخرى كاستمرار خاطئ
+* بناء statementSelectionResolved بشكل صحيح
+* تشغيل Financial Line Item Extraction على صفحات مالية صحيحة
+* إرجاع financialRows غير فارغة عند وجود بيانات مالية فعلية
 * الحفاظ على استقرار المعمارية الحالية
 
 ---
@@ -329,3 +471,10 @@ Financial Line Item Extraction
 Layer فوق النظام الحالي
 
 وليس إعادة بناء من الصفر.
+
+الأولوية الحالية ليست إضافة مزيد من الذكاء،
+بل تثبيت صحة مرور البيانات
+من input
+إلى normalized
+إلى ranking
+إلى extraction.
