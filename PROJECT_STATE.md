@@ -7,32 +7,40 @@ LAST_UPDATE:
 2026-03-16
 
 CURRENT_ENGINE_VERSION:
-extract-financial-v7.1
+extract-financial-v7.5
 
 CURRENT_PHASE:
 PHASE 5 – Financial Statement Intelligence Layer
 
 CURRENT_TASK:
-تشخيص وحل مشكلة Input Resolution داخل extract-financial
-بعد ظهور أن النظام لا يقرأ normalized payload بشكل صحيح
-في بعض الاختبارات، مما أدى إلى:
+تثبيت قراءة المدخلات + تثبيت تشخيص الاستخراج
+على ملف جدوى ريت، مع منع اختيار صفحات Cash Flow
+الخاطئة عندما لا يوجد مرشح موثوق فعليًا.
 
-* meta.pages = 0
-* meta.tables = 0
-* selectedPages = null
-* ranking arrays فارغة
-* financialRows فارغة
+بعد سلسلة اختبارات على:
 
-التركيز الحالي كان على:
+jadwa-reit-layout.json
 
-* التأكد من مصدر البيانات الداخلة إلى extract-financial
-* منع الاعتماد الأعمى على req.body.normalized فقط
-* دعم أكثر من شكل محتمل للـ payload
-* إضافة طبقة Debug واضحة لمعرفة هل المشكلة من:
-  * input payload
-  * local test file
-  * input envelope
-  * normalized resolution
+تم الوصول إلى نتيجة مهمة جدًا:
+
+* مشكلة Input Resolution تم حلها
+* meta.pages و meta.tables أصبحت تُقرأ بشكل صحيح
+* pageContexts أصبحت تُبنى فعليًا
+* selectedPages لم تعد null
+* Balance extraction أصبح يعمل
+* Income extraction تم تشخيص فشله بدقة
+* Cash Flow false positives تم منعها
+* النظام أصبح يُرجع cashFlowPage = null
+  بدل اختيار صفحة خاطئة ومضللة
+
+التركيز الحالي أصبح على:
+
+* تثبيت السلوك الصحيح عند نقص البيانات الفعلية في payload
+* جعل النظام يرفض الاستخراج الخاطئ بدل اختراع نتائج
+* توضيح سبب الفشل داخل debug بشكل صريح
+* الحفاظ على نجاح Balance extraction
+* اعتبار بعض الملفات حالات تشخيصية ناجحة
+  حتى لو لم تكتمل جميع القوائم بسبب نقص بيانات المصدر
 
 القوائم المستهدفة:
 
@@ -268,10 +276,6 @@ source
 +
 rawRow
 
-لكن هذه الطبقة لم تُعتبر مستقرة بعد
-لأن المشكلة الأساسية ظهرت في Input Resolution
-قبل الوصول إلى اختبار نهائي موثوق للاستخراج.
-
 ---
 
 9️⃣ Input Resolution Hardening
@@ -351,33 +355,107 @@ inputResolution
 
 ---
 
+1️⃣1️⃣ Missing Label Diagnostics Layer
+
+بعد نجاح قراءة المدخلات واختيار الصفحات،
+ظهر أن بعض الصفحات المالية الصحيحة
+قد لا تحتوي على labels داخل الـ payload نفسه.
+
+تمت إضافة طبقة تشخيص جديدة داخل:
+
+debug.stageDiagnostics.[statement].perPage[].missingLabelDiagnostics
+
+هذه الطبقة توضح:
+
+* likelyMissingLabelsInPayload
+* acceptableTextCandidatesCount
+* noteLikeOrRejectedRawLabelsCount
+* acceptedLabelCountAfterRepair
+* reason
+
+أهم فائدة:
+
+منع الفشل الصامت في extraction،
+وجعل النظام يصرح بوضوح عندما تكون
+المشكلة من نقص بيانات المصدر نفسها
+وليس من منطق الاستخراج فقط.
+
+---
+
+1️⃣2️⃣ Cash Flow False Positive Prevention
+
+خلال اختبار جدوى ريت،
+ظهر أن النظام قد يختار صفحات خاطئة كـ Cash Flow
+مثل:
+
+* Asset Rollforward pages
+* Index pages
+* Single numeric column pages
+* صفحات رقمية عامة بلا structure خاص بالتدفقات
+
+لذلك تم تنفيذ طبقات حماية إضافية مثل:
+
+* assetRollforwardPenalty
+* حمايات ضد index / الفهرس / الصفحة
+* منع قبول single_numeric_column كـ cashflow
+  بدون أدلة قوية
+* منع قبول labels الرقمية كسلاسل نصية
+* تحويل النتيجة إلى:
+
+cashFlowPage = null
+
+عندما لا يوجد مرشح موثوق فعليًا
+
+الهدف:
+
+أن يكون النظام صادقًا،
+فيرفض القوائم الخاطئة
+بدل أن يُرجع استخراجًا مضللًا.
+
+---
+
 ## LATEST VALIDATION RESULT
 
-آخر عمل اليوم لم يثبت نجاحًا نهائيًا في اختيار الصفحات
-أو استخراج البنود على ملف جدوى ريت بعد إدخال
-طبقة Input Resolution الجديدة.
+آخر اختبار مهم على ملف:
 
-آخر نتيجة مهمة أظهرت:
+jadwa-reit-layout.json
 
-* meta.pages = 0
-* meta.tables = 0
-* textLength = 0
-* selectedPages = null
-* ranking arrays فارغة
-* stageDiagnostics فارغة
-* financialRows فارغة
+أظهر ما يلي:
 
-وهذا أكد أن المشكلة الحالية ليست في Ranking فقط،
-وليست في Continuation فقط،
-بل في مرحلة أسبق وهي:
+* meta.pages = 34
+* meta.tables = 32
+* textLength = 77227
+* inputResolution يعمل بشكل صحيح
+* selectedPages أصبحت:
+  * incomePage = 8
+  * balancePage = 7
+  * cashFlowPage = null
 
-Input Resolution / Normalized Payload Resolution
+* statementSelectionResolved يعمل
+* Balance extraction يعمل فعليًا
+* financialRows.balance غير فارغة
+* financialRows.income = []
+* financialRows.cashflow = []
 
-النتيجة المهمة:
+لكن الأهم:
 
-تم تحديد أن الأولوية الحالية يجب أن تكون
-تثبيت قراءة المدخلات بشكل صحيح أولًا
-قبل الحكم على طبقات Ranking أو Financial Row Extraction.
+### Income
+تم إثبات أن الصفحة المختارة صحيحة تقريبًا،
+لكن الـ payload لا يحتوي على labels فعلية لبنود قائمة الدخل،
+لذلك أصبح النظام يوضح صراحة:
+
+reason = income_labels_missing_from_payload
+
+### Cash Flow
+تم منع النظام من اختيار صفحات خاطئة
+كقائمة تدفقات نقدية.
+
+والنتيجة النهائية أصبحت:
+
+* cashFlowPage = null
+* financialRows.cashflow = []
+
+وهذه نتيجة صحيحة وأفضل من استخراج خاطئ.
 
 ---
 
@@ -389,23 +467,25 @@ Input Resolution / Normalized Payload Resolution
 ✔ Sector-Aware Ranking
 ✔ Continuation Detection
 ✔ StatementSelectionResolved
-✔ بداية طبقة Financial Line Item Extraction
-✔ طبقة Input Resolution Debugging
-✔ تشخيص أوضح لنقطة الفشل الحالية
+✔ Input Resolution Debugging
+✔ Missing Label Diagnostics
+✔ Cash Flow False Positive Prevention
+✔ Balance extraction working
+✔ سلوك أكثر صدقًا عند نقص البيانات أو غياب مرشح موثوق
 
 لكن ما زال غير محسوم بالكامل في هذه اللحظة:
 
-✖ ثبات قراءة normalized payload في جميع حالات الاختبار
-✖ ثبات selectedPages بعد إدخال تعديلات input resolution
-✖ ثبات ranking outputs بعد نفس التعديلات
-✖ تفعيل Financial Line Item Extraction على مخرجات صحيحة
-✖ اعتماد نتيجة نهائية مستقرة على ملف جدوى ريت في آخر اختبار
+✖ Income extraction على الملفات التي لا تحتوي labels داخل payload
+✖ Cash Flow extraction على هذا الملف تحديدًا لعدم وجود مرشح موثوق
+✖ تعميم نفس الاستقرار على ملفات اختبار إضافية
+✖ توسيع hardening على حالات sector-specific الأكثر صعوبة
 
 المعنى العملي:
 
-المعمارية الأساسية قوية،
-لكن يوجد اختناق حالي في نقطة ربط المدخلات
-قبل انتقال البيانات لباقي الطبقات.
+المعمارية الأساسية أصبحت أقوى وأكثر نضجًا،
+وتم تجاوز اختناق Input Resolution بالكامل،
+لكن ما تبقى الآن هو hardening أوسع
+على ملفات جديدة وحالات edge cases إضافية.
 
 ---
 
@@ -413,30 +493,20 @@ Input Resolution / Normalized Payload Resolution
 
 الخطوة القادمة:
 
-تثبيت Input Resolution بشكل نهائي
-ثم إعادة اختبار نفس ملف:
+الانتقال من ملف جدوى ريت إلى ملفات اختبار جديدة
+مع الحفاظ على نفس البناء الحالي.
 
-jadwa-reit-layout.json
+الهدف من الخطوة التالية:
 
-بحيث يتحقق التالي أولًا:
-
-* meta.pages > 0
-* meta.tables > 0
-* pageContexts يتم بناؤها فعليًا
-* ranking arrays تحتوي نتائج
-* selectedPages لا تكون null
-
-بعد ذلك فقط:
-
-إعادة تقييم
-Ranking
-+
-Continuation Detection
-+
-Financial Line Item Extraction
-
-على نفس الملف
-قبل الانتقال لاختبارات أوسع على ملفات أخرى.
+* التأكد أن نجاح Input Resolution ثابت
+* التأكد أن Balance extraction ثابت عبر ملفات أخرى
+* اختبار هل مشكلة Income labels
+  خاصة بجدوى ريت فقط
+  أم متكررة في ملفات مشابهة
+* اختبار Cash Flow على ملف يحتوي قائمة تدفقات
+  أوضح وأكثر اكتمالًا
+* توسيع hardening تدريجيًا
+  بدون كسر السلوك الصحيح الحالي
 
 ---
 
@@ -456,6 +526,7 @@ Financial Line Item Extraction
 * بناء statementSelectionResolved بشكل صحيح
 * تشغيل Financial Line Item Extraction على صفحات مالية صحيحة
 * إرجاع financialRows غير فارغة عند وجود بيانات مالية فعلية
+* التصريح بوضوح عند غياب labels أو غياب مرشح موثوق
 * الحفاظ على استقرار المعمارية الحالية
 
 ---
@@ -472,9 +543,13 @@ Layer فوق النظام الحالي
 
 وليس إعادة بناء من الصفر.
 
-الأولوية الحالية ليست إضافة مزيد من الذكاء،
-بل تثبيت صحة مرور البيانات
-من input
-إلى normalized
-إلى ranking
-إلى extraction.
+الأولوية الحالية لم تعد Input Resolution،
+لأنها حُسمت في هذا الملف،
+بل أصبحت:
+
+* hardening أوسع
+* تحسين robustness
+* وتوسيع التغطية على ملفات اختبار إضافية
+
+مع الحفاظ على الصدق التشخيصي
+بدل استخراج نتائج خاطئة.
