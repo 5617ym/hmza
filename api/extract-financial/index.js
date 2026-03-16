@@ -2879,6 +2879,53 @@ module.exports = async function (context, req) {
 
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
 
+      const acceptableCandidates = candidates
+        .map((candidate) => normalizeLabelForRow(candidate))
+        .filter((candidate) => isAcceptableFinancialLabel(candidate, statementType));
+
+      const missingLabelsCount = rawEntries.filter((en) => {
+        const finalLabel = normalizeLabelForRow(en?.labelCandidate);
+        return !isAcceptableFinancialLabel(finalLabel, statementType);
+      }).length;
+
+      const shouldUseSequentialRecovery =
+        statementType === "income" &&
+        !Number.isFinite(pageCtx?.header?.labelCol) &&
+        missingLabelsCount > 0 &&
+        acceptableCandidates.length >= rawEntries.length &&
+        missingLabelsCount >= Math.ceil(rawEntries.length * 0.5);
+
+      if (shouldUseSequentialRecovery) {
+        return rawEntries.map((en, index) => {
+          const finalLabel = normalizeLabelForRow(en.labelCandidate);
+
+          if (isAcceptableFinancialLabel(finalLabel, statementType)) {
+            return {
+              ...en,
+              label: finalLabel
+            };
+          }
+
+          const sequentialLabel = acceptableCandidates[index] || "";
+
+          if (isAcceptableFinancialLabel(sequentialLabel, statementType)) {
+            return {
+              ...en,
+              label: sequentialLabel,
+              source: {
+                ...en.source,
+                labelRecoveredFrom: "page_text_sequential"
+              }
+            };
+          }
+
+          return {
+            ...en,
+            label: finalLabel
+          };
+        });
+      }
+
       return rawEntries.map((en) => {
         const finalLabel = normalizeLabelForRow(en.labelCandidate);
 
