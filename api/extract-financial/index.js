@@ -30,29 +30,173 @@ module.exports = async function (context, req) {
       return isPlainObject(value) ? Object.keys(value) : [];
     }
 
+    function toArray(value) {
+      return Array.isArray(value) ? value : [];
+    }
+
+    function getResolvedPagesFromNormalized(value) {
+      if (!isPlainObject(value)) return [];
+
+      const candidates = [
+        value.pages,
+        value.layout?.pages,
+        value.document?.pages,
+        value.result?.pages,
+        value.result?.layout?.pages,
+        value.analysisResult?.pages
+      ];
+
+      for (const candidate of candidates) {
+        if (Array.isArray(candidate) && candidate.length > 0) {
+          return candidate;
+        }
+      }
+
+      return [];
+    }
+
+    function getResolvedTablesFromNormalized(value) {
+      if (!isPlainObject(value)) return [];
+
+      const candidates = [
+        value.tablesPreview,
+        value.tables,
+        value.pageTables,
+        value.layout?.tables,
+        value.layout?.pageTables,
+        value.document?.tables,
+        value.document?.pageTables,
+        value.result?.tables,
+        value.result?.pageTables,
+        value.result?.layout?.tables,
+        value.result?.layout?.pageTables,
+        value.analysisResult?.tables
+      ];
+
+      for (const candidate of candidates) {
+        if (Array.isArray(candidate) && candidate.length > 0) {
+          return candidate;
+        }
+      }
+
+      return [];
+    }
+
+    function getResolvedTextLength(value) {
+      if (!isPlainObject(value)) return 0;
+
+      const directText = [
+        value.text,
+        value.content,
+        value.rawText,
+        value.fullText,
+        value.documentText,
+        value.layout?.text,
+        value.result?.text
+      ]
+        .map((x) => (typeof x === "string" ? x.length : 0))
+        .reduce((a, b) => a + b, 0);
+
+      const metaTextLength = Number(
+        value.meta?.textLength ??
+        value.metadata?.textLength ??
+        value.stats?.textLength ??
+        0
+      );
+
+      return Math.max(directText, Number.isFinite(metaTextLength) ? metaTextLength : 0);
+    }
+
+    function getNormalizedMetaCounts(value) {
+      if (!isPlainObject(value)) {
+        return {
+          metaPages: 0,
+          metaTables: 0,
+          metaTextLength: 0
+        };
+      }
+
+      const metaPages = Number(
+        value.meta?.pages ??
+        value.metadata?.pages ??
+        value.stats?.pages ??
+        0
+      );
+
+      const metaTables = Number(
+        value.meta?.tables ??
+        value.metadata?.tables ??
+        value.stats?.tables ??
+        0
+      );
+
+      const metaTextLength = Number(
+        value.meta?.textLength ??
+        value.metadata?.textLength ??
+        value.stats?.textLength ??
+        0
+      );
+
+      return {
+        metaPages: Number.isFinite(metaPages) ? metaPages : 0,
+        metaTables: Number.isFinite(metaTables) ? metaTables : 0,
+        metaTextLength: Number.isFinite(metaTextLength) ? metaTextLength : 0
+      };
+    }
+
     function looksLikeNormalizedPayload(value) {
       if (!isPlainObject(value)) return false;
 
-      if (Array.isArray(value.pages) && value.pages.length > 0) return true;
-      if (Array.isArray(value.tablesPreview) && value.tablesPreview.length > 0) return true;
-      if (Array.isArray(value.tables) && value.tables.length > 0) return true;
-      if (Array.isArray(value.pageTables) && value.pageTables.length > 0) return true;
-      if (Array.isArray(value.layout?.pages) && value.layout.pages.length > 0) return true;
-      if (Array.isArray(value.layout?.tables) && value.layout.tables.length > 0) return true;
-      if (Array.isArray(value.layout?.pageTables) && value.layout.pageTables.length > 0) return true;
+      const resolvedPages = getResolvedPagesFromNormalized(value);
+      const resolvedTables = getResolvedTablesFromNormalized(value);
+      const resolvedTextLength = getResolvedTextLength(value);
+      const { metaPages, metaTables, metaTextLength } = getNormalizedMetaCounts(value);
 
-      if (
-        isPlainObject(value.meta) &&
-        (
-          Number(value.meta.pages) > 0 ||
-          Number(value.meta.tables) > 0 ||
-          Number(value.meta.textLength) > 0
-        )
-      ) {
-        return true;
+      return (
+        resolvedPages.length > 0 ||
+        resolvedTables.length > 0 ||
+        resolvedTextLength > 0 ||
+        metaPages > 0 ||
+        metaTables > 0 ||
+        metaTextLength > 0
+      );
+    }
+
+    function scoreNormalizedCandidate(value, label, isEnvelopeRoot = false) {
+      if (!looksLikeNormalizedPayload(value)) return null;
+
+      const resolvedPages = getResolvedPagesFromNormalized(value);
+      const resolvedTables = getResolvedTablesFromNormalized(value);
+      const resolvedTextLength = getResolvedTextLength(value);
+      const { metaPages, metaTables, metaTextLength } = getNormalizedMetaCounts(value);
+
+      let score = 0;
+      score += resolvedPages.length * 100000;
+      score += resolvedTables.length * 1000;
+      score += Math.min(resolvedTextLength, 100000);
+      score += metaPages * 100;
+      score += metaTables * 10;
+      score += Math.min(metaTextLength, 10000);
+
+      if (resolvedPages.length === 0 && resolvedTables.length === 0 && (metaPages > 0 || metaTables > 0)) {
+        score -= 5000;
       }
 
-      return false;
+      if (isEnvelopeRoot) {
+        score -= 2000;
+      }
+
+      return {
+        label,
+        value,
+        score,
+        resolvedPagesCount: resolvedPages.length,
+        resolvedTablesCount: resolvedTables.length,
+        resolvedTextLength,
+        metaPages,
+        metaTables,
+        metaTextLength
+      };
     }
 
     function readLocalTestPayload() {
@@ -74,22 +218,52 @@ module.exports = async function (context, req) {
       };
     }
 
-    function extractNormalizedCandidate(payload) {
-      if (!isPlainObject(payload)) return null;
+    function collectNormalizedCandidates(payload) {
+      if (!isPlainObject(payload)) return [];
+
+      const candidateDefs = [
+        ["payload.normalized", payload.normalized],
+        ["payload.data.normalized", payload.data?.normalized],
+        ["payload.payload.normalized", payload.payload?.normalized],
+        ["payload.result.normalized", payload.result?.normalized],
+        ["payload.analysis.normalized", payload.analysis?.normalized],
+        ["payload.data.payload.normalized", payload.data?.payload?.normalized],
+        ["payload.payload.data.normalized", payload.payload?.data?.normalized],
+        ["payload.data.result.normalized", payload.data?.result?.normalized],
+        ["payload.result.data.normalized", payload.result?.data?.normalized],
+        ["payload.result.payload.normalized", payload.result?.payload?.normalized],
+        ["payload.analysis.result.normalized", payload.analysis?.result?.normalized],
+        ["payload.result.analysis.normalized", payload.result?.analysis?.normalized],
+        ["payload.lastNormalized", payload.lastNormalized],
+        ["payload.normalizedResult", payload.normalizedResult],
+        ["payload.raw", payload]
+      ];
+
+      const scored = [];
+
+      for (const [label, candidate] of candidateDefs) {
+        const item = scoreNormalizedCandidate(candidate, label, candidate === payload);
+        if (item) scored.push(item);
+      }
+
+      return scored.sort((a, b) => b.score - a.score);
+    }
+
+    function resolveNormalizedPrevFromEnvelope(envelope) {
+      if (!isPlainObject(envelope)) return null;
 
       const candidates = [
-        payload.normalized,
-        payload.data?.normalized,
-        payload.payload?.normalized,
-        payload.result?.normalized,
-        payload.analysis?.normalized,
-        payload.lastNormalized,
-        payload.normalizedResult,
-        payload
+        envelope.normalizedPrev,
+        envelope.data?.normalizedPrev,
+        envelope.payload?.normalizedPrev,
+        envelope.result?.normalizedPrev,
+        envelope.analysis?.normalizedPrev,
+        envelope.data?.payload?.normalizedPrev,
+        envelope.result?.data?.normalizedPrev
       ];
 
       for (const candidate of candidates) {
-        if (looksLikeNormalizedPayload(candidate)) {
+        if (isPlainObject(candidate) || Array.isArray(candidate)) {
           return candidate;
         }
       }
@@ -97,73 +271,80 @@ module.exports = async function (context, req) {
       return null;
     }
 
-        function resolveInputEnvelope(req) {
+    function resolveInputEnvelope(req) {
       const reqBody =
         req?.body && typeof req.body === "object"
           ? req.body
           : null;
 
-      const reqNormalized = extractNormalizedCandidate(reqBody);
+      const reqCandidates = collectNormalizedCandidates(reqBody);
+      const reqBest = reqCandidates[0] || null;
 
-      if (reqNormalized) {
+      if (reqBest) {
         return {
-          source:
-            reqNormalized === reqBody
-              ? "req.body.raw_normalized"
-              : "req.body.envelope_normalized",
+          source: reqBest.label,
           body: reqBody || {},
           envelope: reqBody || {},
-          normalized: reqNormalized,
-          normalizedPrev:
-            reqBody?.normalizedPrev ||
-            reqBody?.data?.normalizedPrev ||
-            reqBody?.payload?.normalizedPrev ||
-            reqBody?.result?.normalizedPrev ||
-            null,
+          normalized: reqBest.value,
+          normalizedPrev: resolveNormalizedPrevFromEnvelope(reqBody),
           fileName:
             reqBody?.fileName ||
             reqBody?.data?.fileName ||
             reqBody?.payload?.fileName ||
-            reqNormalized?.meta?.fileName ||
+            reqBest.value?.meta?.fileName ||
             null,
           diagnostics: {
             localFileExists: fs.existsSync(localTestPath),
             reqBodyKeys: safeObjectKeys(reqBody),
             envelopeKeys: safeObjectKeys(reqBody),
-            normalizedKeys: safeObjectKeys(reqNormalized)
+            normalizedKeys: safeObjectKeys(reqBest.value),
+            candidateScores: reqCandidates.slice(0, 5).map((item) => ({
+              source: item.label,
+              score: item.score,
+              resolvedPagesCount: item.resolvedPagesCount,
+              resolvedTablesCount: item.resolvedTablesCount,
+              resolvedTextLength: item.resolvedTextLength,
+              metaPages: item.metaPages,
+              metaTables: item.metaTables,
+              metaTextLength: item.metaTextLength
+            }))
           }
         };
       }
 
       const localRead = readLocalTestPayload();
       const localPayload = localRead?.payload || null;
-      const localNormalized = extractNormalizedCandidate(localPayload);
+      const localCandidates = collectNormalizedCandidates(localPayload);
+      const localBest = localCandidates[0] || null;
 
-      if (localRead.ok && localNormalized) {
+      if (localRead.ok && localBest) {
         return {
-          source:
-            localNormalized === localPayload
-              ? "local.raw_normalized"
-              : "local.envelope_normalized",
+          source: localBest.label.replace(/^payload\./, "local."),
           body: localPayload || {},
           envelope: localPayload || {},
-          normalized: localNormalized,
-          normalizedPrev:
-            localPayload?.normalizedPrev ||
-            localPayload?.data?.normalizedPrev ||
-            localPayload?.payload?.normalizedPrev ||
-            null,
+          normalized: localBest.value,
+          normalizedPrev: resolveNormalizedPrevFromEnvelope(localPayload),
           fileName:
             localPayload?.fileName ||
             localPayload?.data?.fileName ||
             localPayload?.payload?.fileName ||
-            localNormalized?.meta?.fileName ||
+            localBest.value?.meta?.fileName ||
             null,
           diagnostics: {
             localFileExists: true,
             reqBodyKeys: safeObjectKeys(reqBody),
             envelopeKeys: safeObjectKeys(localPayload),
-            normalizedKeys: safeObjectKeys(localNormalized)
+            normalizedKeys: safeObjectKeys(localBest.value),
+            candidateScores: localCandidates.slice(0, 5).map((item) => ({
+              source: item.label.replace(/^payload\./, "local."),
+              score: item.score,
+              resolvedPagesCount: item.resolvedPagesCount,
+              resolvedTablesCount: item.resolvedTablesCount,
+              resolvedTextLength: item.resolvedTextLength,
+              metaPages: item.metaPages,
+              metaTables: item.metaTables,
+              metaTextLength: item.metaTextLength
+            }))
           }
         };
       }
@@ -179,7 +360,8 @@ module.exports = async function (context, req) {
           localFileExists: fs.existsSync(localTestPath),
           reqBodyKeys: safeObjectKeys(reqBody),
           envelopeKeys: [],
-          normalizedKeys: []
+          normalizedKeys: [],
+          candidateScores: []
         }
       };
     }
@@ -201,6 +383,9 @@ module.exports = async function (context, req) {
         }
       });
     }
+
+    const pages = getResolvedPagesFromNormalized(normalized);
+    const tablesPreview = getResolvedTablesFromNormalized(normalized);
 
     const rawSectorInfo = detectSector(normalized);
     const detectedSector = rawSectorInfo?.sector || "operating_company";
@@ -225,26 +410,6 @@ module.exports = async function (context, req) {
       : Array.isArray(activeSectorProfile.cashFlow)
         ? activeSectorProfile.cashFlow
         : [];
-
-        const pages =
-      Array.isArray(normalized.pages)
-        ? normalized.pages
-        : Array.isArray(normalized.layout?.pages)
-          ? normalized.layout.pages
-          : [];
-
-    const tablesPreview =
-      Array.isArray(normalized.tablesPreview)
-        ? normalized.tablesPreview
-        : Array.isArray(normalized.tables)
-          ? normalized.tables
-          : Array.isArray(normalized.pageTables)
-            ? normalized.pageTables
-            : Array.isArray(normalized.layout?.tables)
-              ? normalized.layout.tables
-              : Array.isArray(normalized.layout?.pageTables)
-                ? normalized.layout.pageTables
-                : [];
 
     // =========================================================
     // Layer 1: Normalization Helpers
