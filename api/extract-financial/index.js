@@ -2859,14 +2859,29 @@ module.exports = async function (context, req) {
       return fallbackFromAnyText?.cell || "";
     }
 
-    function normalizeLabelForRow(label) {
-      return cleanupLabel(
-        String(label || "")
-          .replace(/\.+$/g, "")
-          .replace(/\s{2,}/g, " ")
-          .trim()
-      );
+    function normalizeLabelForRow(label, row = null) {
+  if (
+    (!label || isLikelyReferenceValue(label)) &&
+    Array.isArray(row?.rawRow)
+  ) {
+    const joined = row.rawRow.join(" ");
+
+    const cleaned = joined
+      .replace(/[\d\s.,()%\-–—]+/g, " ")
+      .trim();
+
+    if (cleaned && cleaned.length > 3) {
+      return cleaned;
     }
+  }
+
+  return cleanupLabel(
+    String(label || "")
+      .replace(/\.+$/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim()
+  );
+}
 
     function isLikelyStatementTitleRow(label, statementType) {
       const s = normalizeText(label);
