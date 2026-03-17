@@ -3212,8 +3212,10 @@ module.exports = async function (context, req) {
     }
 
     function buildMissingLabelDiagnostics(rawEntries, repairedEntries, pageCtx, statementType) {
-      const acceptableTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType)
-        .filter((label) => isAcceptableFinancialLabel(label, statementType));
+      const rawTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
+
+const acceptableTextCandidates = rawTextCandidates
+  .filter((label) => isAcceptableFinancialLabel(label, statementType));
 
       const noteLikeRawCount = (rawEntries || []).filter((entry) => {
         const candidate = normalizeLabelForRow(entry?.labelCandidate);
@@ -3238,6 +3240,7 @@ module.exports = async function (context, req) {
         acceptableTextCandidatesCount: acceptableTextCandidates.length,
         noteLikeOrRejectedRawLabelsCount: noteLikeRawCount,
         acceptedLabelCountAfterRepair: acceptedCount,
+        textCandidatesSample: rawTextCandidates.slice(0, 20),
         reason: likelyMissingLabelsInPayload
           ? "income_labels_missing_from_payload"
           : null
