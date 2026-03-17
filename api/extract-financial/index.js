@@ -2417,7 +2417,7 @@ module.exports = async function (context, req) {
 
       const topRecoveredLabels = extractRowsFromPageContext(pageCtx, "cashflow")
         .slice(0, 5)
-        .map((row) => normalizeLabelForRow(row?.label))
+        .map((row) => (row?.label))
         .filter(Boolean);
 
       const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
@@ -2859,7 +2859,7 @@ module.exports = async function (context, req) {
       return fallbackFromAnyText?.cell || "";
     }
 
-    function normalizeLabelForRow(label, row = null) {
+    function (label, row = null) {
   if (
     (!label || isLikelyReferenceValue(label)) &&
     Array.isArray(row?.rawRow)
@@ -2963,7 +2963,7 @@ module.exports = async function (context, req) {
       currentYearValue,
       previousYearValue
     }) {
-      const cleanLabel = normalizeLabelForRow(label);
+      const cleanLabel = (label);
 
       if (!cleanLabel) return true;
       if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
@@ -3034,7 +3034,7 @@ module.exports = async function (context, req) {
           !isLikelyStatementTitleRow(noteRaw, statementType) &&
           !isSectionHeaderOnlyLabel(noteRaw, statementType);
 
-        const labelCandidate = normalizeLabelForRow(
+        const labelCandidate = (
           labelFromHeader ||
           fallbackLabel ||
           (noteLooksLikeLabel ? noteRaw : "")
@@ -3083,7 +3083,7 @@ module.exports = async function (context, req) {
         const idx = startIndex + offset;
         if (idx < 0 || idx >= candidates.length) continue;
 
-        const candidate = normalizeLabelForRow(candidates[idx]);
+        const candidate = (candidates[idx]);
         const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
 
         if (isAcceptableFinancialLabel(candidate, statementType)) {
@@ -3116,7 +3116,7 @@ module.exports = async function (context, req) {
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
 
       return rawEntries.map((en) => {
-        const finalLabel = normalizeLabelForRow(en.labelCandidate);
+        const finalLabel = (en.labelCandidate);
 
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
@@ -3165,7 +3165,7 @@ module.exports = async function (context, req) {
       const extracted = [];
 
       for (const en of repairedEntries) {
-        const label = normalizeLabelForRow(en.label);
+        const label = (en.label);
 
         if (
           shouldSkipExtractedRow({
@@ -3233,12 +3233,12 @@ const acceptableTextCandidates = rawTextCandidates
   .filter((label) => isAcceptableFinancialLabel(label, statementType));
 
       const noteLikeRawCount = (rawEntries || []).filter((entry) => {
-        const candidate = normalizeLabelForRow(entry?.labelCandidate);
+        const candidate = (entry?.labelCandidate);
         return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
       }).length;
 
       const acceptedCount = (repairedEntries || []).filter((entry) => {
-        const label = normalizeLabelForRow(entry?.label);
+        const label = normalizeLabelForRow(entry?.label, entry);
         return isAcceptableFinancialLabel(label, statementType);
       }).length;
 
