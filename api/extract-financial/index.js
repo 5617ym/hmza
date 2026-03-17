@@ -2862,7 +2862,7 @@ module.exports = async function (context, req) {
     function (label, row = null) {
   if (
     (!label || isLikelyReferenceValue(label)) &&
-    Array.isArray(row?.rawRow)
+    row && Array.isArray(row.rawRow)
   ) {
     const joined = row.rawRow.join(" ");
 
