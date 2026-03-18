@@ -1,5 +1,4 @@
 
- 
 const { detectSector } = require("../lib/sector-detection");
 const sectorProfiles = require("../lib/sector-profiles");
  
@@ -18,9 +17,18 @@ module.exports = async function (context, req) {
     const path = require("path");
  
     const LOCAL_TEST_FILE =
-  req.body?.localTestFile || "almarai-layout.json";
+      req?.body?.localTestFile ||
+      req?.body?.fileName ||
+      "almarai-layout.json";
+    const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
  
-const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
+    context.log("extract-financial:start", {
+      localTestFile: LOCAL_TEST_FILE,
+      reqBodyKeys:
+        req?.body && typeof req.body === "object"
+          ? Object.keys(req.body)
+          : []
+    });
  
     function isPlainObject(value) {
       return !!value && typeof value === "object" && !Array.isArray(value);
@@ -984,31 +992,6 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       const trimmed = cleanLabel.trim();
       const normalized = (normalizedLabel || "").trim();
  
-      const badExactLabels = new Set([
-        "للسنه",
-        "للسنة",
-        "ايضاحات",
-        "الإيضاحات",
-        "ايضاح",
-        "الإيضاح",
-        "note",
-        "notes"
-      ].map((x) => normalizeText(x)));
- 
-      const badContainsLabels = [
-        "بالاف",
-        "بآلاف",
-        "الف ريال",
-        "ألف ريال",
-        "ريال سعودي",
-        "sar",
-        "usd"
-      ].map((x) => normalizeText(x));
- 
-      if (badExactLabels.has(normalized)) return false;
-      if (badContainsLabels.some((x) => x && normalized.includes(x))) return false;
- 
-      if (/^ب[\sـ]*الاف/i.test(trimmed) || /^ب[\sـ]*آلاف/i.test(trimmed)) return false;
       if (!hasLetterChars(trimmed)) return false;
       if (normalized.length <= 2) return false;
       if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
@@ -1047,15 +1030,10 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
     }
  
     function extractLabelCandidatesFromPageText(pageCtx, statementType) {
-      const firstRowsText = (pageCtx?.mainRows || [])
-        .slice(0, 12)
-        .map((r) => Array.isArray(r) ? r.join(" | ") : "")
-        .join("\n");
- 
       const textBlob = [
-        pageCtx?.headerText || "",
-        firstRowsText,
-        pageCtx?.mainTableText || ""
+        pageCtx?.mainTableText || "",
+        pageCtx?.text || "",
+        pageCtx?.structuralText || ""
       ].join("\n");
  
       const candidates = splitTextIntoLogicalLines(textBlob)
@@ -2390,9 +2368,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
  
     let incomePage = rankedIncome[0]?.pageNumber || null;
     let balancePage = rankedBalance[0]?.pageNumber || null;
-    let cashFlowPage = ((rankedCashflow[0]?.score ?? -999) >= 0)
-      ? (rankedCashflow[0]?.pageNumber || null)
-      : null;
+    let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
  
     function topPages(list, limit = 3) {
       return (list || []).slice(0, limit).map((x) => x.pageNumber);
@@ -2412,7 +2388,6 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
  
     function hasReliableCashflowEvidence(rankedEntry, pageCtx) {
       if (!rankedEntry || !pageCtx) return false;
-      if ((rankedEntry?.score ?? -999) < 0) return false;
       if (isLikelyAssetRollforwardPage(pageCtx)) return false;
       if (pageCtx.isLikelyIndexPage) return false;
       if (pageCtx.isLikelyNarrativePage) return false;
@@ -2454,7 +2429,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
  
       const topRecoveredLabels = extractRowsFromPageContext(pageCtx, "cashflow")
         .slice(0, 5)
-        .map((row) => (row?.label))
+        .map((row) => normalizeLabelForRow(row?.label))
         .filter(Boolean);
  
       const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
@@ -2476,11 +2451,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         return false;
       }
  
-      if (
-        (titleHitsCount > 0 && (structureHitsCount > 0 || cashflowCoreHits.length > 0)) ||
-        structureHitsCount >= 2 ||
-        cashflowCoreHits.length >= 2
-      ) {
+      if (titleHitsCount > 0 || structureHitsCount > 0 || cashflowCoreHits.length > 0) {
         return true;
       }
  
@@ -2900,29 +2871,14 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       return fallbackFromAnyText?.cell || "";
     }
  
-    function (label, row = null) {
-  if (
-    (!label || isLikelyReferenceValue(label)) &&
-    row && Array.isArray(row.rawRow)
-  ) {
-    const joined = row.rawRow.join(" ");
- 
-    const cleaned = joined
-      .replace(/[\d\s.,()%\-–—]+/g, " ")
-      .trim();
- 
-    if (cleaned && cleaned.length > 3) {
-      return cleaned;
+    function normalizeLabelForRow(label) {
+      return cleanupLabel(
+        String(label || "")
+          .replace(/\.+$/g, "")
+          .replace(/\s{2,}/g, " ")
+          .trim()
+      );
     }
-  }
- 
-  return cleanupLabel(
-    String(label || "")
-      .replace(/\.+$/g, "")
-      .replace(/\s{2,}/g, " ")
-      .trim()
-  );
-}
  
     function isLikelyStatementTitleRow(label, statementType) {
       const s = normalizeText(label);
@@ -3004,7 +2960,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       currentYearValue,
       previousYearValue
     }) {
-      const cleanLabel = (label);
+      const cleanLabel = normalizeLabelForRow(label);
  
       if (!cleanLabel) return true;
       if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
@@ -3075,7 +3031,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           !isLikelyStatementTitleRow(noteRaw, statementType) &&
           !isSectionHeaderOnlyLabel(noteRaw, statementType);
  
-        const labelCandidate = (
+        const labelCandidate = normalizeLabelForRow(
           labelFromHeader ||
           fallbackLabel ||
           (noteLooksLikeLabel ? noteRaw : "")
@@ -3124,7 +3080,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         const idx = startIndex + offset;
         if (idx < 0 || idx >= candidates.length) continue;
  
-        const candidate = (candidates[idx]);
+        const candidate = normalizeLabelForRow(candidates[idx]);
         const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
  
         if (isAcceptableFinancialLabel(candidate, statementType)) {
@@ -3157,7 +3113,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
  
       return rawEntries.map((en) => {
-        const finalLabel = (en.labelCandidate);
+        const finalLabel = normalizeLabelForRow(en.labelCandidate);
  
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
@@ -3177,7 +3133,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           statementType
         );
  
-        if (nearby && isAcceptableFinancialLabel(nearby.label, statementType)) {
+        if (nearby) {
           return {
             ...en,
             label: nearby.label,
@@ -3190,7 +3146,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
  
         return {
           ...en,
-          label: isAcceptableFinancialLabel(finalLabel, statementType) ? finalLabel : null
+          label: finalLabel
         };
       });
     }
@@ -3206,7 +3162,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       const extracted = [];
  
       for (const en of repairedEntries) {
-        const label = (en.label);
+        const label = normalizeLabelForRow(en.label);
  
         if (
           shouldSkipExtractedRow({
@@ -3268,18 +3224,16 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
     }
  
     function buildMissingLabelDiagnostics(rawEntries, repairedEntries, pageCtx, statementType) {
-      const rawTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
- 
-const acceptableTextCandidates = rawTextCandidates
-  .filter((label) => isAcceptableFinancialLabel(label, statementType));
+      const acceptableTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType)
+        .filter((label) => isAcceptableFinancialLabel(label, statementType));
  
       const noteLikeRawCount = (rawEntries || []).filter((entry) => {
-        const candidate = (entry?.labelCandidate);
+        const candidate = normalizeLabelForRow(entry?.labelCandidate);
         return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
       }).length;
  
       const acceptedCount = (repairedEntries || []).filter((entry) => {
-        const label = normalizeLabelForRow(entry?.label, entry);
+        const label = normalizeLabelForRow(entry?.label);
         return isAcceptableFinancialLabel(label, statementType);
       }).length;
  
@@ -3296,7 +3250,6 @@ const acceptableTextCandidates = rawTextCandidates
         acceptableTextCandidatesCount: acceptableTextCandidates.length,
         noteLikeOrRejectedRawLabelsCount: noteLikeRawCount,
         acceptedLabelCountAfterRepair: acceptedCount,
-        textCandidatesSample: rawTextCandidates.slice(0, 20),
         reason: likelyMissingLabelsInPayload
           ? "income_labels_missing_from_payload"
           : null
@@ -3487,7 +3440,10 @@ const acceptableTextCandidates = rawTextCandidates
       error: err?.message || "unknown error in extract-financial",
       debug: {
         stack: String(err?.stack || "").split("\n").slice(0, 8),
-        localTestFile: req?.body?.localTestFile || "almarai-layout.json"
+        localTestFile:
+          req?.body?.localTestFile ||
+          req?.body?.fileName ||
+          "almarai-layout.json"
       }
     });
   }
@@ -3506,4 +3462,3 @@ const acceptableTextCandidates = rawTextCandidates
  
  
   
- 
