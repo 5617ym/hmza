@@ -1,6 +1,6 @@
 
-const { detectSector } = require("../_lib/sector-detection");
-const sectorProfiles = require("../_lib/sector-profiles");
+const { detectSector } = require("../lib/sector-detection");
+const sectorProfiles = require("../lib/sector-profiles");
 
 // api/extract-financial/index.js
 module.exports = async function (context, req) {
