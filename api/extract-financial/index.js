@@ -2867,11 +2867,18 @@ module.exports = async function (context, req) {
   ) {
     const joined = row.rawRow.join(" ");
 
-    const cleaned = joined
-      .replace(/[\d\s.,()%\-–—]+/g, " ")
-      .trim();
+    const cleaned = cleanupLabel(
+      joined
+        .replace(/[\d\s.,()%\-–—]+/g, " ")
+        .trim()
+    );
 
-    if (cleaned && cleaned.length > 3) {
+    if (
+      cleaned &&
+      cleaned.length > 3 &&
+      !isLikelyReferenceValue(cleaned) &&
+      !isLikelyMetaOrHeaderLabel(cleaned)
+    ) {
       return cleaned;
     }
   }
@@ -3112,17 +3119,19 @@ module.exports = async function (context, req) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
 
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
-      if (!candidates.length) return rawEntries;
-
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
 
       return rawEntries.map((en) => {
-        const finalLabel = (en.labelCandidate);
+        const finalLabel = normalizeLabelForRow(en.labelCandidate, en);
 
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
             ...en,
-            label: finalLabel
+            label: finalLabel,
+            source: {
+              ...en.source,
+              labelRecoveredFrom: en?.source?.labelRecoveredFrom || "row_candidate"
+            }
           };
         }
 
@@ -3166,7 +3175,7 @@ module.exports = async function (context, req) {
       const extracted = [];
 
       for (const en of repairedEntries) {
-        const label = (en.label);
+        const label = normalizeLabelForRow(en.label, en);
 
         if (
           shouldSkipExtractedRow({
@@ -3259,7 +3268,9 @@ const acceptableTextCandidates = rawTextCandidates
         textCandidatesSample: rawTextCandidates.slice(0, 20),
         reason: likelyMissingLabelsInPayload
           ? "income_labels_missing_from_payload"
-          : null
+          : acceptedCount === 0 && noteLikeRawCount === rawEntries.length
+            ? "row_labels_unrecoverable_from_payload"
+            : null
       };
     }
 
@@ -3277,7 +3288,7 @@ const acceptableTextCandidates = rawTextCandidates
           const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
 
           const acceptedEntries = repairedEntries.filter((row) => {
-            const label = normalizeLabelForRow(row.label);
+            const label = normalizeLabelForRow(row.label, row);
             return !shouldSkipExtractedRow({
               row: row.row,
               rowIndex: row.rowIndex,
@@ -3461,4 +3472,5 @@ const acceptableTextCandidates = rawTextCandidates
 
 
   
+
 
