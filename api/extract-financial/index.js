@@ -2919,25 +2919,62 @@ module.exports = async function (context, req) {
  
     function isLikelyMetaOrHeaderLabel(label) {
       const s = normalizeText(label);
- 
+
       if (!s) return true;
- 
+
+      const exactBlacklist = new Set([
+        "البيان",
+        "البيانات",
+        "description",
+        "particulars",
+        "item",
+        "البند",
+        "بنود",
+        "notes",
+        "note",
+        "ايضاح",
+        "الايضاح",
+        "ايضاحات",
+        "الايضاحات",
+        "إيضاحات",
+        "إيضاح",
+        "بآلاف",
+        "بالآلاف",
+        "بالاف",
+        "بالالاف",
+        "ريال",
+        "ريال سعودي",
+        "للسنه",
+        "السنه",
+        "المنتهيه",
+        "المنتهية"
+      ].map((x) => normalizeText(x)));
+
+      if (exactBlacklist.has(s)) return true;
+
+      if (
+        s.includes(normalizeText("ايضاح")) ||
+        s.includes(normalizeText("ايضاحات")) ||
+        s.includes(normalizeText("بآلاف")) ||
+        s.includes(normalizeText("بالآلاف")) ||
+        s.includes(normalizeText("بالاف")) ||
+        s.includes(normalizeText("بالالاف")) ||
+        s.includes(normalizeText("ريال سعودي")) ||
+        s.includes(normalizeText("للسنه")) ||
+        s.includes(normalizeText("السنه المنتهيه")) ||
+        s.includes(normalizeText("السنة المنتهية")) ||
+        s.includes(normalizeText("for the year ended")) ||
+        s.includes(normalizeText("for the year")) ||
+        s.includes(normalizeText("for the period ended"))
+      ) {
+        return true;
+      }
+
       return (
         isLikelyStatementDateText(s) ||
         isLikelyStandardEffectiveDateText(s) ||
         isLikelyNarrativeLine(s) ||
-        isQuarterOrPeriodCell(s) ||
-        s === "البيان" ||
-        s === "البيانات" ||
-        s === "description" ||
-        s === "particulars" ||
-        s === "item" ||
-        s === "البند" ||
-        s === "بنود" ||
-        s === "notes" ||
-        s === "note" ||
-        s === "ايضاح" ||
-        s === "الايضاح"
+        isQuarterOrPeriodCell(s)
       );
     }
  
@@ -3104,99 +3141,13 @@ module.exports = async function (context, req) {
       return null;
     }
  
-    function extractBestTableLabelFromRow(row, header, statementType) {
-      if (!Array.isArray(row) || !row.length) return null;
- 
-      const reserved = new Set(
-        [
-          header?.currentCol,
-          header?.previousCol,
-          header?.noteCol
-        ].filter((x) => Number.isFinite(x))
-      );
- 
-      const candidates = row
-        .map((cell, idx) => ({
-          idx,
-          raw: String(cell == null ? "" : cell).trim()
-        }))
-        .filter((x) => x.raw)
-        .filter((x) => !reserved.has(x.idx))
-        .filter((x) => isLikelyTextLabelCell(x.raw))
-        .filter((x) => !isLikelyReferenceValue(x.raw))
-        .filter((x) => !isLikelyMetaOrHeaderLabel(x.raw))
-        .filter((x) => !isLikelyStatementTitleRow(x.raw, statementType))
-        .filter((x) => !isSectionHeaderOnlyLabel(x.raw, statementType))
-        .map((x) => {
-          const normalized = normalizeLabelForRow(x.raw);
-          const salvaged = salvageFinancialLabelCandidate(normalized);
-          return {
-            idx: x.idx,
-            normalized,
-            salvaged
-          };
-        })
-        .filter((x) => x.normalized || x.salvaged);
- 
-      if (!candidates.length) return null;
- 
-      const direction = String(header?.direction || "rtl").toLowerCase();
-      const ordered = candidates.slice().sort((a, b) => {
-        return direction === "rtl" ? b.idx - a.idx : a.idx - b.idx;
-      });
- 
-      for (const candidate of ordered) {
-        if (isAcceptableFinancialLabel(candidate.normalized, statementType)) {
-          return {
-            label: candidate.normalized,
-            recoveredFrom: "table_row_primary"
-          };
-        }
- 
-        if (
-          candidate.salvaged &&
-          isAcceptableFinancialLabel(candidate.salvaged, statementType)
-        ) {
-          return {
-            label: candidate.salvaged,
-            recoveredFrom: "table_row_salvaged"
-          };
-        }
-      }
- 
-      return null;
-    }
- 
-    function findBestNearbyTableLabelCandidate(rows, startRowIndex, header, statementType) {
-      if (!Array.isArray(rows) || !rows.length) return null;
- 
-      const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
- 
-      for (const offset of offsets) {
-        const idx = startRowIndex + offset;
-        if (idx < 0 || idx >= rows.length) continue;
- 
-        const fromRow = extractBestTableLabelFromRow(rows[idx], header, statementType);
-        if (fromRow) {
-          return {
-            label: fromRow.label,
-            recoveredFrom: offset === 0
-              ? fromRow.recoveredFrom
-              : `${fromRow.recoveredFrom}_nearby`
-          };
-        }
-      }
- 
-      return null;
-    }
- 
     function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
  
-      const header = pageCtx?.header || {};
-      const tableRows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
-      const pageTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
-      const headerRowIndex = safeNumber(header?.headerRowIndex, -1);
+      const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
+      if (!candidates.length) return rawEntries;
+ 
+      const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
  
       return rawEntries.map((en) => {
         const finalLabel = normalizeLabelForRow(en.labelCandidate);
@@ -3208,58 +3159,26 @@ module.exports = async function (context, req) {
           };
         }
  
-        const sameRowTableLabel = extractBestTableLabelFromRow(en?.row, header, statementType);
-        if (sameRowTableLabel) {
-          return {
-            ...en,
-            label: sameRowTableLabel.label,
-            source: {
-              ...en.source,
-              labelRecoveredFrom: sameRowTableLabel.recoveredFrom
-            }
-          };
-        }
+        const relativeRowIndex = Math.max(
+          0,
+          safeNumber(en?.rowIndex, 0) - headerRowIndex - 1
+        );
  
-        const nearbyTableLabel = findBestNearbyTableLabelCandidate(
-          tableRows,
-          safeNumber(en?.rowIndex, -1),
-          header,
+        const nearby = findBestNearbyLabelCandidate(
+          candidates,
+          relativeRowIndex,
           statementType
         );
  
-        if (nearbyTableLabel) {
+        if (nearby) {
           return {
             ...en,
-            label: nearbyTableLabel.label,
+            label: nearby.label,
             source: {
               ...en.source,
-              labelRecoveredFrom: nearbyTableLabel.recoveredFrom
+              labelRecoveredFrom: nearby.recoveredFrom
             }
           };
-        }
- 
-        if (pageTextCandidates.length > 0) {
-          const relativeRowIndex = Math.max(
-            0,
-            safeNumber(en?.rowIndex, 0) - headerRowIndex - 1
-          );
- 
-          const nearbyPageTextLabel = findBestNearbyLabelCandidate(
-            pageTextCandidates,
-            relativeRowIndex,
-            statementType
-          );
- 
-          if (nearbyPageTextLabel) {
-            return {
-              ...en,
-              label: nearbyPageTextLabel.label,
-              source: {
-                ...en.source,
-                labelRecoveredFrom: nearbyPageTextLabel.recoveredFrom
-              }
-            };
-          }
         }
  
         return {
