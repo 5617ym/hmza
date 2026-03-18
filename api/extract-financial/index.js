@@ -972,11 +972,20 @@ module.exports = async function (context, req) {
       const s = normalizeText(label);
       if (!s) return false;
  
-            return (
+      return (
         s.includes("ريال سعودي") ||
         s.includes("الف ريال") ||
         s.includes("ألف ريال") ||
         s.includes("بالريال") ||
+        s.includes("بالاف") ||
+        s.includes("بالالاف") ||
+        s.includes("بالالف") ||
+        s.includes("بالآلاف") ||
+        s.includes("بالألاف") ||
+        s.includes("بالألف") ||
+        s.includes("بالاف ريال") ||
+        s.includes("بالالاف ريال") ||
+        s.includes("بالالف ريال") ||
         s === "sar" ||
         s === "usd" ||
         s === "دولار"
@@ -1045,6 +1054,8 @@ module.exports = async function (context, req) {
         .filter((line) => !isQuarterOrPeriodCell(line))
         .filter((line) => !isPureNumericSymbolCell(line))
         .filter((line) => !isLikelyOnlyReferenceText(line))
+        .filter((line) => !isLikelyMetaOrHeaderLabel(line))
+        .filter((line) => !isLikelyCurrencyOrUnitHeader(line))
         .filter((line) => hasLetterChars(line));
  
       const enriched = [];
@@ -2927,6 +2938,7 @@ module.exports = async function (context, req) {
         isLikelyStandardEffectiveDateText(s) ||
         isLikelyNarrativeLine(s) ||
         isQuarterOrPeriodCell(s) ||
+        isLikelyCurrencyOrUnitHeader(s) ||
         s === "البيان" ||
         s === "البيانات" ||
         s === "description" ||
@@ -2937,7 +2949,19 @@ module.exports = async function (context, req) {
         s === "notes" ||
         s === "note" ||
         s === "ايضاح" ||
-        s === "الايضاح"
+        s === "الايضاح" ||
+        s === "ايضاحات" ||
+        s === "الايضاحات" ||
+        s === "للسنه" ||
+        s === "السنه" ||
+        s === "المنتهيه" ||
+        s === "منتهيه" ||
+        s === "للفتره" ||
+        s === "الفتره" ||
+        s.includes("بالاف") ||
+        s.includes("بالالاف") ||
+        s.includes("بالالف") ||
+        s.includes("ريال سعودي")
       );
     }
  
