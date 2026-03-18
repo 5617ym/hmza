@@ -2919,62 +2919,25 @@ module.exports = async function (context, req) {
  
     function isLikelyMetaOrHeaderLabel(label) {
       const s = normalizeText(label);
-
+ 
       if (!s) return true;
-
-      const exactBlacklist = new Set([
-        "البيان",
-        "البيانات",
-        "description",
-        "particulars",
-        "item",
-        "البند",
-        "بنود",
-        "notes",
-        "note",
-        "ايضاح",
-        "الايضاح",
-        "ايضاحات",
-        "الايضاحات",
-        "إيضاحات",
-        "إيضاح",
-        "بآلاف",
-        "بالآلاف",
-        "بالاف",
-        "بالالاف",
-        "ريال",
-        "ريال سعودي",
-        "للسنه",
-        "السنه",
-        "المنتهيه",
-        "المنتهية"
-      ].map((x) => normalizeText(x)));
-
-      if (exactBlacklist.has(s)) return true;
-
-      if (
-        s.includes(normalizeText("ايضاح")) ||
-        s.includes(normalizeText("ايضاحات")) ||
-        s.includes(normalizeText("بآلاف")) ||
-        s.includes(normalizeText("بالآلاف")) ||
-        s.includes(normalizeText("بالاف")) ||
-        s.includes(normalizeText("بالالاف")) ||
-        s.includes(normalizeText("ريال سعودي")) ||
-        s.includes(normalizeText("للسنه")) ||
-        s.includes(normalizeText("السنه المنتهيه")) ||
-        s.includes(normalizeText("السنة المنتهية")) ||
-        s.includes(normalizeText("for the year ended")) ||
-        s.includes(normalizeText("for the year")) ||
-        s.includes(normalizeText("for the period ended"))
-      ) {
-        return true;
-      }
-
+ 
       return (
         isLikelyStatementDateText(s) ||
         isLikelyStandardEffectiveDateText(s) ||
         isLikelyNarrativeLine(s) ||
-        isQuarterOrPeriodCell(s)
+        isQuarterOrPeriodCell(s) ||
+        s === "البيان" ||
+        s === "البيانات" ||
+        s === "description" ||
+        s === "particulars" ||
+        s === "item" ||
+        s === "البند" ||
+        s === "بنود" ||
+        s === "notes" ||
+        s === "note" ||
+        s === "ايضاح" ||
+        s === "الايضاح"
       );
     }
  
@@ -3145,14 +3108,26 @@ module.exports = async function (context, req) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
  
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
-      if (!candidates.length) return rawEntries;
- 
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
  
       return rawEntries.map((en) => {
         const finalLabel = normalizeLabelForRow(en.labelCandidate);
  
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
+          return {
+            ...en,
+            label: finalLabel
+          };
+        }
+ 
+        if (statementType === "income") {
+          return {
+            ...en,
+            label: finalLabel || null
+          };
+        }
+ 
+        if (!candidates.length) {
           return {
             ...en,
             label: finalLabel
