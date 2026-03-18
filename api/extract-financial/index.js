@@ -3108,26 +3108,14 @@ module.exports = async function (context, req) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
  
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
+      if (!candidates.length) return rawEntries;
+ 
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
  
       return rawEntries.map((en) => {
         const finalLabel = normalizeLabelForRow(en.labelCandidate);
  
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
-          return {
-            ...en,
-            label: finalLabel
-          };
-        }
- 
-        if (statementType === "income") {
-          return {
-            ...en,
-            label: finalLabel || null
-          };
-        }
- 
-        if (!candidates.length) {
           return {
             ...en,
             label: finalLabel
