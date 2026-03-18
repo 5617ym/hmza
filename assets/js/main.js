@@ -16,6 +16,19 @@ const compareEl = document.getElementById("compare");
 
 let selectedFiles = [];
 
+function guessLocalTestFileName(file) {
+  const name = String(file?.name || "").toLowerCase();
+
+  if (!name) return "almarai-layout.json";
+  if (name.includes("المراعي") || name.includes("almarai")) return "almarai-layout.json";
+  if (name.includes("جدوى") || name.includes("jadwa")) return "jadwa-reit-layout.json";
+  if (name.includes("الراجحي") || name.includes("rajhi")) return "alrajhi-layout.json";
+  if (name.includes("الانماء") || name.includes("inma")) return "alinma-layout.json";
+  if (name.includes("التعاونية") || name.includes("tawuniya")) return "tawuniya-layout.json";
+  return "almarai-layout.json";
+}
+
+
 function setStatus(msg, type = "info") {
   if (!statusEl) return;
   statusEl.textContent = msg || "";
@@ -336,7 +349,12 @@ btnShow?.addEventListener("click", async () => {
     let dataA;
 
 if (DEV_MODE) {
-  dataA = { normalized: { meta: { pages: 0, tables: 0, textLength: 0 }, tablesPreview: [] } };
+  dataA = {
+    normalized: null,
+    devLocalTestFile: guessLocalTestFileName(selectedFiles[0]),
+    fileName: selectedFiles[0]?.name || null,
+    meta: { pages: 0, tables: 0, textLength: 0 }
+  };
 } else {
   dataA = await analyzeSingleFile(selectedFiles[0], ui);
 }
@@ -359,7 +377,16 @@ if (DEV_MODE) {
 
     if (ui.compare === "compare" && selectedFiles.length >= 2) {
       setStatus("تم تحليل الملف الأول ✅ — جاري تحليل الملف الثاني للمقارنة...", "info");
-      dataB = { normalized: { meta: { pages: 0, tables: 0, textLength: 0 }, tablesPreview: [] } };
+      if (DEV_MODE) {
+        dataB = {
+          normalized: null,
+          devLocalTestFile: guessLocalTestFileName(selectedFiles[1]),
+          fileName: selectedFiles[1]?.name || null,
+          meta: { pages: 0, tables: 0, textLength: 0 }
+        };
+      } else {
+        dataB = await analyzeSingleFile(selectedFiles[1], ui);
+      }
 
       window.lastAnalyzeB = dataB;
       window.lastNormalizedPrev = dataB?.normalized || null;
@@ -381,13 +408,25 @@ if (DEV_MODE) {
 
     setStatus("تم التحليل ✅ — جاري استخراج البيانات المالية...", "info");
 
-    const payload = {
-  normalized: dataA?.normalized || {},
-  period: ui.period,
-  compare: ui.compare,
-};
+    const payload = DEV_MODE
+      ? {
+          useLocalTest: true,
+          localTestFile: dataA?.devLocalTestFile || guessLocalTestFileName(selectedFiles[0]),
+          localTestFilePrev:
+            ui.compare === "compare" && selectedFiles[1]
+              ? (dataB?.devLocalTestFile || guessLocalTestFileName(selectedFiles[1]))
+              : null,
+          fileName: dataA?.fileName || selectedFiles[0]?.name || null,
+          period: ui.period,
+          compare: ui.compare,
+        }
+      : {
+          normalized: dataA?.normalized || {},
+          period: ui.period,
+          compare: ui.compare,
+        };
 
-    if (dataB?.normalized) {
+    if (!DEV_MODE && dataB?.normalized) {
       payload.normalizedPrev = dataB.normalized;
     }
 
@@ -458,4 +497,5 @@ if (DEV_MODE) {
 });
 
 clearUI();
+
 
