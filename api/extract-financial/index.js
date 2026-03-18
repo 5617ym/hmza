@@ -16,36 +16,8 @@ module.exports = async function (context, req) {
     const fs = require("fs");
     const path = require("path");
 
-    const LOCAL_TEST_FILE_DEFAULT = "jadwa-reit-layout.json";
-
-    function sanitizeLocalTestFileName(fileName) {
-      const raw = String(fileName || "").trim();
-      if (!raw) return LOCAL_TEST_FILE_DEFAULT;
-      const base = path.basename(raw);
-      return /^[A-Za-z0-9._-]+$/.test(base) ? base : LOCAL_TEST_FILE_DEFAULT;
-    }
-
-    function buildLocalTestPath(fileName) {
-      const safeFile = sanitizeLocalTestFileName(fileName);
-      return {
-        fileName: safeFile,
-        fullPath: path.join(__dirname, "..", safeFile)
-      };
-    }
-
-    function resolveRequestedLocalFiles(reqBody) {
-      const requested = buildLocalTestPath(
-        reqBody?.localTestFile ||
-        process.env.LOCAL_TEST_FILE ||
-        LOCAL_TEST_FILE_DEFAULT
-      );
-
-      const requestedPrev = reqBody?.localTestFilePrev
-        ? buildLocalTestPath(reqBody.localTestFilePrev)
-        : null;
-
-      return { requested, requestedPrev };
-    }
+    const LOCAL_TEST_FILE = "jadwa-reit-layout.json";
+    const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
 
     function isPlainObject(value) {
       return !!value && typeof value === "object" && !Array.isArray(value);
@@ -228,13 +200,12 @@ module.exports = async function (context, req) {
       };
     }
 
-    function readLocalTestPayload(localTestPath) {
-      if (!localTestPath || !fs.existsSync(localTestPath)) {
+    function readLocalTestPayload() {
+      if (!fs.existsSync(localTestPath)) {
         return {
           ok: false,
           exists: false,
-          payload: null,
-          localTestPath: localTestPath || null
+          payload: null
         };
       }
 
@@ -244,8 +215,7 @@ module.exports = async function (context, req) {
       return {
         ok: true,
         exists: true,
-        payload: parsed,
-        localTestPath
+        payload: parsed
       };
     }
 
@@ -308,11 +278,6 @@ module.exports = async function (context, req) {
           ? req.body
           : null;
 
-      const requestedLocal = resolveRequestedLocalFiles(reqBody);
-      const requestedLocalPath = requestedLocal.requested.fullPath;
-      const requestedLocalFileName = requestedLocal.requested.fileName;
-      const shouldUseLocalTest = !!reqBody?.useLocalTest;
-
       const reqCandidates = collectNormalizedCandidates(reqBody);
       const reqBest = reqCandidates[0] || null;
 
@@ -330,9 +295,7 @@ module.exports = async function (context, req) {
             reqBest.value?.meta?.fileName ||
             null,
           diagnostics: {
-            localTestPath: requestedLocalPath,
-            localTestFileUsed: requestedLocalFileName,
-            localFileExists: fs.existsSync(requestedLocalPath),
+            localFileExists: fs.existsSync(localTestPath),
             reqBodyKeys: safeObjectKeys(reqBody),
             envelopeKeys: safeObjectKeys(reqBody),
             normalizedKeys: safeObjectKeys(reqBest.value),
@@ -350,62 +313,52 @@ module.exports = async function (context, req) {
         };
       }
 
-      if (shouldUseLocalTest) {
-        const localRead = readLocalTestPayload(requestedLocalPath);
-        const localPayload = localRead?.payload || null;
-        const localCandidates = collectNormalizedCandidates(localPayload);
-        const localBest = localCandidates[0] || null;
+      const localRead = readLocalTestPayload();
+      const localPayload = localRead?.payload || null;
+      const localCandidates = collectNormalizedCandidates(localPayload);
+      const localBest = localCandidates[0] || null;
 
-        if (localRead.ok && localBest) {
-          return {
-            source: localBest.label.replace(/^payload\./, "local."),
-            body: reqBody || {},
-            envelope: localPayload || {},
-            normalized: localBest.value,
-            normalizedPrev: resolveNormalizedPrevFromEnvelope(localPayload),
-            fileName:
-              localPayload?.fileName ||
-              localPayload?.data?.fileName ||
-              localPayload?.payload?.fileName ||
-              localBest.value?.meta?.fileName ||
-              requestedLocalFileName ||
-              null,
-            diagnostics: {
-              localTestPath: requestedLocalPath,
-              localTestFileUsed: requestedLocalFileName,
-              localFileExists: true,
-              reqBodyKeys: safeObjectKeys(reqBody),
-              envelopeKeys: safeObjectKeys(localPayload),
-              normalizedKeys: safeObjectKeys(localBest.value),
-              candidateScores: localCandidates.slice(0, 5).map((item) => ({
-                source: item.label.replace(/^payload\./, "local."),
-                score: item.score,
-                resolvedPagesCount: item.resolvedPagesCount,
-                resolvedTablesCount: item.resolvedTablesCount,
-                resolvedTextLength: item.resolvedTextLength,
-                metaPages: item.metaPages,
-                metaTables: item.metaTables,
-                metaTextLength: item.metaTextLength
-              }))
-            }
-          };
-        }
+      if (localRead.ok && localBest) {
+        return {
+          source: localBest.label.replace(/^payload\./, "local."),
+          body: localPayload || {},
+          envelope: localPayload || {},
+          normalized: localBest.value,
+          normalizedPrev: resolveNormalizedPrevFromEnvelope(localPayload),
+          fileName:
+            localPayload?.fileName ||
+            localPayload?.data?.fileName ||
+            localPayload?.payload?.fileName ||
+            localBest.value?.meta?.fileName ||
+            null,
+          diagnostics: {
+            localFileExists: true,
+            reqBodyKeys: safeObjectKeys(reqBody),
+            envelopeKeys: safeObjectKeys(localPayload),
+            normalizedKeys: safeObjectKeys(localBest.value),
+            candidateScores: localCandidates.slice(0, 5).map((item) => ({
+              source: item.label.replace(/^payload\./, "local."),
+              score: item.score,
+              resolvedPagesCount: item.resolvedPagesCount,
+              resolvedTablesCount: item.resolvedTablesCount,
+              resolvedTextLength: item.resolvedTextLength,
+              metaPages: item.metaPages,
+              metaTables: item.metaTables,
+              metaTextLength: item.metaTextLength
+            }))
+          }
+        };
       }
 
       return {
-        source: reqBody?.useLocalTest ? "local_unresolved" : "none",
+        source: "none",
         body: reqBody || {},
         envelope: {},
         normalized: {},
         normalizedPrev: null,
-        fileName:
-          reqBody?.fileName ||
-          reqBody?.localTestFile ||
-          null,
+        fileName: null,
         diagnostics: {
-          localTestPath: requestedLocalPath,
-          localTestFileUsed: requestedLocalFileName,
-          localFileExists: fs.existsSync(requestedLocalPath),
+          localFileExists: fs.existsSync(localTestPath),
           reqBodyKeys: safeObjectKeys(reqBody),
           envelopeKeys: [],
           normalizedKeys: [],
@@ -426,8 +379,7 @@ module.exports = async function (context, req) {
         error: "normalized payload is required",
         debugInput: {
           source: resolvedInput.source,
-          localTestPath: resolvedInput.diagnostics.localTestPath,
-          localTestFileUsed: resolvedInput.diagnostics.localTestFileUsed,
+          localTestPath,
           ...resolvedInput.diagnostics
         }
       });
@@ -1029,6 +981,31 @@ module.exports = async function (context, req) {
       const trimmed = cleanLabel.trim();
       const normalized = (normalizedLabel || "").trim();
 
+      const badExactLabels = new Set([
+        "للسنه",
+        "للسنة",
+        "ايضاحات",
+        "الإيضاحات",
+        "ايضاح",
+        "الإيضاح",
+        "note",
+        "notes"
+      ].map((x) => normalizeText(x)));
+
+      const badContainsLabels = [
+        "بالاف",
+        "بآلاف",
+        "الف ريال",
+        "ألف ريال",
+        "ريال سعودي",
+        "sar",
+        "usd"
+      ].map((x) => normalizeText(x));
+
+      if (badExactLabels.has(normalized)) return false;
+      if (badContainsLabels.some((x) => x && normalized.includes(x))) return false;
+
+      if (/^ب[\sـ]*الاف/i.test(trimmed) || /^ب[\sـ]*آلاف/i.test(trimmed)) return false;
       if (!hasLetterChars(trimmed)) return false;
       if (normalized.length <= 2) return false;
       if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
@@ -1067,10 +1044,15 @@ module.exports = async function (context, req) {
     }
 
     function extractLabelCandidatesFromPageText(pageCtx, statementType) {
+      const firstRowsText = (pageCtx?.mainRows || [])
+        .slice(0, 12)
+        .map((r) => Array.isArray(r) ? r.join(" | ") : "")
+        .join("\n");
+
       const textBlob = [
-        pageCtx?.mainTableText || "",
-        pageCtx?.text || "",
-        pageCtx?.structuralText || ""
+        pageCtx?.headerText || "",
+        firstRowsText,
+        pageCtx?.mainTableText || ""
       ].join("\n");
 
       const candidates = splitTextIntoLogicalLines(textBlob)
@@ -2405,7 +2387,9 @@ module.exports = async function (context, req) {
 
     let incomePage = rankedIncome[0]?.pageNumber || null;
     let balancePage = rankedBalance[0]?.pageNumber || null;
-    let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
+    let cashFlowPage = ((rankedCashflow[0]?.score ?? -999) >= 0)
+      ? (rankedCashflow[0]?.pageNumber || null)
+      : null;
 
     function topPages(list, limit = 3) {
       return (list || []).slice(0, limit).map((x) => x.pageNumber);
@@ -2425,6 +2409,7 @@ module.exports = async function (context, req) {
 
     function hasReliableCashflowEvidence(rankedEntry, pageCtx) {
       if (!rankedEntry || !pageCtx) return false;
+      if ((rankedEntry?.score ?? -999) < 0) return false;
       if (isLikelyAssetRollforwardPage(pageCtx)) return false;
       if (pageCtx.isLikelyIndexPage) return false;
       if (pageCtx.isLikelyNarrativePage) return false;
@@ -2466,7 +2451,7 @@ module.exports = async function (context, req) {
 
       const topRecoveredLabels = extractRowsFromPageContext(pageCtx, "cashflow")
         .slice(0, 5)
-        .map((row) => normalizeLabelForRow(row?.label))
+        .map((row) => (row?.label))
         .filter(Boolean);
 
       const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
@@ -2488,7 +2473,11 @@ module.exports = async function (context, req) {
         return false;
       }
 
-      if (titleHitsCount > 0 || structureHitsCount > 0 || cashflowCoreHits.length > 0) {
+      if (
+        (titleHitsCount > 0 && (structureHitsCount > 0 || cashflowCoreHits.length > 0)) ||
+        structureHitsCount >= 2 ||
+        cashflowCoreHits.length >= 2
+      ) {
         return true;
       }
 
@@ -2908,10 +2897,10 @@ module.exports = async function (context, req) {
       return fallbackFromAnyText?.cell || "";
     }
 
-    function normalizeLabelForRow(label, row = null) {
+    function (label, row = null) {
   if (
     (!label || isLikelyReferenceValue(label)) &&
-    Array.isArray(row?.rawRow)
+    row && Array.isArray(row.rawRow)
   ) {
     const joined = row.rawRow.join(" ");
 
@@ -3012,7 +3001,7 @@ module.exports = async function (context, req) {
       currentYearValue,
       previousYearValue
     }) {
-      const cleanLabel = normalizeLabelForRow(label);
+      const cleanLabel = (label);
 
       if (!cleanLabel) return true;
       if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
@@ -3083,7 +3072,7 @@ module.exports = async function (context, req) {
           !isLikelyStatementTitleRow(noteRaw, statementType) &&
           !isSectionHeaderOnlyLabel(noteRaw, statementType);
 
-        const labelCandidate = normalizeLabelForRow(
+        const labelCandidate = (
           labelFromHeader ||
           fallbackLabel ||
           (noteLooksLikeLabel ? noteRaw : "")
@@ -3132,7 +3121,7 @@ module.exports = async function (context, req) {
         const idx = startIndex + offset;
         if (idx < 0 || idx >= candidates.length) continue;
 
-        const candidate = normalizeLabelForRow(candidates[idx]);
+        const candidate = (candidates[idx]);
         const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
 
         if (isAcceptableFinancialLabel(candidate, statementType)) {
@@ -3165,7 +3154,7 @@ module.exports = async function (context, req) {
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
 
       return rawEntries.map((en) => {
-        const finalLabel = normalizeLabelForRow(en.labelCandidate, en);
+        const finalLabel = (en.labelCandidate);
 
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
@@ -3185,7 +3174,7 @@ module.exports = async function (context, req) {
           statementType
         );
 
-        if (nearby) {
+        if (nearby && isAcceptableFinancialLabel(nearby.label, statementType)) {
           return {
             ...en,
             label: nearby.label,
@@ -3198,7 +3187,7 @@ module.exports = async function (context, req) {
 
         return {
           ...en,
-          label: finalLabel
+          label: isAcceptableFinancialLabel(finalLabel, statementType) ? finalLabel : null
         };
       });
     }
@@ -3214,7 +3203,7 @@ module.exports = async function (context, req) {
       const extracted = [];
 
       for (const en of repairedEntries) {
-        const label = normalizeLabelForRow(en.label, en);
+        const label = (en.label);
 
         if (
           shouldSkipExtractedRow({
@@ -3282,7 +3271,7 @@ const acceptableTextCandidates = rawTextCandidates
   .filter((label) => isAcceptableFinancialLabel(label, statementType));
 
       const noteLikeRawCount = (rawEntries || []).filter((entry) => {
-        const candidate = normalizeLabelForRow(entry?.labelCandidate, entry);
+        const candidate = (entry?.labelCandidate);
         return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
       }).length;
 
@@ -3448,8 +3437,7 @@ const acceptableTextCandidates = rawTextCandidates
       debug: {
         inputResolution: {
           source: resolvedInput.source,
-          localTestPath: resolvedInput.diagnostics.localTestPath,
-          localTestFileUsed: resolvedInput.diagnostics.localTestFileUsed,
+          localTestPath,
           localFileExists: resolvedInput.diagnostics.localFileExists,
           reqBodyKeys: resolvedInput.diagnostics.reqBodyKeys,
           envelopeKeys: resolvedInput.diagnostics.envelopeKeys,
@@ -3510,5 +3498,4 @@ const acceptableTextCandidates = rawTextCandidates
 
 
   
-
 
