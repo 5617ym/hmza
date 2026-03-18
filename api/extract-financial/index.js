@@ -1,4 +1,3 @@
-
 const { detectSector } = require("../lib/sector-detection");
 const sectorProfiles = require("../lib/sector-profiles");
 // api/extract-financial/index.js
@@ -24,18 +23,18 @@ reqBodyKeys:
 req?.body && typeof req.body === "object"
 ? Object.keys(req.body)
 : []
+});
 function isPlainObject(value) {
 return !!value && typeof value === "object" && !Array.isArray(value);
+}
 function isNonEmptyObject(value) {
 return isPlainObject(value) && Object.keys(value).length > 0;
+}
 function safeObjectKeys(value) {
 return isPlainObject(value) ? Object.keys(value) : [];
+}
 function toArray(value) {
 return Array.isArray(value) ? value : [];
-});
-}
-}
-}
 }
 function getResolvedPagesFromNormalized(value) {
 if (!isPlainObject(value)) return [];
@@ -46,10 +45,10 @@ value.document?.pages,
 value.result?.pages,
 value.result?.layout?.pages,
 value.analysisResult?.pages
-];
 for (const candidate of candidates) {
 if (Array.isArray(candidate) && candidate.length > 0) {
 return candidate;
+];
 }
 }
 return [];
@@ -69,10 +68,10 @@ value.result?.pageTables,
 value.result?.layout?.tables,
 value.result?.layout?.pageTables,
 value.analysisResult?.tables
-];
 for (const candidate of candidates) {
 if (Array.isArray(candidate) && candidate.length > 0) {
 return candidate;
+];
 }
 }
 return [];
@@ -339,7 +338,7 @@ source: resolvedInput.source,
 localTestPath,
 ...resolvedInput.diagnostics
 }
-});
+;)}
 }
 const pages = getResolvedPagesFromNormalized(normalized);
 const tablesPreview = getResolvedTablesFromNormalized(normalized);
@@ -352,7 +351,7 @@ const incomeKeywords = Array.isArray(sectorStatements.income)
 ? sectorStatements.income
 : Array.isArray(activeSectorProfile.incomeStatement)
 ? activeSectorProfile.incomeStatement
-: [];
+;][ :
 const balanceKeywords = Array.isArray(sectorStatements.balance)
 ? sectorStatements.balance
 : Array.isArray(activeSectorProfile.balanceSheet)
@@ -373,6 +372,7 @@ const DIGIT_MAP = {
 -
 " :"
 —
+"" :" ـ" ,"
 " ,"
 -
 " :"
@@ -381,8 +381,8 @@ const DIGIT_MAP = {
 -
 " :"−" ,"," :"
 ،" ,"." :"
-"" :" ـ" ,"
 ٫
+;}
 function toEnglishDigits(value) {
 —
 –
@@ -390,7 +390,6 @@ function toEnglishDigits(value) {
 return String(value || "").replace(/[٠-
 ،٩٫
 ;)g, (m) => DIGIT_MAP[m] || m/] ـ
-;}
 }
 function normalizeArabic(text) {
 return String(text || "")
@@ -400,7 +399,6 @@ return String(text || "")
 )"ه" ,g/ة/(replace.
 )"و" ,g/ؤ/(replace.
 ;)"ي" ,g/ئ/(replace.
-}
 function normalizeText(value) {
 return normalizeArabic(toEnglishDigits(String(value || "")))
 .replace(/[^\S\r\n]+/g, " ")
@@ -409,11 +407,12 @@ return normalizeArabic(toEnglishDigits(String(value || "")))
 .toLowerCase();
 function unique(arr) {
 return Array.from(new Set((arr || []).filter(Boolean)));
-}
-}
 function safeNumber(v, fallback = 0) {
 const n = Number(v);
 return Number.isFinite(n) ? n : fallback;
+}
+}
+}
 }
 function flattenValue(v) {
 if (v == null) return "";
@@ -461,13 +460,13 @@ s = s.replace(/\./g, "");
 const n = Number(s);
 if (!Number.isFinite(n)) return null;
 return negative ? -n : n;
-}
 function extractYears(text) {
 const s = toEnglishDigits(String(text || ""));
 const years = s.match(/\b(19\d{2}|20\d{2})\b/g) || [];
 return unique(years.map(Number)).sort((a, b) => b - a);
 function isYearCell(cell) {
 return /^(19|20)\d{2}$/.test(toEnglishDigits(String(cell || "").trim()));
+}
 }
 }
 function getYearFromCell(cell) {
@@ -482,11 +481,11 @@ const n = Number(years[0]);
 if (Number.isFinite(n)) return n;
 }
 return null;
+}
 function isNoteHeaderCell(cell) {
 const s = normalizeText(cell);
-return s === " حﺎﻀﯾا " || s === " }
-}
-حﺎﻀﯾﻻا " || s === "notes" || s === "note";
+return s === " حﺎﻀﯾا " || s === " حﺎﻀﯾﻻا }
+" || s === "notes" || s === "note";
 function isQuarterOrPeriodCell(cell) {
 const s = normalizeText(cell);
 return (
@@ -504,7 +503,8 @@ s.includes("12 months") ||
 ﮫﻨﺴﻟا "(s.includes
 || )" ﮫﯿﮭﺘﻨﻤﻟا
 هﺮﺘﻔﻟا "(s.includes
-|| )" ﮫﯿﮭﺘﻨﻤﻟا
+|| )" ﮫ
+ﯿﮭﺘﻨﻤﻟا
 s.includes("as of") ||
 ﺎﻤﻛ "(s.includes
 || )" ﻲﻓ
@@ -559,10 +559,11 @@ obj?.pageIndex ??
 obj?.page_no ??
 obj?.pageNum,
 null
-);
+;)
 }
 function tableText(table) {
 return [
+]
 table?.sample,
 table?.sampleHead,
 table?.sampleTail,
@@ -572,7 +573,6 @@ table?.markdown,
 table?.preview,
 table?.tableText,
 table?.rawText
-]
 .filter(Boolean)
 .map(flattenValue)
 .join("\n");
@@ -609,9 +609,9 @@ cell?.col ??
 cell?.c,
 null
 );
+}
 if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
 continue;
-}
 const content = String(
 cell?.content ??
 cell?.text ??
@@ -622,9 +622,9 @@ cell?.rawText ??
 const columnSpan = Math.max(
 1,
 safeNumber(cell?.columnSpan ?? cell?.colSpan ?? 1, 1)
+);
 if (!rowMap.has(rowIndex)) {
 rowMap.set(rowIndex, {});
-);
 }
 const rowObj = rowMap.get(rowIndex);
 for (let offset = 0; offset < columnSpan; offset += 1) {
@@ -646,7 +646,7 @@ for (let c = 0; c <= maxColIndex; c += 1) {
 row.push(String(rowObj[c] == null ? "" : rowObj[c]).trim());
 }
 return row;
-})
+)}
 .filter((r) => r.some((c) => !isBlank(c)));
 if (reconstructedRows.length > 0) {
 return reconstructedRows;
@@ -673,7 +673,7 @@ index,
 cells,
 joined: cells.join(" | "),
 normalized: normalizeText(cells.join(" | "))
-}));
+;))}
 }
 function isLikelyOnlyReferenceText(value) {
 const raw = toEnglishDigits(String(value || "").trim());
@@ -751,7 +751,6 @@ s.includes("accompanying notes") ||
 اءﺰﺟ "(s.includes
 )" اﺰﺠﺘﯾ
 ;)
-}
 function isPureNumericSymbolCell(text) {
 const raw = toEnglishDigits(String(text || "").trim());
 if (!raw) return false;
@@ -762,6 +761,7 @@ function hasLatinChars(text) {
 return /[A-Za-z]/.test(String(text || ""));
 function hasLetterChars(text) {
 return /[A-Za-z\u0621-\u064A]/.test(String(text || ""));
+}
 }
 }
 }
@@ -829,8 +829,9 @@ const genericHeaders = [
 ," ﮫﯿﻜﻠﻤﻟا
 قﻮﻘﺣ "
 ," ﺔﯿﻜﻠﻤﻟا
+ﺘﻤﻟا
 تادﻮﺟﻮﻤﻟا "
-," ﮫﻟواﺪﺘﻤﻟا
+," ﮫﻟواﺪ
 ﺮﯿﻏ
 تادﻮﺟﻮﻤﻟا "
 ," ﺔﻟواﺪﺘﻤﻟا
@@ -991,20 +992,20 @@ enriched.push(salvaged);
 return dedupePreserveOrder(enriched).filter((line) => {
 return !isLikelyMetaOrHeaderLabel(line) &&
 !isLikelyStatementTitleRow(line, statementType);
-;)}
-}
+});
 function getTablesForPage(pageNumber) {
 return tablesPreview.filter((t) => pageNumFromObj(t) === pageNumber);
 function getTableDensityScore(table) {
 return (getTableRowCount(table) * 10) + getTableColumnCount(table);
-}
-}
 function pickMainTable(tables) {
 const list = Array.isArray(tables) ? tables : [];
 if (!list.length) return null;
 return list.slice().sort((a, b) => getTableDensityScore(b) - getTableDensityScore(a))[0];
 function getHeaderRows(rows) {
 return [rows[0] || [], rows[1] || [], rows[2] || [], rows[3] || [], rows[4] || [], rows[5] || []];
+}
+}
+}
 }
 }
 function getNumericColumnDensity(rows, limit = 24) {
@@ -1096,12 +1097,12 @@ mode = mode === "fallback" ? "single_numeric_column" : mode;
 }
 }
 const maxColCount = Math.max(
-0,
+,0
 ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0))
-);
+;)
 const reservedCols = new Set(
 [currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x))
-);
+;)
 const freeCols = [];
 for (let c = 0; c < maxColCount; c += 1) {
 if (!reservedCols.has(c)) freeCols.push(c);
@@ -1386,8 +1387,7 @@ const cashflowCoreHits = countDistinctPhraseHits(text, [
 ﺞﺗﺎﻨﻟا
 ﺪﻘﻨﻟا
 ﻲﻓﺎﺻ "
-," ﻲﻓ
-مﺪﺨﺘﺴﻤﻟا
+," ﻲﻓمﺪﺨﺘﺴﻤﻟا
 ﺪﻘﻨﻟا
 "cash flows from operating activities",
 "cash flows from investing activities",
@@ -1422,8 +1422,9 @@ positive: [
 ﻞﺧد
 ﻲﻟﺎﻤﺟا "
 ," تﺎﯿﻠﻤﻌﻟا
+ﻌﻟا
 ﻊﺋادو "
-," ءﻼﻤﻌﻟا
+," ءﻼﻤ
 كﻮﻨﺒﻟا "
 ," ﺔﯾﺰﻛﺮﻤﻟا
 تﺎﺴﺳﺆﻤﻟا "
@@ -1555,7 +1556,7 @@ negative: [
 "insurance revenue"
 ]
 }
-};
+;}
 function detectStatementProfile() {
 const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
 const scores = {};
@@ -1574,13 +1575,13 @@ statementProfile,
 scores,
 rankedProfiles: sorted,
 reason: `${statementProfile} keywords strongest`
-};
+;}
 }
 const profileDetection = detectStatementProfile();
 const statementProfile = profileDetection.statementProfile;
 let finalSector = detectedSector;
 if (
-) {
+{ )
 finalSector === "operating_company" &&
 statementProfile &&
 sectorProfiles[statementProfile]
@@ -1590,14 +1591,14 @@ const finalSectorProfile =
 sectorProfiles[finalSector] || sectorProfiles.operating_company || {};
 const sectorInfo =
 finalSector !== rawSectorInfo?.sector
-? {
+{ ?
 ...rawSectorInfo,
 sector: finalSector,
 reasons: [
 `sector overridden by statement profile: ${rawSectorInfo?.sector} -> ${finalSector}`
 ]
 }
-: {
+{ :
 ...rawSectorInfo,
 sector: finalSector
 ;}
@@ -1788,7 +1789,8 @@ titles: [
 تﺎﻘﻓﺪﺘﻟا
 نﺎﯿﺑ "
 ," ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
+ﺘﻟا "
+تﺎﻘﻓﺪ
 ," ﺔﯾﺪﻘﻨﻟا
 "cash flow statement",
 "statement of cash flows",
@@ -1828,11 +1830,13 @@ structure: [
 ," ﺔﯿﻠﯾﻮﻤﺘﻟا
 ﻦﻣ
 ﺪﻘﻨﻟا
+ﻨﻟا
 ﺮﯿﻐﺘﻟا "
-," ﺪﻘﻨﻟا
+," ﺪﻘ
 ﻲﻓ
 ﺮﯿﻐﺘﻟا "
-," ﮫﻤﻜﺣﻲﻓ
+," ﮫﻤﻜﺣ
+ﻲﻓ
 ﺎﻣو
 ﺪﻘﻨﻟا
 ﻲﻓ
@@ -2135,7 +2139,8 @@ structure: [
 ," ﺪﻘﻨﻟا
 ﻲﻓ
 ﺪﻘﻨﻟا "
-," ﮫﻤﻜﺣ
+," ﮫﻤﻜ
+ﺣ
 ﻲﻓ
 ﺎﻣو
 "cash flows from operating activities",
@@ -2186,9 +2191,10 @@ structure: balanceKeywords.length ? balanceKeywords : [
 ﻲﻟﺎﻤﺟإ
 " ,"
 ﺔﯿﻜﻠﻤﻟا
+ﻠﻤﻟا
 " ,"
 " ,"
-," ﺔﯿﻜﻠﻤﻟا
+," ﺔﯿﻜ
 قﻮﻘﺣ
 تﺎﺑﻮﻠﻄﻤﻟا
 تﺎﺑﻮﻠﻄﻤﻟا
@@ -2316,11 +2322,12 @@ structure: cashflowKeywords.length ? cashflowKeywords : [
 ," ﺔﯿﻠﯾﻮﻤﺘﻟا
 ﻦﻣ
 ﺔﯾﺪﻘﻨﻟا
+ﺎﺻ "
 ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
 ," ﺔﯿﻠﯿﻐﺸﺘﻟا
 ﻦﻣ
 ﺪﻘﻨﻟا
+ﻲﻓ
 ﺔﻄﺸﻧﻻا
 ﻲﻓﺎﺻ "
 ," ﺔﯾرﺎﻤﺜﺘﺳﻻا
@@ -2382,13 +2389,14 @@ return {
 structure: unique([
 ...(cfg?.structure || []),
 ...(sectorStructure || [])
-])
-};
+)]
+;}
 function getHeaderSearchText(pageCtx) {
 return flattenValue(pageCtx?.header || "");
 }
 }
 function getPageStatementText(pageCtx) {
+}
 const firstRowsText = (pageCtx?.mainRows || [])
 .slice(0, 10)
 .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
@@ -2401,7 +2409,6 @@ pageCtx?.mainTableText || "",
 pageCtx?.text || "",
 pageCtx?.structuralText || ""
 ].join("\n");
-}
 function statementRankScore(pageCtx, cfg, kind) {
 let score = 0;
 const reasons = [];
@@ -2504,35 +2511,35 @@ reasons.push(`earlyPage:+${s}`);
 } else if (pageCtx.positionRatio >= 0.35) {
 score -= 180;
 reasons.push("latePagePenalty:-180");
-}
 if (pageCtx.isLikelyIndexPage) {
 score -= 220;
 reasons.push("indexPenalty:-220");
-}
 if (pageCtx.isLikelyStandardsPage) {
 score -= 190;
 reasons.push("standardsPenalty:-190");
-}
 if (pageCtx.isLikelyNarrativePage) {
 score -= 170;
 reasons.push("narrativePenalty:-170");
-}
 if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
 score -= 140;
 reasons.push("comprehensiveIncomePenalty:-140");
 }
+}
+}
+}
+}
 if (kind !== "income" && pageCtx.isLikelyComprehensiveIncome) {
 score -= 60;
 reasons.push("crossStatementComprehensivePenalty:-60");
-}
 if (pageCtx.isLikelyEquityStatement) {
 score -= 120;
 reasons.push("equityStatementPenalty:-120");
-}
 if (negativeHits.length > 0) {
 const s = Math.min(negativeHits.length, 8) * 22;
 score -= s;
 reasons.push(`negativeHits:-${s}`);
+}
+}
 }
 const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
 const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
@@ -2666,15 +2673,15 @@ let balancePage = rankedBalance[0]?.pageNumber || null;
 let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
 function topPages(list, limit = 3) {
 return (list || []).slice(0, limit).map((x) => x.pageNumber);
-}
 const strongIncomePages = new Set(topPages(rankedIncome, 3));
 const strongBalancePages = new Set(topPages(rankedBalance, 3));
 const strongCashflowPages = new Set(topPages(rankedCashflow, 3));
 function findAlternative(list, blockedPages) {
 return (list || []).find((p) => !blockedPages.has(p.pageNumber))?.pageNumber || null;
-}
 function getPageContextByNumber(pageNumber) {
 return pageContexts.find((p) => p.pageNumber === pageNumber) || null;
+}
+}
 }
 function hasReliableCashflowEvidence(rankedEntry, pageCtx) {
 if (!rankedEntry || !pageCtx) return false;
@@ -2693,7 +2700,8 @@ const cashflowCoreHits = countDistinctPhraseHits(
 getPageStatementText(pageCtx),
 [
 تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻻا
+ﺔﻄﺸﻧﻻ
+ا
 ," ﺔﯿﻠﯿﻐﺸﺘﻟا
 ﻦﻣ
 ﺔﯾﺪﻘﻨﻟا
@@ -2770,18 +2778,18 @@ structureHitsCount === 0 &&
 cashflowCoreHits.length === 0;
 if (weakSingleNumericColumn) {
 return false;
-}
 if (titleHitsCount > 0 || structureHitsCount > 0 || cashflowCoreHits.length > 0) {
 return true;
 if ((rankedEntry?.score ?? -999) >= 80 && validRecoveredLabelCount >= 3) {
 return true;
 }
 }
-return false;
 }
+return false;
 function getNeighborPageContext(basePageNumber, offset = 1) {
 if (!Number.isFinite(basePageNumber)) return null;
 return getPageContextByNumber(basePageNumber + offset);
+}
 }
 function getContinuationConfig(kind) {
 const cfg = mergeStatementConfigWithSectorKeywords(
@@ -2817,10 +2825,10 @@ if (structureHitsAll.length > 0) {
 const s = Math.min(structureHitsAll.length, 8) * 18;
 score += s;
 reasons.push(`structureAll:+${s}`);
-}
 if (titleHits.length === 0 && structureHitsFirstRows.length === 0) {
 score -= 70;
 reasons.push("noTitleNoFirstRows:-70");
+}
 }
 if (structureHitsFirstRows.length > 0) {
 const s = Math.min(structureHitsFirstRows.length, 5) * 20;
@@ -2833,51 +2841,51 @@ const multiplier = structureHitsAll.length > 0 || structureHitsFirstRows.length 
 const s = Math.round(base * multiplier);
 score += s;
 reasons.push(`title:+${s}`);
-}
 if (candidateCtx.hasYearLikeHeader) {
 score += 15;
 reasons.push("yearHeader:+15");
-}
 if ((candidateCtx.years || []).length >= 2) {
 score += 12;
 reasons.push("years:+12");
-}
 if (candidateCtx.numbersCount >= 12) {
 score += 12;
 reasons.push("numbers:+12");
-}
 if (candidateCtx.mainRowCount >= 6) {
 score += 10;
 reasons.push("rowCount:+10");
-}
 if (candidateCtx.mainColumnCount >= 3) {
 score += 8;
 reasons.push("columnCount:+8");
-}
 if (candidateCtx.isLikelyIndexPage) {
 score -= 220;
 reasons.push("indexPenalty:-220");
-}
 if (candidateCtx.isLikelyStandardsPage) {
 score -= 180;
 reasons.push("standardsPenalty:-180");
-}
 if (candidateCtx.isLikelyNarrativePage) {
 score -= 150;
 reasons.push("narrativePenalty:-150");
-}
 if (candidateCtx.isLikelyEquityStatement) {
 score -= 120;
 reasons.push("equityPenalty:-120");
-}
 if (kind === "income" && candidateCtx.isLikelyComprehensiveIncome) {
 score -= 120;
 reasons.push("comprehensivePenalty:-120");
-}
 if (negativeHits.length > 0) {
 const s = Math.min(negativeHits.length, 6) * 22;
 score -= s;
 reasons.push(`negativeHits:-${s}`);
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
 }
 return { score, reasons };
 }
@@ -2894,10 +2902,10 @@ for (const kind of kinds) {
 const cfg = mergeStatementConfigWithSectorKeywords(
 kind,
 ACTIVE_STATEMENT_CONFIGS[kind]
+);
 const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
 if (otherTitleHits.length >= 1) {
 return true;
-);
 }
 }
 return false;
@@ -2908,7 +2916,8 @@ let score = 0;
 if (Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1) score += 20;
 if (Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20) score += 20;
 if (Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20) score += 20;
-if (baseCtx.years && candidateCtx.years && baseCtx.years.some((y) => candidateCtx.years.includes(y))) score += 20;
+if (baseCtx.years && candidateCtx.years && baseCtx.years.some((y) => candidateCtx.years.includes(y)))
+score += 20;
 if ((baseCtx.mainRowCount || 0) > 5 && (candidateCtx.mainRowCount || 0) > 5) score += 20;
 return score >= 60;
 }
@@ -2960,11 +2969,11 @@ reasons: prevEval.reasons
 : null,
 nextPage: nextCtx
 ? {
+}
+: null
 pageNumber: nextCtx.pageNumber,
 score: nextEval.score,
 reasons: nextEval.reasons
-}
-: null
 }
 };
 }
@@ -3100,7 +3109,7 @@ const reserved = new Set(
 header?.currentCol,
 header?.previousCol
 ].filter((x) => Number.isFinite(x))
-);
+;)
 const textCandidates = cells
 .filter((x) => !reserved.has(x.idx))
 .filter((x) => isLikelyTextLabelCell(x.cell))
@@ -3137,7 +3146,8 @@ income: [
 ," ﻞﺧﺪﻟا
 ﺔﻤﺋﺎﻗ "
 ," ﺮﺋﺎﺴﺨﻟاو
-حﺎﺑرﻻا
+حﺎﺑرﻻ
+ا
 ﺔﻤﺋﺎﻗ "
 ," ﺮﺋﺎﺴﺨﻟاو
 حﺎﺑرﻷا
@@ -3251,13 +3261,13 @@ cleanLabel,
 "net cash",
 "cash and cash equivalents"
 )
-) {
+{ )
 }
 ]
 return true;
+}
 if (!isAcceptableFinancialLabel(cleanLabel, statementType)) {
 return true;
-}
 }
 return false;
 }
@@ -3474,13 +3484,13 @@ source: {
 labelRecoveredFrom: nearbyPageTextLabel.recoveredFrom
 }
 };
-}
-}
 return {
 ...en,
 label: finalLabel
 };
 });
+}
+}
 }
 function extractRowsFromPageContext(pageCtx, statementType) {
 if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
@@ -3549,7 +3559,8 @@ const acceptableTextCandidates = extractLabelCandidatesFromPageText(pageCtx, sta
 .filter((label) => isAcceptableFinancialLabel(label, statementType));
 const noteLikeRawCount = (rawEntries || []).filter((entry) => {
 const candidate = normalizeLabelForRow(entry?.labelCandidate);
-return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
+return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate,
+statementType);
 }).length;
 const acceptedCount = (repairedEntries || []).filter((entry) => {
 const label = normalizeLabelForRow(entry?.label);
