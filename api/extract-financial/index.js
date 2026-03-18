@@ -971,12 +971,43 @@ module.exports = async function (context, req) {
     function isLikelyCurrencyOrUnitHeader(label) {
       const s = normalizeText(label);
       if (!s) return false;
- 
-            return (
+
+      const compact = s
+        .replace(/[()\[\]{}:؛;,،._-]+/g, " ")
+        .replace(/[0-9٠-٩]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      return (
         s.includes("ريال سعودي") ||
         s.includes("الف ريال") ||
         s.includes("ألف ريال") ||
         s.includes("بالريال") ||
+        s.includes("بالاف") ||
+        s.includes("بالالاف") ||
+        s.includes("بالالف") ||
+        s.includes("بالآلاف") ||
+        s.includes("بالألاف") ||
+        s.includes("بالألف") ||
+        s.includes("notes") ||
+        s.includes("note") ||
+        compact === "الاف" ||
+        compact === "آلاف" ||
+        compact === "الف" ||
+        compact === "ألف" ||
+        compact === "بالاف" ||
+        compact === "بالالف" ||
+        compact === "بالالاف" ||
+        compact === "بالآلاف" ||
+        compact === "بالألاف" ||
+        compact === "بالألف" ||
+        compact === "الف ريال" ||
+        compact === "ألف ريال" ||
+        compact === "ريال سعودي" ||
+        compact === "للسنة" ||
+        compact === "للفترة" ||
+        compact === "المنتهية" ||
+        compact === "المنتهيه" ||
         s === "sar" ||
         s === "usd" ||
         s === "دولار"
@@ -2950,100 +2981,6 @@ module.exports = async function (context, req) {
  
       return currentValue != null || previousValue != null;
     }
-
-
-    function getAcceptableLabelFromCell(cell, statementType) {
-      const clean = normalizeLabelForRow(cell);
-      if (!clean) return "";
-      if (isLikelyReferenceValue(clean)) return "";
-      if (isLikelyMetaOrHeaderLabel(clean)) return "";
-      if (isLikelyStatementTitleRow(clean, statementType)) return "";
-      if (isSectionHeaderOnlyLabel(clean, statementType)) return "";
-      if (isLikelyCurrencyOrUnitHeader(clean)) return "";
-
-      if (isAcceptableFinancialLabel(clean, statementType)) {
-        return clean;
-      }
-
-      const salvaged = salvageFinancialLabelCandidate(clean);
-      if (
-        salvaged &&
-        !isLikelyCurrencyOrUnitHeader(salvaged) &&
-        !isLikelyMetaOrHeaderLabel(salvaged) &&
-        !isLikelyStatementTitleRow(salvaged, statementType) &&
-        !isSectionHeaderOnlyLabel(salvaged, statementType) &&
-        isAcceptableFinancialLabel(salvaged, statementType)
-      ) {
-        return normalizeLabelForRow(salvaged);
-      }
-
-      return "";
-    }
-
-    function getSameRowTableLabelCandidate(row, header, statementType) {
-      if (!Array.isArray(row) || !row.length) return null;
-
-      const reserved = new Set(
-        [
-          header?.currentCol,
-          header?.previousCol
-        ].filter((x) => Number.isFinite(x))
-      );
-
-      const candidates = row
-        .map((cell, idx) => ({
-          idx,
-          raw: String(cell == null ? "" : cell).trim()
-        }))
-        .filter((x) => !reserved.has(x.idx))
-        .map((x) => ({
-          idx: x.idx,
-          label: getAcceptableLabelFromCell(x.raw, statementType)
-        }))
-        .filter((x) => !!x.label)
-        .sort((a, b) => b.idx - a.idx);
-
-      if (!candidates.length) return null;
-
-      return {
-        label: candidates[0].label,
-        recoveredFrom: "table_row_primary"
-      };
-    }
-
-    function getNearbyTableLabelCandidate(pageCtx, rowIndex, statementType) {
-      const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
-      const header = pageCtx?.header || {};
-      if (!rows.length) return null;
-
-      const offsets = [-1, 1, -2, 2, -3, 3];
-
-      for (const offset of offsets) {
-        const idx = rowIndex + offset;
-        if (idx < 0 || idx >= rows.length) continue;
-        const row = rows[idx];
-        if (!Array.isArray(row) || !row.length) continue;
-        if (idx <= safeNumber(header?.headerRowIndex, -1)) continue;
-
-        const candidate = getSameRowTableLabelCandidate(row, header, statementType);
-        if (candidate) {
-          return {
-            label: candidate.label,
-            recoveredFrom: "table_row_nearby"
-          };
-        }
-      }
-
-      return null;
-    }
-
-    function getTableDerivedLabelCandidate(pageCtx, row, rowIndex, statementType) {
-      const header = pageCtx?.header || {};
-      const primary = getSameRowTableLabelCandidate(row, header, statementType);
-      if (primary) return primary;
-
-      return getNearbyTableLabelCandidate(pageCtx, rowIndex, statementType);
-    }
  
     function shouldSkipExtractedRow({
       row,
@@ -3101,27 +3038,90 @@ module.exports = async function (context, req) {
       return false;
     }
  
+    function buildRowLabelCandidates(row, header, statementType) {
+      if (!Array.isArray(row) || !row.length) return [];
+
+      const labelFromHeader = getCell(row, header?.labelCol);
+      const fallbackLabel = pickFallbackLabelCell(row, header || {}, statementType);
+      const noteRaw = getCell(row, header?.noteCol);
+
+      const noteLooksLikeLabel =
+        header?.labelCol == null &&
+        !!noteRaw &&
+        isLikelyTextLabelCell(noteRaw) &&
+        !isLikelyReferenceValue(noteRaw) &&
+        !isLikelyMetaOrHeaderLabel(noteRaw) &&
+        !isLikelyStatementTitleRow(noteRaw, statementType) &&
+        !isSectionHeaderOnlyLabel(noteRaw, statementType);
+
+      const rawCandidates = [
+        labelFromHeader,
+        fallbackLabel,
+        noteLooksLikeLabel ? noteRaw : ""
+      ]
+        .map((x) => normalizeLabelForRow(x))
+        .filter(Boolean);
+
+      const expanded = [];
+      for (const candidate of rawCandidates) {
+        expanded.push(candidate);
+        const salvaged = salvageFinancialLabelCandidate(candidate);
+        if (salvaged && normalizeText(salvaged) !== normalizeText(candidate)) {
+          expanded.push(normalizeLabelForRow(salvaged));
+        }
+      }
+
+      return dedupePreserveOrder(expanded).filter((candidate) => {
+        return (
+          !!candidate &&
+          !isLikelyReferenceValue(candidate) &&
+          !isLikelyMetaOrHeaderLabel(candidate) &&
+          !isLikelyStatementTitleRow(candidate, statementType) &&
+          !isSectionHeaderOnlyLabel(candidate, statementType) &&
+          !isLikelyCurrencyOrUnitHeader(candidate)
+        );
+      });
+    }
+
+    function findBestNearbyTableLabelCandidate(pageCtx, rowIndex, statementType) {
+      const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
+      const header = pageCtx?.header || {};
+      const offsets = [0, -1, 1, -2, 2, -3, 3];
+
+      for (const offset of offsets) {
+        const idx = rowIndex + offset;
+        if (idx < 0 || idx >= rows.length) continue;
+        if (idx <= safeNumber(header?.headerRowIndex, -1)) continue;
+
+        const rowCandidates = buildRowLabelCandidates(rows[idx], header, statementType);
+        for (const candidate of rowCandidates) {
+          if (isAcceptableFinancialLabel(candidate, statementType)) {
+            return {
+              label: candidate,
+              recoveredFrom: offset === 0 ? "table_row_primary" : "table_row_nearby"
+            };
+          }
+        }
+      }
+
+      return null;
+    }
+
     function collectNumericRows(pageCtx, statementType) {
       const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
       const header = pageCtx?.header || {};
       const numericRows = [];
-
+ 
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
         const row = rows[rowIndex];
         if (!Array.isArray(row) || !row.length) continue;
         if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
         if (!rowHasUsefulNumericValue(row, header)) continue;
-
+ 
         const labelFromHeader = getCell(row, header.labelCol);
         const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
         const noteRaw = getCell(row, header.noteCol);
-        const tableDerivedLabel = getTableDerivedLabelCandidate(
-          pageCtx,
-          row,
-          rowIndex,
-          statementType
-        );
-
+ 
         const noteLooksLikeLabel =
           header.labelCol == null &&
           !!noteRaw &&
@@ -3129,36 +3129,40 @@ module.exports = async function (context, req) {
           !isLikelyReferenceValue(noteRaw) &&
           !isLikelyMetaOrHeaderLabel(noteRaw) &&
           !isLikelyStatementTitleRow(noteRaw, statementType) &&
-          !isSectionHeaderOnlyLabel(noteRaw, statementType) &&
-          !isLikelyCurrencyOrUnitHeader(noteRaw);
-
-        const directLabelCandidate = normalizeLabelForRow(
+          !isSectionHeaderOnlyLabel(noteRaw, statementType);
+ 
+        let labelCandidate = normalizeLabelForRow(
           labelFromHeader ||
           fallbackLabel ||
           (noteLooksLikeLabel ? noteRaw : "")
         );
 
-        const labelCandidate = normalizeLabelForRow(
-          directLabelCandidate ||
-          tableDerivedLabel?.label ||
-          ""
-        );
-
-        if (statementType === "income" && !labelCandidate) {
-          continue;
+        let tableLabelRecovery = null;
+        if (!isAcceptableFinancialLabel(labelCandidate, statementType)) {
+          tableLabelRecovery = findBestNearbyTableLabelCandidate(pageCtx, rowIndex, statementType);
+          if (tableLabelRecovery?.label) {
+            labelCandidate = normalizeLabelForRow(tableLabelRecovery.label);
+          }
         }
-
+ 
         const note =
           noteLooksLikeLabel
             ? null
             : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
-
+ 
         const currentYearValueRaw = getCell(row, header.currentCol);
         const previousYearValueRaw = getCell(row, header.previousCol);
-
+ 
         const currentYearValue = parseNumberSmart(currentYearValueRaw);
         const previousYearValue = parseNumberSmart(previousYearValueRaw);
 
+        if (
+          statementType === "income" &&
+          !isAcceptableFinancialLabel(labelCandidate, statementType)
+        ) {
+          continue;
+        }
+ 
         numericRows.push({
           statementType,
           pageNumber: pageCtx.pageNumber,
@@ -3175,17 +3179,16 @@ module.exports = async function (context, req) {
             previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
             resolutionMode: header.resolutionMode || null,
             direction: header.direction || null,
-            labelRecoveredFrom:
-              !directLabelCandidate && tableDerivedLabel
-                ? tableDerivedLabel.recoveredFrom
-                : null
+            ...(tableLabelRecovery?.recoveredFrom
+              ? { labelRecoveredFrom: tableLabelRecovery.recoveredFrom }
+              : {})
           }
         });
       }
-
+ 
       return numericRows;
     }
-
+ 
         function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
       if (!Array.isArray(candidates) || !candidates.length) return null;
  
@@ -3222,71 +3225,85 @@ module.exports = async function (context, req) {
     function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
 
-      const candidates =
-        statementType === "income"
-          ? []
-          : extractLabelCandidatesFromPageText(pageCtx, statementType);
-      const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
+      if (statementType === "income") {
+        return rawEntries.map((en) => {
+          const finalLabel = normalizeLabelForRow(en.labelCandidate);
 
+          if (isAcceptableFinancialLabel(finalLabel, statementType)) {
+            return {
+              ...en,
+              label: finalLabel
+            };
+          }
+
+          const nearbyTableLabel = findBestNearbyTableLabelCandidate(
+            pageCtx,
+            safeNumber(en?.rowIndex, 0),
+            statementType
+          );
+
+          if (nearbyTableLabel) {
+            return {
+              ...en,
+              label: nearbyTableLabel.label,
+              source: {
+                ...en.source,
+                labelRecoveredFrom: nearbyTableLabel.recoveredFrom
+              }
+            };
+          }
+
+          return {
+            ...en,
+            label: finalLabel
+          };
+        });
+      }
+ 
+      const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
+      if (!candidates.length) return rawEntries;
+ 
+      const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
+ 
       return rawEntries.map((en) => {
         const finalLabel = normalizeLabelForRow(en.labelCandidate);
-
+ 
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
             ...en,
             label: finalLabel
           };
         }
-
-        const tableDerived = getTableDerivedLabelCandidate(
-          pageCtx,
-          en?.row,
-          safeNumber(en?.rowIndex, 0),
+ 
+        const relativeRowIndex = Math.max(
+          0,
+          safeNumber(en?.rowIndex, 0) - headerRowIndex - 1
+        );
+ 
+        const nearby = findBestNearbyLabelCandidate(
+          candidates,
+          relativeRowIndex,
           statementType
         );
-
-        if (tableDerived && isAcceptableFinancialLabel(tableDerived.label, statementType)) {
+ 
+        if (nearby) {
           return {
             ...en,
-            label: tableDerived.label,
+            label: nearby.label,
             source: {
               ...en.source,
-              labelRecoveredFrom: tableDerived.recoveredFrom
+              labelRecoveredFrom: nearby.recoveredFrom
             }
           };
         }
-
-        if (statementType !== "income" && candidates.length) {
-          const relativeRowIndex = Math.max(
-            0,
-            safeNumber(en?.rowIndex, 0) - headerRowIndex - 1
-          );
-
-          const nearby = findBestNearbyLabelCandidate(
-            candidates,
-            relativeRowIndex,
-            statementType
-          );
-
-          if (nearby) {
-            return {
-              ...en,
-              label: nearby.label,
-              source: {
-                ...en.source,
-                labelRecoveredFrom: nearby.recoveredFrom
-              }
-            };
-          }
-        }
-
+ 
         return {
           ...en,
           label: finalLabel
         };
       });
     }
-
+ 
     function extractRowsFromPageContext(pageCtx, statementType) {
       if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
         return [];
