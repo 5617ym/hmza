@@ -972,6 +972,12 @@ module.exports = async function (context, req) {
       const s = normalizeText(label);
       if (!s) return false;
  
+      const compact = s
+        .replace(/[()\[\]{}:؛;,،._-]+/g, " ")
+        .replace(/[0-9٠-٩]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+ 
       return (
         s.includes("ريال سعودي") ||
         s.includes("الف ريال") ||
@@ -986,6 +992,22 @@ module.exports = async function (context, req) {
         s.includes("بالاف ريال") ||
         s.includes("بالالاف ريال") ||
         s.includes("بالالف ريال") ||
+        compact === "الاف" ||
+        compact === "آلاف" ||
+        compact === "الف" ||
+        compact === "ألف" ||
+        compact === "بالاف" ||
+        compact === "بالالف" ||
+        compact === "بالالاف" ||
+        compact === "بالآلاف" ||
+        compact === "بالألف" ||
+        compact === "بالألاف" ||
+        compact === "بالاف ريال" ||
+        compact === "بالالف ريال" ||
+        compact === "بالالاف ريال" ||
+        compact === "الف ريال" ||
+        compact === "ألف ريال" ||
+        compact === "ريال سعودي" ||
         s === "sar" ||
         s === "usd" ||
         s === "دولار"
@@ -2933,6 +2955,12 @@ module.exports = async function (context, req) {
  
       if (!s) return true;
  
+      const compact = s
+        .replace(/[()\[\]{}:؛;,،._-]+/g, " ")
+        .replace(/[0-9٠-٩]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+ 
       return (
         isLikelyStatementDateText(s) ||
         isLikelyStandardEffectiveDateText(s) ||
@@ -2958,10 +2986,65 @@ module.exports = async function (context, req) {
         s === "منتهيه" ||
         s === "للفتره" ||
         s === "الفتره" ||
+        compact === "ايضاح" ||
+        compact === "الايضاح" ||
+        compact === "ايضاحات" ||
+        compact === "الايضاحات" ||
+        compact === "للسنه" ||
+        compact === "السنه" ||
+        compact === "المنتهيه" ||
+        compact === "للفتره" ||
+        compact === "الفتره" ||
+        compact === "for the year ended" ||
+        compact === "for the period ended" ||
         s.includes("بالاف") ||
         s.includes("بالالاف") ||
         s.includes("بالالف") ||
         s.includes("ريال سعودي")
+      );
+    }
+
+    function isHardRejectedPageTextLabel(label, statementType) {
+      const clean = cleanupLabel(label);
+      const s = normalizeText(clean);
+ 
+      if (!s) return true;
+ 
+      const compact = s
+        .replace(/[()\[\]{}:؛;,،._-]+/g, " ")
+        .replace(/[0-9٠-٩]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+ 
+      if (isLikelyMetaOrHeaderLabel(clean)) return true;
+      if (isLikelyCurrencyOrUnitHeader(clean)) return true;
+      if (isLikelyStatementTitleRow(clean, statementType)) return true;
+      if (isSectionHeaderOnlyLabel(clean, statementType)) return true;
+ 
+      return (
+        compact === "ايضاح" ||
+        compact === "الايضاح" ||
+        compact === "ايضاحات" ||
+        compact === "الايضاحات" ||
+        compact === "للسنه" ||
+        compact === "السنه" ||
+        compact === "المنتهيه" ||
+        compact === "منتهيه" ||
+        compact === "للفتره" ||
+        compact === "الفتره" ||
+        compact === "بالاف" ||
+        compact === "بالالف" ||
+        compact === "بالالاف" ||
+        compact === "بالاف ريال" ||
+        compact === "بالالف ريال" ||
+        compact === "بالالاف ريال" ||
+        compact === "الف ريال" ||
+        compact === "ألف ريال" ||
+        compact === "ريال سعودي" ||
+        compact === "for the year ended" ||
+        compact === "for the period ended" ||
+        compact === "notes" ||
+        compact === "note"
       );
     }
  
@@ -3105,6 +3188,8 @@ module.exports = async function (context, req) {
         if (idx < 0 || idx >= candidates.length) continue;
  
         const candidate = normalizeLabelForRow(candidates[idx]);
+        if (isHardRejectedPageTextLabel(candidate, statementType)) continue;
+ 
         const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
  
         if (isAcceptableFinancialLabel(candidate, statementType)) {
@@ -3116,6 +3201,7 @@ module.exports = async function (context, req) {
  
         if (
           salvagedCandidate &&
+          !isHardRejectedPageTextLabel(salvagedCandidate, statementType) &&
           isAcceptableFinancialLabel(salvagedCandidate, statementType)
         ) {
           return {
