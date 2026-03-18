@@ -1,3 +1,4 @@
+
 const { detectSector } = require("../_lib/sector-detection");
 const sectorProfiles = require("../_lib/sector-profiles");
 
@@ -15,8 +16,36 @@ module.exports = async function (context, req) {
     const fs = require("fs");
     const path = require("path");
 
-    const LOCAL_TEST_FILE = "jadwa-reit-layout.json";
-    const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
+    const LOCAL_TEST_FILE_DEFAULT = "jadwa-reit-layout.json";
+
+    function sanitizeLocalTestFileName(fileName) {
+      const raw = String(fileName || "").trim();
+      if (!raw) return LOCAL_TEST_FILE_DEFAULT;
+      const base = path.basename(raw);
+      return /^[A-Za-z0-9._-]+$/.test(base) ? base : LOCAL_TEST_FILE_DEFAULT;
+    }
+
+    function buildLocalTestPath(fileName) {
+      const safeFile = sanitizeLocalTestFileName(fileName);
+      return {
+        fileName: safeFile,
+        fullPath: path.join(__dirname, "..", safeFile)
+      };
+    }
+
+    function resolveRequestedLocalFiles(reqBody) {
+      const requested = buildLocalTestPath(
+        reqBody?.localTestFile ||
+        process.env.LOCAL_TEST_FILE ||
+        LOCAL_TEST_FILE_DEFAULT
+      );
+
+      const requestedPrev = reqBody?.localTestFilePrev
+        ? buildLocalTestPath(reqBody.localTestFilePrev)
+        : null;
+
+      return { requested, requestedPrev };
+    }
 
     function isPlainObject(value) {
       return !!value && typeof value === "object" && !Array.isArray(value);
@@ -199,12 +228,13 @@ module.exports = async function (context, req) {
       };
     }
 
-    function readLocalTestPayload() {
-      if (!fs.existsSync(localTestPath)) {
+    function readLocalTestPayload(localTestPath) {
+      if (!localTestPath || !fs.existsSync(localTestPath)) {
         return {
           ok: false,
           exists: false,
-          payload: null
+          payload: null,
+          localTestPath: localTestPath || null
         };
       }
 
@@ -214,7 +244,8 @@ module.exports = async function (context, req) {
       return {
         ok: true,
         exists: true,
-        payload: parsed
+        payload: parsed,
+        localTestPath
       };
     }
 
@@ -277,6 +308,11 @@ module.exports = async function (context, req) {
           ? req.body
           : null;
 
+      const requestedLocal = resolveRequestedLocalFiles(reqBody);
+      const requestedLocalPath = requestedLocal.requested.fullPath;
+      const requestedLocalFileName = requestedLocal.requested.fileName;
+      const shouldUseLocalTest = !!reqBody?.useLocalTest;
+
       const reqCandidates = collectNormalizedCandidates(reqBody);
       const reqBest = reqCandidates[0] || null;
 
@@ -294,7 +330,9 @@ module.exports = async function (context, req) {
             reqBest.value?.meta?.fileName ||
             null,
           diagnostics: {
-            localFileExists: fs.existsSync(localTestPath),
+            localTestPath: requestedLocalPath,
+            localTestFileUsed: requestedLocalFileName,
+            localFileExists: fs.existsSync(requestedLocalPath),
             reqBodyKeys: safeObjectKeys(reqBody),
             envelopeKeys: safeObjectKeys(reqBody),
             normalizedKeys: safeObjectKeys(reqBest.value),
@@ -312,52 +350,62 @@ module.exports = async function (context, req) {
         };
       }
 
-      const localRead = readLocalTestPayload();
-      const localPayload = localRead?.payload || null;
-      const localCandidates = collectNormalizedCandidates(localPayload);
-      const localBest = localCandidates[0] || null;
+      if (shouldUseLocalTest) {
+        const localRead = readLocalTestPayload(requestedLocalPath);
+        const localPayload = localRead?.payload || null;
+        const localCandidates = collectNormalizedCandidates(localPayload);
+        const localBest = localCandidates[0] || null;
 
-      if (localRead.ok && localBest) {
-        return {
-          source: localBest.label.replace(/^payload\./, "local."),
-          body: localPayload || {},
-          envelope: localPayload || {},
-          normalized: localBest.value,
-          normalizedPrev: resolveNormalizedPrevFromEnvelope(localPayload),
-          fileName:
-            localPayload?.fileName ||
-            localPayload?.data?.fileName ||
-            localPayload?.payload?.fileName ||
-            localBest.value?.meta?.fileName ||
-            null,
-          diagnostics: {
-            localFileExists: true,
-            reqBodyKeys: safeObjectKeys(reqBody),
-            envelopeKeys: safeObjectKeys(localPayload),
-            normalizedKeys: safeObjectKeys(localBest.value),
-            candidateScores: localCandidates.slice(0, 5).map((item) => ({
-              source: item.label.replace(/^payload\./, "local."),
-              score: item.score,
-              resolvedPagesCount: item.resolvedPagesCount,
-              resolvedTablesCount: item.resolvedTablesCount,
-              resolvedTextLength: item.resolvedTextLength,
-              metaPages: item.metaPages,
-              metaTables: item.metaTables,
-              metaTextLength: item.metaTextLength
-            }))
-          }
-        };
+        if (localRead.ok && localBest) {
+          return {
+            source: localBest.label.replace(/^payload\./, "local."),
+            body: reqBody || {},
+            envelope: localPayload || {},
+            normalized: localBest.value,
+            normalizedPrev: resolveNormalizedPrevFromEnvelope(localPayload),
+            fileName:
+              localPayload?.fileName ||
+              localPayload?.data?.fileName ||
+              localPayload?.payload?.fileName ||
+              localBest.value?.meta?.fileName ||
+              requestedLocalFileName ||
+              null,
+            diagnostics: {
+              localTestPath: requestedLocalPath,
+              localTestFileUsed: requestedLocalFileName,
+              localFileExists: true,
+              reqBodyKeys: safeObjectKeys(reqBody),
+              envelopeKeys: safeObjectKeys(localPayload),
+              normalizedKeys: safeObjectKeys(localBest.value),
+              candidateScores: localCandidates.slice(0, 5).map((item) => ({
+                source: item.label.replace(/^payload\./, "local."),
+                score: item.score,
+                resolvedPagesCount: item.resolvedPagesCount,
+                resolvedTablesCount: item.resolvedTablesCount,
+                resolvedTextLength: item.resolvedTextLength,
+                metaPages: item.metaPages,
+                metaTables: item.metaTables,
+                metaTextLength: item.metaTextLength
+              }))
+            }
+          };
+        }
       }
 
       return {
-        source: "none",
+        source: reqBody?.useLocalTest ? "local_unresolved" : "none",
         body: reqBody || {},
         envelope: {},
         normalized: {},
         normalizedPrev: null,
-        fileName: null,
+        fileName:
+          reqBody?.fileName ||
+          reqBody?.localTestFile ||
+          null,
         diagnostics: {
-          localFileExists: fs.existsSync(localTestPath),
+          localTestPath: requestedLocalPath,
+          localTestFileUsed: requestedLocalFileName,
+          localFileExists: fs.existsSync(requestedLocalPath),
           reqBodyKeys: safeObjectKeys(reqBody),
           envelopeKeys: [],
           normalizedKeys: [],
@@ -378,7 +426,8 @@ module.exports = async function (context, req) {
         error: "normalized payload is required",
         debugInput: {
           source: resolvedInput.source,
-          localTestPath,
+          localTestPath: resolvedInput.diagnostics.localTestPath,
+          localTestFileUsed: resolvedInput.diagnostics.localTestFileUsed,
           ...resolvedInput.diagnostics
         }
       });
@@ -3399,7 +3448,8 @@ const acceptableTextCandidates = rawTextCandidates
       debug: {
         inputResolution: {
           source: resolvedInput.source,
-          localTestPath,
+          localTestPath: resolvedInput.diagnostics.localTestPath,
+          localTestFileUsed: resolvedInput.diagnostics.localTestFileUsed,
           localFileExists: resolvedInput.diagnostics.localFileExists,
           reqBodyKeys: resolvedInput.diagnostics.reqBodyKeys,
           envelopeKeys: resolvedInput.diagnostics.envelopeKeys,
@@ -3460,4 +3510,5 @@ const acceptableTextCandidates = rawTextCandidates
 
 
   
+
 
