@@ -16,7 +16,7 @@ module.exports = async function (context, req) {
     const fs = require("fs");
     const path = require("path");
 
-    const LOCAL_TEST_FILE = process.env.LOCAL_TEST_FILE || "jadwa-reit-layout.json";
+    const LOCAL_TEST_FILE = "jadwa-reit-layout.json";
     const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
 
     function isPlainObject(value) {
@@ -281,19 +281,6 @@ module.exports = async function (context, req) {
       const reqCandidates = collectNormalizedCandidates(reqBody);
       const reqBest = reqCandidates[0] || null;
 
-      const requestExplicitlyProvidedNormalized =
-        !!(
-          reqBody &&
-          (
-            Object.prototype.hasOwnProperty.call(reqBody, "normalized") ||
-            Object.prototype.hasOwnProperty.call(reqBody, "normalizedResult") ||
-            Object.prototype.hasOwnProperty.call(reqBody, "lastNormalized") ||
-            Object.prototype.hasOwnProperty.call(reqBody, "fileName") ||
-            Object.prototype.hasOwnProperty.call(reqBody, "period") ||
-            Object.prototype.hasOwnProperty.call(reqBody, "compare")
-          )
-        );
-
       if (reqBest) {
         return {
           source: reqBest.label,
@@ -312,7 +299,6 @@ module.exports = async function (context, req) {
             reqBodyKeys: safeObjectKeys(reqBody),
             envelopeKeys: safeObjectKeys(reqBody),
             normalizedKeys: safeObjectKeys(reqBest.value),
-            requestExplicitlyProvidedNormalized,
             candidateScores: reqCandidates.slice(0, 5).map((item) => ({
               source: item.label,
               score: item.score,
@@ -323,30 +309,6 @@ module.exports = async function (context, req) {
               metaTables: item.metaTables,
               metaTextLength: item.metaTextLength
             }))
-          }
-        };
-      }
-
-      if (requestExplicitlyProvidedNormalized) {
-        return {
-          source: "request_unresolved",
-          body: reqBody || {},
-          envelope: reqBody || {},
-          normalized: isPlainObject(reqBody?.normalized) ? reqBody.normalized : {},
-          normalizedPrev: resolveNormalizedPrevFromEnvelope(reqBody),
-          fileName:
-            reqBody?.fileName ||
-            reqBody?.data?.fileName ||
-            reqBody?.payload?.fileName ||
-            reqBody?.normalized?.meta?.fileName ||
-            null,
-          diagnostics: {
-            localFileExists: fs.existsSync(localTestPath),
-            reqBodyKeys: safeObjectKeys(reqBody),
-            envelopeKeys: safeObjectKeys(reqBody),
-            normalizedKeys: safeObjectKeys(reqBody?.normalized),
-            requestExplicitlyProvidedNormalized: true,
-            candidateScores: []
           }
         };
       }
@@ -1057,36 +1019,66 @@ module.exports = async function (context, req) {
     }
 
     function extractLabelCandidatesFromPageText(pageCtx, statementType) {
+      const firstRowsText = (pageCtx?.mainRows || [])
+        .slice(0, 18)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("
+");
+
       const textBlob = [
-        pageCtx?.mainTableText || "",
-        pageCtx?.text || "",
-        pageCtx?.structuralText || ""
-      ].join("\n");
+        pageCtx?.headerText || "",
+        firstRowsText,
+        pageCtx?.mainTableText || ""
+      ].join("
+");
 
       const candidates = splitTextIntoLogicalLines(textBlob)
         .map((line) => cleanupLabel(line))
         .filter(Boolean)
+        .filter((line) => line.length <= 120)
         .filter((line) => !isLikelyStatementDateText(line))
         .filter((line) => !isLikelyStandardEffectiveDateText(line))
         .filter((line) => !isLikelyNarrativeLine(line))
         .filter((line) => !isQuarterOrPeriodCell(line))
         .filter((line) => !isPureNumericSymbolCell(line))
         .filter((line) => !isLikelyOnlyReferenceText(line))
-        .filter((line) => hasLetterChars(line));
+        .filter((line) => hasLetterChars(line))
+        .filter((line) => !isLikelyMetaOrHeaderLabel(line))
+        .filter((line) => !isLikelyStatementTitleRow(line, statementType))
+        .filter((line) => {
+          const s = normalizeText(line);
+          return !(
+            s.includes("يرجى الرجوع") ||
+            s.includes("كيفية معالجة") ||
+            s.includes("كيفيه معالجه") ||
+            s.includes("أمر المراجعة") ||
+            s.includes("امر المراجعه") ||
+            s.includes("key audit") ||
+            s.includes("auditor")
+          );
+        });
 
       const enriched = [];
 
       for (const line of candidates) {
         enriched.push(line);
         const salvaged = salvageFinancialLabelCandidate(line);
-        if (salvaged && normalizeText(salvaged) !== normalizeText(line)) {
+        if (
+          salvaged &&
+          normalizeText(salvaged) !== normalizeText(line) &&
+          !isLikelyMetaOrHeaderLabel(salvaged) &&
+          !isLikelyStatementTitleRow(salvaged, statementType)
+        ) {
           enriched.push(salvaged);
         }
       }
 
       return dedupePreserveOrder(enriched).filter((line) => {
-        return !isLikelyMetaOrHeaderLabel(line) &&
-          !isLikelyStatementTitleRow(line, statementType);
+        return (
+          isAcceptableFinancialLabel(line, statementType) &&
+          !isLikelyMetaOrHeaderLabel(line) &&
+          !isLikelyStatementTitleRow(line, statementType)
+        );
       });
     }
 
@@ -2214,6 +2206,17 @@ module.exports = async function (context, req) {
         reasons.push("latePagePenalty:-180");
       }
 
+      if (
+        kind === "cashflow" &&
+        pageCtx.positionRatio <= 0.15 &&
+        titleHitsHeader.length === 0 &&
+        titleHitsAll.length === 0 &&
+        structureSupportCount < 2
+      ) {
+        score -= 220;
+        reasons.push("cashflowEarlyWeakPagePenalty:-220");
+      }
+
       if (pageCtx.isLikelyIndexPage) {
         score -= 220;
         reasons.push("indexPenalty:-220");
@@ -2280,6 +2283,11 @@ module.exports = async function (context, req) {
       if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
         score -= 120;
         reasons.push("cashflowTitleWithoutStructurePenalty:-120");
+      }
+
+      if (kind === "cashflow" && hasNoTitle && structureSupportCount < 2) {
+        score -= 140;
+        reasons.push("cashflowWeakStructurePenalty:-140");
       }
 
       if (
@@ -2900,7 +2908,7 @@ module.exports = async function (context, req) {
 
     function normalizeLabelForRow(label, row = null) {
   if (
-    (!label || isLikelyReferenceValue(label)) &&
+    (!label || isLikelyReferenceValue(label) || isLikelyMetaOrHeaderLabel(label)) &&
     row && Array.isArray(row.rawRow)
   ) {
     const joined = row.rawRow.join(" ");
@@ -2921,12 +2929,22 @@ module.exports = async function (context, req) {
     }
   }
 
-  return cleanupLabel(
+  const normalizedLabel = cleanupLabel(
     String(label || "")
       .replace(/\.+$/g, "")
       .replace(/\s{2,}/g, " ")
       .trim()
   );
+
+  if (
+    !normalizedLabel ||
+    isLikelyReferenceValue(normalizedLabel) ||
+    isLikelyMetaOrHeaderLabel(normalizedLabel)
+  ) {
+    return "";
+  }
+
+  return normalizedLabel;
 }
 
     function isLikelyStatementTitleRow(label, statementType) {
@@ -2986,7 +3004,34 @@ module.exports = async function (context, req) {
         s === "notes" ||
         s === "note" ||
         s === "ايضاح" ||
-        s === "الايضاح"
+        s === "الايضاح" ||
+        s === "ايضاحات" ||
+        s === "الإيضاحات" ||
+        s === "للسنه" ||
+        s === "للسنة" ||
+        s === "للفتره" ||
+        s === "للفترة" ||
+        s === "بآلاف" ||
+        s === "بالاف" ||
+        s === "بالآلاف" ||
+        s === "بالالاف" ||
+        s === "بآلاف ( )" ||
+        s === "بآلاف ()" ||
+        s === "بـآلاف ( )" ||
+        s === "بـآلاف ()" ||
+        s === "بآلاف (3)" ||
+        s === "بـآلاف (3)" ||
+        s.includes("ريال سعودي") ||
+        s.includes("الف ريال") ||
+        s.includes("ألف ريال") ||
+        s.includes("بالريال") ||
+        s.includes("يرجى الرجوع") ||
+        s.includes("كيفية معالجة") ||
+        s.includes("كيفيه معالجه") ||
+        s.includes("امر المراجعه") ||
+        s.includes("امور المراجعه") ||
+        s.includes("key audit") ||
+        s.includes("auditor")
       );
     }
 
@@ -3157,6 +3202,13 @@ module.exports = async function (context, req) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
 
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
+      if (!candidates.length) {
+        return rawEntries.map((en) => ({
+          ...en,
+          label: normalizeLabelForRow(en.labelCandidate, en)
+        }));
+      }
+
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
 
       return rawEntries.map((en) => {
@@ -3197,7 +3249,7 @@ module.exports = async function (context, req) {
 
         return {
           ...en,
-          label: finalLabel
+          label: ""
         };
       });
     }
@@ -3213,7 +3265,7 @@ module.exports = async function (context, req) {
       const extracted = [];
 
       for (const en of repairedEntries) {
-        const label = normalizeLabelForRow(en.label, en);
+        const label = (en.label);
 
         if (
           shouldSkipExtractedRow({
@@ -3306,9 +3358,7 @@ const acceptableTextCandidates = rawTextCandidates
         textCandidatesSample: rawTextCandidates.slice(0, 20),
         reason: likelyMissingLabelsInPayload
           ? "income_labels_missing_from_payload"
-          : acceptedCount === 0 && noteLikeRawCount === rawEntries.length
-            ? "row_labels_unrecoverable_from_payload"
-            : null
+          : null
       };
     }
 
@@ -3326,7 +3376,7 @@ const acceptableTextCandidates = rawTextCandidates
           const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
 
           const acceptedEntries = repairedEntries.filter((row) => {
-            const label = normalizeLabelForRow(row.label, row);
+            const label = normalizeLabelForRow(row.label);
             return !shouldSkipExtractedRow({
               row: row.row,
               rowIndex: row.rowIndex,
@@ -3510,6 +3560,4 @@ const acceptableTextCandidates = rawTextCandidates
 
 
   
-
-
 
