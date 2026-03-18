@@ -972,42 +972,11 @@ module.exports = async function (context, req) {
       const s = normalizeText(label);
       if (!s) return false;
  
-      const compact = s
-        .replace(/[()\[\]{}:؛;,،._-]+/g, " ")
-        .replace(/[0-9٠-٩]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
- 
-      return (
+            return (
         s.includes("ريال سعودي") ||
         s.includes("الف ريال") ||
         s.includes("ألف ريال") ||
         s.includes("بالريال") ||
-        s.includes("بالاف") ||
-        s.includes("بالالاف") ||
-        s.includes("بالالف") ||
-        s.includes("بالآلاف") ||
-        s.includes("بالألاف") ||
-        s.includes("بالألف") ||
-        s.includes("بالاف ريال") ||
-        s.includes("بالالاف ريال") ||
-        s.includes("بالالف ريال") ||
-        compact === "الاف" ||
-        compact === "آلاف" ||
-        compact === "الف" ||
-        compact === "ألف" ||
-        compact === "بالاف" ||
-        compact === "بالالف" ||
-        compact === "بالالاف" ||
-        compact === "بالآلاف" ||
-        compact === "بالألف" ||
-        compact === "بالألاف" ||
-        compact === "بالاف ريال" ||
-        compact === "بالالف ريال" ||
-        compact === "بالالاف ريال" ||
-        compact === "الف ريال" ||
-        compact === "ألف ريال" ||
-        compact === "ريال سعودي" ||
         s === "sar" ||
         s === "usd" ||
         s === "دولار"
@@ -1076,8 +1045,6 @@ module.exports = async function (context, req) {
         .filter((line) => !isQuarterOrPeriodCell(line))
         .filter((line) => !isPureNumericSymbolCell(line))
         .filter((line) => !isLikelyOnlyReferenceText(line))
-        .filter((line) => !isLikelyMetaOrHeaderLabel(line))
-        .filter((line) => !isLikelyCurrencyOrUnitHeader(line))
         .filter((line) => hasLetterChars(line));
  
       const enriched = [];
@@ -2868,31 +2835,31 @@ module.exports = async function (context, req) {
  
     function pickFallbackLabelCell(row, header, statementType) {
       if (!Array.isArray(row) || !row.length) return "";
- 
+
       const cells = row.map((cell, idx) => ({
         idx,
         cell: String(cell == null ? "" : cell).trim()
       }));
- 
+
       const reserved = new Set(
         [
           header?.currentCol,
           header?.previousCol
         ].filter((x) => Number.isFinite(x))
       );
- 
+
       const textCandidates = cells
         .filter((x) => !reserved.has(x.idx))
         .filter((x) => isLikelyTextLabelCell(x.cell))
         .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
         .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
         .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType));
- 
+
       if (textCandidates.length > 0) {
         const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
         return rtlPick?.cell || "";
       }
- 
+
       const fallbackFromAnyText = cells
         .filter((x) => !reserved.has(x.idx))
         .filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
@@ -2900,8 +2867,68 @@ module.exports = async function (context, req) {
         .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
         .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType))
         .sort((a, b) => b.idx - a.idx)[0];
- 
+
       return fallbackFromAnyText?.cell || "";
+    }
+
+    function getRowLabelCandidate(row, header, statementType) {
+      const labelFromHeader = getCell(row, header?.labelCol);
+      const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
+      const noteRaw = getCell(row, header?.noteCol);
+
+      const noteLooksLikeLabel =
+        header?.labelCol == null &&
+        !!noteRaw &&
+        isLikelyTextLabelCell(noteRaw) &&
+        !isLikelyReferenceValue(noteRaw) &&
+        !isLikelyMetaOrHeaderLabel(noteRaw) &&
+        !isLikelyStatementTitleRow(noteRaw, statementType) &&
+        !isSectionHeaderOnlyLabel(noteRaw, statementType);
+
+      const labelCandidate = normalizeLabelForRow(
+        labelFromHeader ||
+        fallbackLabel ||
+        (noteLooksLikeLabel ? noteRaw : "")
+      );
+
+      const note =
+        noteLooksLikeLabel
+          ? null
+          : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
+
+      return {
+        labelCandidate,
+        note,
+        noteLooksLikeLabel
+      };
+    }
+
+    function findNearbyTableLabelCandidate(rows, rowIndex, header, statementType) {
+      if (!Array.isArray(rows) || !rows.length) return null;
+
+      const offsets = [-1, 1, -2, 2, -3, 3];
+
+      for (const offset of offsets) {
+        const idx = rowIndex + offset;
+        if (idx < 0 || idx >= rows.length) continue;
+
+        const nearbyRow = rows[idx];
+        if (!Array.isArray(nearbyRow) || !nearbyRow.length) continue;
+        if (rowHasUsefulNumericValue(nearbyRow, header)) continue;
+
+        const nearbyCandidate = normalizeLabelForRow(
+          getRowLabelCandidate(nearbyRow, header, statementType).labelCandidate
+        );
+
+        if (isAcceptableFinancialLabel(nearbyCandidate, statementType)) {
+          return {
+            label: nearbyCandidate,
+            recoveredFrom: "table_row_nearby"
+          };
+        }
+      }
+
+      return null;
     }
  
     function normalizeLabelForRow(label) {
@@ -2955,18 +2982,11 @@ module.exports = async function (context, req) {
  
       if (!s) return true;
  
-      const compact = s
-        .replace(/[()\[\]{}:؛;,،._-]+/g, " ")
-        .replace(/[0-9٠-٩]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
- 
       return (
         isLikelyStatementDateText(s) ||
         isLikelyStandardEffectiveDateText(s) ||
         isLikelyNarrativeLine(s) ||
         isQuarterOrPeriodCell(s) ||
-        isLikelyCurrencyOrUnitHeader(s) ||
         s === "البيان" ||
         s === "البيانات" ||
         s === "description" ||
@@ -2977,74 +2997,7 @@ module.exports = async function (context, req) {
         s === "notes" ||
         s === "note" ||
         s === "ايضاح" ||
-        s === "الايضاح" ||
-        s === "ايضاحات" ||
-        s === "الايضاحات" ||
-        s === "للسنه" ||
-        s === "السنه" ||
-        s === "المنتهيه" ||
-        s === "منتهيه" ||
-        s === "للفتره" ||
-        s === "الفتره" ||
-        compact === "ايضاح" ||
-        compact === "الايضاح" ||
-        compact === "ايضاحات" ||
-        compact === "الايضاحات" ||
-        compact === "للسنه" ||
-        compact === "السنه" ||
-        compact === "المنتهيه" ||
-        compact === "للفتره" ||
-        compact === "الفتره" ||
-        compact === "for the year ended" ||
-        compact === "for the period ended" ||
-        s.includes("بالاف") ||
-        s.includes("بالالاف") ||
-        s.includes("بالالف") ||
-        s.includes("ريال سعودي")
-      );
-    }
-
-    function isHardRejectedPageTextLabel(label, statementType) {
-      const clean = cleanupLabel(label);
-      const s = normalizeText(clean);
- 
-      if (!s) return true;
- 
-      const compact = s
-        .replace(/[()\[\]{}:؛;,،._-]+/g, " ")
-        .replace(/[0-9٠-٩]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
- 
-      if (isLikelyMetaOrHeaderLabel(clean)) return true;
-      if (isLikelyCurrencyOrUnitHeader(clean)) return true;
-      if (isLikelyStatementTitleRow(clean, statementType)) return true;
-      if (isSectionHeaderOnlyLabel(clean, statementType)) return true;
- 
-      return (
-        compact === "ايضاح" ||
-        compact === "الايضاح" ||
-        compact === "ايضاحات" ||
-        compact === "الايضاحات" ||
-        compact === "للسنه" ||
-        compact === "السنه" ||
-        compact === "المنتهيه" ||
-        compact === "منتهيه" ||
-        compact === "للفتره" ||
-        compact === "الفتره" ||
-        compact === "بالاف" ||
-        compact === "بالالف" ||
-        compact === "بالالاف" ||
-        compact === "بالاف ريال" ||
-        compact === "بالالف ريال" ||
-        compact === "بالالاف ريال" ||
-        compact === "الف ريال" ||
-        compact === "ألف ريال" ||
-        compact === "ريال سعودي" ||
-        compact === "for the year ended" ||
-        compact === "for the period ended" ||
-        compact === "notes" ||
-        compact === "note"
+        s === "الايضاح"
       );
     }
  
@@ -3118,43 +3071,43 @@ module.exports = async function (context, req) {
       const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
       const header = pageCtx?.header || {};
       const numericRows = [];
- 
+
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
         const row = rows[rowIndex];
         if (!Array.isArray(row) || !row.length) continue;
         if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
         if (!rowHasUsefulNumericValue(row, header)) continue;
- 
-        const labelFromHeader = getCell(row, header.labelCol);
-        const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
-        const noteRaw = getCell(row, header.noteCol);
- 
-        const noteLooksLikeLabel =
-          header.labelCol == null &&
-          !!noteRaw &&
-          isLikelyTextLabelCell(noteRaw) &&
-          !isLikelyReferenceValue(noteRaw) &&
-          !isLikelyMetaOrHeaderLabel(noteRaw) &&
-          !isLikelyStatementTitleRow(noteRaw, statementType) &&
-          !isSectionHeaderOnlyLabel(noteRaw, statementType);
- 
-        const labelCandidate = normalizeLabelForRow(
-          labelFromHeader ||
-          fallbackLabel ||
-          (noteLooksLikeLabel ? noteRaw : "")
-        );
- 
-        const note =
-          noteLooksLikeLabel
-            ? null
-            : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
- 
+
+        const rowLabelInfo = getRowLabelCandidate(row, header, statementType);
+        let labelCandidate = normalizeLabelForRow(rowLabelInfo.labelCandidate);
+        const note = rowLabelInfo.note;
+        let labelRecoveredFrom = null;
+
+        if (
+          statementType === "income" &&
+          !isAcceptableFinancialLabel(labelCandidate, statementType)
+        ) {
+          const nearbyTableLabel = findNearbyTableLabelCandidate(
+            rows,
+            rowIndex,
+            header,
+            statementType
+          );
+
+          if (!nearbyTableLabel) {
+            continue;
+          }
+
+          labelCandidate = nearbyTableLabel.label;
+          labelRecoveredFrom = nearbyTableLabel.recoveredFrom;
+        }
+
         const currentYearValueRaw = getCell(row, header.currentCol);
         const previousYearValueRaw = getCell(row, header.previousCol);
- 
+
         const currentYearValue = parseNumberSmart(currentYearValueRaw);
         const previousYearValue = parseNumberSmart(previousYearValueRaw);
- 
+
         numericRows.push({
           statementType,
           pageNumber: pageCtx.pageNumber,
@@ -3170,11 +3123,12 @@ module.exports = async function (context, req) {
             currentCol: Number.isFinite(header.currentCol) ? header.currentCol : null,
             previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
             resolutionMode: header.resolutionMode || null,
-            direction: header.direction || null
+            direction: header.direction || null,
+            ...(labelRecoveredFrom ? { labelRecoveredFrom } : {})
           }
         });
       }
- 
+
       return numericRows;
     }
  
@@ -3188,8 +3142,6 @@ module.exports = async function (context, req) {
         if (idx < 0 || idx >= candidates.length) continue;
  
         const candidate = normalizeLabelForRow(candidates[idx]);
-        if (isHardRejectedPageTextLabel(candidate, statementType)) continue;
- 
         const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
  
         if (isAcceptableFinancialLabel(candidate, statementType)) {
@@ -3201,7 +3153,6 @@ module.exports = async function (context, req) {
  
         if (
           salvagedCandidate &&
-          !isHardRejectedPageTextLabel(salvagedCandidate, statementType) &&
           isAcceptableFinancialLabel(salvagedCandidate, statementType)
         ) {
           return {
@@ -3216,33 +3167,43 @@ module.exports = async function (context, req) {
  
     function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
- 
+
+      if (statementType === "income") {
+        return rawEntries.map((en) => {
+          const finalLabel = normalizeLabelForRow(en.labelCandidate);
+          return {
+            ...en,
+            label: finalLabel
+          };
+        });
+      }
+
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
       if (!candidates.length) return rawEntries;
- 
+
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
- 
+
       return rawEntries.map((en) => {
         const finalLabel = normalizeLabelForRow(en.labelCandidate);
- 
+
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
             ...en,
             label: finalLabel
           };
         }
- 
+
         const relativeRowIndex = Math.max(
           0,
           safeNumber(en?.rowIndex, 0) - headerRowIndex - 1
         );
- 
+
         const nearby = findBestNearbyLabelCandidate(
           candidates,
           relativeRowIndex,
           statementType
         );
- 
+
         if (nearby) {
           return {
             ...en,
@@ -3253,7 +3214,7 @@ module.exports = async function (context, req) {
             }
           };
         }
- 
+
         return {
           ...en,
           label: finalLabel
