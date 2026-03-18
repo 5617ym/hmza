@@ -1,7 +1,8 @@
 
+ 
 const { detectSector } = require("../lib/sector-detection");
 const sectorProfiles = require("../lib/sector-profiles");
-
+ 
 // api/extract-financial/index.js
 module.exports = async function (context, req) {
   const send = (status, payload) => {
@@ -11,35 +12,35 @@ module.exports = async function (context, req) {
       body: payload
     };
   };
-
+ 
   try {
     const fs = require("fs");
     const path = require("path");
-
+ 
     const LOCAL_TEST_FILE =
   req.body?.localTestFile || "almarai-layout.json";
-
+ 
 const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
-
+ 
     function isPlainObject(value) {
       return !!value && typeof value === "object" && !Array.isArray(value);
     }
-
+ 
     function isNonEmptyObject(value) {
       return isPlainObject(value) && Object.keys(value).length > 0;
     }
-
+ 
     function safeObjectKeys(value) {
       return isPlainObject(value) ? Object.keys(value) : [];
     }
-
+ 
     function toArray(value) {
       return Array.isArray(value) ? value : [];
     }
-
+ 
     function getResolvedPagesFromNormalized(value) {
       if (!isPlainObject(value)) return [];
-
+ 
       const candidates = [
         value.pages,
         value.layout?.pages,
@@ -48,19 +49,19 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         value.result?.layout?.pages,
         value.analysisResult?.pages
       ];
-
+ 
       for (const candidate of candidates) {
         if (Array.isArray(candidate) && candidate.length > 0) {
           return candidate;
         }
       }
-
+ 
       return [];
     }
-
+ 
     function getResolvedTablesFromNormalized(value) {
       if (!isPlainObject(value)) return [];
-
+ 
       const candidates = [
         value.tablesPreview,
         value.tables,
@@ -75,19 +76,19 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         value.result?.layout?.pageTables,
         value.analysisResult?.tables
       ];
-
+ 
       for (const candidate of candidates) {
         if (Array.isArray(candidate) && candidate.length > 0) {
           return candidate;
         }
       }
-
+ 
       return [];
     }
-
+ 
     function getResolvedTextLength(value) {
       if (!isPlainObject(value)) return 0;
-
+ 
       const directText = [
         value.text,
         value.content,
@@ -99,17 +100,17 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       ]
         .map((x) => (typeof x === "string" ? x.length : 0))
         .reduce((a, b) => a + b, 0);
-
+ 
       const metaTextLength = Number(
         value.meta?.textLength ??
         value.metadata?.textLength ??
         value.stats?.textLength ??
         0
       );
-
+ 
       return Math.max(directText, Number.isFinite(metaTextLength) ? metaTextLength : 0);
     }
-
+ 
     function getNormalizedMetaCounts(value) {
       if (!isPlainObject(value)) {
         return {
@@ -118,43 +119,43 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           metaTextLength: 0
         };
       }
-
+ 
       const metaPages = Number(
         value.meta?.pages ??
         value.metadata?.pages ??
         value.stats?.pages ??
         0
       );
-
+ 
       const metaTables = Number(
         value.meta?.tables ??
         value.metadata?.tables ??
         value.stats?.tables ??
         0
       );
-
+ 
       const metaTextLength = Number(
         value.meta?.textLength ??
         value.metadata?.textLength ??
         value.stats?.textLength ??
         0
       );
-
+ 
       return {
         metaPages: Number.isFinite(metaPages) ? metaPages : 0,
         metaTables: Number.isFinite(metaTables) ? metaTables : 0,
         metaTextLength: Number.isFinite(metaTextLength) ? metaTextLength : 0
       };
     }
-
+ 
     function looksLikeNormalizedPayload(value) {
       if (!isPlainObject(value)) return false;
-
+ 
       const resolvedPages = getResolvedPagesFromNormalized(value);
       const resolvedTables = getResolvedTablesFromNormalized(value);
       const resolvedTextLength = getResolvedTextLength(value);
       const { metaPages, metaTables, metaTextLength } = getNormalizedMetaCounts(value);
-
+ 
       return (
         resolvedPages.length > 0 ||
         resolvedTables.length > 0 ||
@@ -164,15 +165,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         metaTextLength > 0
       );
     }
-
+ 
     function scoreNormalizedCandidate(value, label, isEnvelopeRoot = false) {
       if (!looksLikeNormalizedPayload(value)) return null;
-
+ 
       const resolvedPages = getResolvedPagesFromNormalized(value);
       const resolvedTables = getResolvedTablesFromNormalized(value);
       const resolvedTextLength = getResolvedTextLength(value);
       const { metaPages, metaTables, metaTextLength } = getNormalizedMetaCounts(value);
-
+ 
       let score = 0;
       score += resolvedPages.length * 100000;
       score += resolvedTables.length * 1000;
@@ -180,15 +181,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       score += metaPages * 100;
       score += metaTables * 10;
       score += Math.min(metaTextLength, 10000);
-
+ 
       if (resolvedPages.length === 0 && resolvedTables.length === 0 && (metaPages > 0 || metaTables > 0)) {
         score -= 5000;
       }
-
+ 
       if (isEnvelopeRoot) {
         score -= 2000;
       }
-
+ 
       return {
         label,
         value,
@@ -201,7 +202,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         metaTextLength
       };
     }
-
+ 
     function readLocalTestPayload() {
       if (!fs.existsSync(localTestPath)) {
         return {
@@ -210,20 +211,20 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           payload: null
         };
       }
-
+ 
       const raw = fs.readFileSync(localTestPath, "utf8");
       const parsed = JSON.parse(raw);
-
+ 
       return {
         ok: true,
         exists: true,
         payload: parsed
       };
     }
-
+ 
     function collectNormalizedCandidates(payload) {
       if (!isPlainObject(payload)) return [];
-
+ 
       const candidateDefs = [
         ["payload.normalized", payload.normalized],
         ["payload.data.normalized", payload.data?.normalized],
@@ -241,20 +242,20 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         ["payload.normalizedResult", payload.normalizedResult],
         ["payload.raw", payload]
       ];
-
+ 
       const scored = [];
-
+ 
       for (const [label, candidate] of candidateDefs) {
         const item = scoreNormalizedCandidate(candidate, label, candidate === payload);
         if (item) scored.push(item);
       }
-
+ 
       return scored.sort((a, b) => b.score - a.score);
     }
-
+ 
     function resolveNormalizedPrevFromEnvelope(envelope) {
       if (!isPlainObject(envelope)) return null;
-
+ 
       const candidates = [
         envelope.normalizedPrev,
         envelope.data?.normalizedPrev,
@@ -264,25 +265,25 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         envelope.data?.payload?.normalizedPrev,
         envelope.result?.data?.normalizedPrev
       ];
-
+ 
       for (const candidate of candidates) {
         if (isPlainObject(candidate) || Array.isArray(candidate)) {
           return candidate;
         }
       }
-
+ 
       return null;
     }
-
+ 
     function resolveInputEnvelope(req) {
       const reqBody =
         req?.body && typeof req.body === "object"
           ? req.body
           : null;
-
+ 
       const reqCandidates = collectNormalizedCandidates(reqBody);
       const reqBest = reqCandidates[0] || null;
-
+ 
       if (reqBest) {
         return {
           source: reqBest.label,
@@ -314,12 +315,12 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           }
         };
       }
-
+ 
       const localRead = readLocalTestPayload();
       const localPayload = localRead?.payload || null;
       const localCandidates = collectNormalizedCandidates(localPayload);
       const localBest = localCandidates[0] || null;
-
+ 
       if (localRead.ok && localBest) {
         return {
           source: localBest.label.replace(/^payload\./, "local."),
@@ -351,7 +352,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           }
         };
       }
-
+ 
       return {
         source: "none",
         body: reqBody || {},
@@ -368,13 +369,13 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         }
       };
     }
-
+ 
     const resolvedInput = resolveInputEnvelope(req);
     const body = resolvedInput.body;
     const normalized = resolvedInput.normalized;
     const normalizedPrev = resolvedInput.normalizedPrev;
     const inputFileName = resolvedInput.fileName;
-
+ 
     if (!isNonEmptyObject(normalized)) {
       return send(400, {
         ok: false,
@@ -386,48 +387,48 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         }
       });
     }
-
+ 
     const pages = getResolvedPagesFromNormalized(normalized);
     const tablesPreview = getResolvedTablesFromNormalized(normalized);
-
+ 
     const rawSectorInfo = detectSector(normalized);
     const detectedSector = rawSectorInfo?.sector || "operating_company";
     const activeSectorProfile =
       sectorProfiles[detectedSector] || sectorProfiles.operating_company || {};
-
+ 
     const sectorStatements = activeSectorProfile.statements || {};
     const incomeKeywords = Array.isArray(sectorStatements.income)
       ? sectorStatements.income
       : Array.isArray(activeSectorProfile.incomeStatement)
         ? activeSectorProfile.incomeStatement
         : [];
-
+ 
     const balanceKeywords = Array.isArray(sectorStatements.balance)
       ? sectorStatements.balance
       : Array.isArray(activeSectorProfile.balanceSheet)
         ? activeSectorProfile.balanceSheet
         : [];
-
+ 
     const cashflowKeywords = Array.isArray(sectorStatements.cashflow)
       ? sectorStatements.cashflow
       : Array.isArray(activeSectorProfile.cashFlow)
         ? activeSectorProfile.cashFlow
         : [];
-
+ 
     // =========================================================
     // Layer 1: Normalization Helpers
     // =========================================================
-
+ 
     const DIGIT_MAP = {
       "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
       "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
       "٫": ".", "٬": ",", "−": "-", "–": "-", "—": "-", "ـ": ""
     };
-
+ 
     function toEnglishDigits(value) {
       return String(value || "").replace(/[٠-٩٫٬−–—ـ]/g, (m) => DIGIT_MAP[m] || m);
     }
-
+ 
     function normalizeArabic(text) {
       return String(text || "")
         .replace(/[\u064B-\u065F\u0670]/g, "")
@@ -437,7 +438,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         .replace(/ؤ/g, "و")
         .replace(/ئ/g, "ي");
     }
-
+ 
     function normalizeText(value) {
       return normalizeArabic(toEnglishDigits(String(value || "")))
         .replace(/[^\S\r\n]+/g, " ")
@@ -445,43 +446,43 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         .trim()
         .toLowerCase();
     }
-
+ 
     function unique(arr) {
       return Array.from(new Set((arr || []).filter(Boolean)));
     }
-
+ 
     function safeNumber(v, fallback = 0) {
       const n = Number(v);
       return Number.isFinite(n) ? n : fallback;
     }
-
+ 
     function flattenValue(v) {
       if (v == null) return "";
       if (Array.isArray(v)) return v.map(flattenValue).join("\n");
       if (typeof v === "object") return Object.values(v).map(flattenValue).join("\n");
       return String(v);
     }
-
+ 
     function parseNumberSmart(value) {
       if (value == null) return null;
-
+ 
       let s = String(value).trim();
       if (!s) return null;
-
+ 
       s = toEnglishDigits(s)
         .replace(/\s/g, "")
         .replace(/[ ريالرسعوديةsarusd$]/gi, "")
         .replace(/[^\d.,()\-]/g, "");
-
+ 
       if (!s) return null;
-
+ 
       let negative = false;
       if (s.includes("(") && s.includes(")")) negative = true;
       s = s.replace(/[()]/g, "");
-
+ 
       const hasDot = s.includes(".");
       const hasComma = s.includes(",");
-
+ 
             if (hasDot && hasComma) {
         const lastDot = s.lastIndexOf(".");
         const lastComma = s.lastIndexOf(",");
@@ -505,44 +506,44 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           s = s.replace(/\./g, "");
         }
       }
-
+ 
       const n = Number(s);
       if (!Number.isFinite(n)) return null;
       return negative ? -n : n;
     }
-
+ 
     function extractYears(text) {
       const s = toEnglishDigits(String(text || ""));
       const years = s.match(/\b(19\d{2}|20\d{2})\b/g) || [];
       return unique(years.map(Number)).sort((a, b) => b - a);
     }
-
+ 
     function isYearCell(cell) {
       return /^(19|20)\d{2}$/.test(toEnglishDigits(String(cell || "").trim()));
     }
-
+ 
     function getYearFromCell(cell) {
       const raw = toEnglishDigits(String(cell || "").trim());
       if (!raw) return null;
-
+ 
       if (/^(19|20)\d{2}$/.test(raw)) {
         return Number(raw);
       }
-
+ 
       const years = raw.match(/\b(19\d{2}|20\d{2})\b/g) || [];
       if (years.length === 1) {
         const n = Number(years[0]);
         if (Number.isFinite(n)) return n;
       }
-
+ 
       return null;
     }
-
+ 
     function isNoteHeaderCell(cell) {
       const s = normalizeText(cell);
       return s === "ايضاح" || s === "الايضاح" || s === "notes" || s === "note";
     }
-
+ 
     function isQuarterOrPeriodCell(cell) {
       const s = normalizeText(cell);
       return (
@@ -562,18 +563,18 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         s.includes("المنتهيه في")
       );
     }
-
+ 
     function countNumbers(text) {
       const s = toEnglishDigits(String(text || ""));
       const matches = s.match(/(?:\(?-?\d[\d,]*\.?\d*\)?)/g);
       return matches ? matches.length : 0;
     }
-
+ 
     function containsAny(text, phrases) {
       const s = normalizeText(text);
       return (phrases || []).some((p) => s.includes(normalizeText(p)));
     }
-
+ 
         function keywordHits(text, phrases) {
       const s = normalizeText(text);
       let score = 0;
@@ -584,7 +585,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       }
       return score;
     }
-
+ 
     function countDistinctPhraseHits(text, phrases) {
       const s = normalizeText(text);
       const hits = [];
@@ -595,11 +596,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       }
       return unique(hits);
     }
-
+ 
     function isBlank(v) {
       return String(v == null ? "" : v).trim() === "";
     }
-
+ 
     function cleanupLabel(label) {
       let s = String(label || "").trim();
       s = s.replace(/\s+/g, " ").trim();
@@ -607,7 +608,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       s = s.replace(/\s*[:：]\s*$/, "");
       return s.trim();
     }
-
+ 
     function pageNumFromObj(obj) {
       return safeNumber(
         obj?.pageNumber ??
@@ -618,7 +619,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         null
       );
     }
-
+ 
     function tableText(table) {
       return [
         table?.sample,
@@ -635,15 +636,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         .map(flattenValue)
         .join("\n");
     }
-
+ 
     function getTableRowCount(table) {
       return safeNumber(table?.rowCount ?? table?.rows ?? table?.nRows ?? 0, 0);
     }
-
+ 
     function getTableColumnCount(table) {
       return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
     }
-
+ 
     function extractTableRows(table) {
       const rawCells = Array.isArray(table?.cells)
         ? table.cells
@@ -652,11 +653,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           : Array.isArray(table?.entries)
             ? table.entries
             : [];
-
+ 
       if (rawCells.length > 0) {
         const rowMap = new Map();
         let maxColIndex = -1;
-
+ 
         for (const cell of rawCells) {
           const rowIndex = safeNumber(
             cell?.rowIndex ??
@@ -664,7 +665,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
             cell?.r,
             null
           );
-
+ 
           const columnIndex = safeNumber(
             cell?.columnIndex ??
             cell?.colIndex ??
@@ -673,11 +674,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
             cell?.c,
             null
           );
-
+ 
                     if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
             continue;
           }
-
+ 
           const content = String(
             cell?.content ??
             cell?.text ??
@@ -685,57 +686,57 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
             cell?.rawText ??
             ""
           ).trim();
-
+ 
           const columnSpan = Math.max(
             1,
             safeNumber(cell?.columnSpan ?? cell?.colSpan ?? 1, 1)
           );
-
+ 
           if (!rowMap.has(rowIndex)) {
             rowMap.set(rowIndex, {});
           }
-
+ 
           const rowObj = rowMap.get(rowIndex);
-
+ 
           for (let offset = 0; offset < columnSpan; offset += 1) {
             const targetCol = columnIndex + offset;
-
+ 
             if (!rowObj[targetCol] || String(rowObj[targetCol]).trim() === "") {
               rowObj[targetCol] = content;
             }
-
+ 
             if (targetCol > maxColIndex) {
               maxColIndex = targetCol;
             }
           }
         }
-
+ 
         const reconstructedRows = Array.from(rowMap.keys())
           .sort((a, b) => a - b)
           .map((rowIndex) => {
             const rowObj = rowMap.get(rowIndex) || {};
             const row = [];
-
+ 
             for (let c = 0; c <= maxColIndex; c += 1) {
               row.push(String(rowObj[c] == null ? "" : rowObj[c]).trim());
             }
-
+ 
             return row;
           })
           .filter((r) => r.some((c) => !isBlank(c)));
-
+ 
         if (reconstructedRows.length > 0) {
           return reconstructedRows;
         }
       }
-
+ 
       const rows = [];
       const parts = [];
-
+ 
       if (Array.isArray(table?.sampleHead)) parts.push(...table.sampleHead);
       if (Array.isArray(table?.sample)) parts.push(...table.sample);
       if (Array.isArray(table?.sampleTail)) parts.push(...table.sampleTail);
-
+ 
       for (const row of parts) {
         if (Array.isArray(row)) {
           rows.push(row.map((x) => String(x == null ? "" : x).trim()));
@@ -743,10 +744,10 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           rows.push([String(row).trim()]);
         }
       }
-
+ 
       return rows.filter((r) => r.some((c) => !isBlank(c)));
     }
-
+ 
     function rowsWithMeta(table) {
       const rows = extractTableRows(table);
       return rows.map((cells, index) => ({
@@ -756,12 +757,12 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         normalized: normalizeText(cells.join(" | "))
       }));
     }
-
+ 
     function isLikelyOnlyReferenceText(value) {
       const raw = toEnglishDigits(String(value || "").trim());
       const s = normalizeText(raw);
       if (!raw) return false;
-
+ 
       if (/^\(?\d{1,3}[a-zA-Z]?\)?$/.test(raw)) return true;
       if (/^[a-zA-Z]\d{1,3}$/.test(raw)) return true;
       if (/^\d{1,2}(\.\d{1,2})?$/.test(raw)) return true;
@@ -769,15 +770,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       if (/^\d+\s*-\s*\d+$/.test(raw)) return true;
       if (/^\d+\s*(,|&)\s*\d+$/.test(raw)) return true;
       if (/^\d+\s*and\s*\d+$/i.test(raw)) return true;
-
+ 
             if (/^\d+\s*و\s*\d+$/.test(raw)) return true;
       if (/^\d+\s*و\d+$/.test(raw)) return true;
       if (/^\(?\d{1,3}\)?\s*(و|and|\/|-)\s*\(?\d{1,3}\)?$/i.test(raw)) return true;
       if (s === "n/a") return false;
-
+ 
       return false;
     }
-
+ 
     function isLikelyReferenceValue(cell) {
       const raw = String(cell || "").trim();
       if (!raw) return false;
@@ -785,7 +786,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       if (isYearCell(raw)) return false;
       return isLikelyOnlyReferenceText(raw);
     }
-
+ 
     function isLikelyStatementDateText(text) {
       const s = normalizeText(text);
       return (
@@ -799,7 +800,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         s.includes("الفتره المنتهيه")
       );
     }
-
+ 
     function isLikelyStandardEffectiveDateText(text) {
       const s = normalizeText(text);
       return (
@@ -813,7 +814,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         s.includes("international financial reporting standard")
       );
     }
-
+ 
     function isLikelyNarrativeLine(text) {
       const s = normalizeText(text);
       if (!s) return false;
@@ -828,25 +829,25 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         s.includes("جزءا لا يتجزا")
       );
     }
-
+ 
     function isPureNumericSymbolCell(text) {
       const raw = toEnglishDigits(String(text || "").trim());
       if (!raw) return false;
       return /^[\d,.\-()]+$/.test(raw);
     }
-
+ 
     function hasArabicChars(text) {
       return /[\u0600-\u06FF]/.test(String(text || ""));
     }
-
+ 
     function hasLatinChars(text) {
       return /[A-Za-z]/.test(String(text || ""));
     }
-
+ 
     function hasLetterChars(text) {
       return /[A-Za-z\u0621-\u064A]/.test(String(text || ""));
     }
-
+ 
     function isLikelyTextLabelCell(cell) {
       const raw = String(cell || "").trim();
       if (!raw) return false;
@@ -858,13 +859,13 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       if (isLikelyNarrativeLine(raw)) return false;
       if (isQuarterOrPeriodCell(raw)) return false;
       if (isPureNumericSymbolCell(raw)) return false;
-
+ 
       const n = parseNumberSmart(raw);
       if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return false;
-
+ 
       return hasLetterChars(raw);
     }
-
+ 
         function countLikelyTextLabels(rows, limit = 24) {
       let count = 0;
       for (const row of (rows || []).slice(0, limit)) {
@@ -875,21 +876,21 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       }
       return count;
     }
-
+ 
     function dedupePreserveOrder(arr) {
       const seen = new Set();
       const out = [];
-
+ 
       for (const item of arr || []) {
         const key = normalizeText(item);
         if (!key || seen.has(key)) continue;
         seen.add(key);
         out.push(String(item).trim());
       }
-
+ 
       return out;
     }
-
+ 
     function splitTextIntoLogicalLines(text) {
       return String(text || "")
         .split(/\r?\n+/)
@@ -905,10 +906,10 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           return [line];
         });
     }
-
+ 
     function isSectionHeaderOnlyLabel(label, statementType) {
       const s = normalizeText(label);
-
+ 
       const genericHeaders = [
         "الايرادات",
         "الإيرادات",
@@ -929,9 +930,9 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         "expenses",
         "revenue"
       ].map(normalizeText);
-
+ 
       if (genericHeaders.includes(s)) return true;
-
+ 
       if (statementType === "income") {
         return (
           s === normalizeText("الإيرادات") ||
@@ -939,14 +940,14 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           s === normalizeText("المصاريف")
         );
       }
-
+ 
       return false;
     }
-
+ 
     function salvageFinancialLabelCandidate(rawLabel) {
       const clean = cleanupLabel(rawLabel);
       if (!clean) return null;
-
+ 
       let text = clean;
       text = text.replace(/\b(19|20)\d{2}\b/g, " ");
       text = text.replace(/\b(١٩|٢٠)[٠-٩]{2}\b/g, " ");
@@ -954,15 +955,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       text = text.replace(/\b[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}\b/g, " ");
       text = text.replace(/\b[0-9٠-٩]+\b/g, " ");
       text = text.replace(/\s+/g, " ").trim();
-
+ 
       if (!text) return null;
       return text;
     }
-
+ 
     function isLikelyCurrencyOrUnitHeader(label) {
       const s = normalizeText(label);
       if (!s) return false;
-
+ 
             return (
         s.includes("ريال سعودي") ||
         s.includes("الف ريال") ||
@@ -973,16 +974,16 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         s === "دولار"
       );
     }
-
+ 
     function isAcceptableFinancialLabel(label, statementType) {
       const cleanLabel = cleanupLabel(label);
       const normalizedLabel = normalizeText(cleanLabel);
-
+ 
       if (!cleanLabel) return false;
-
+ 
       const trimmed = cleanLabel.trim();
       const normalized = (normalizedLabel || "").trim();
-
+ 
       const badExactLabels = new Set([
         "للسنه",
         "للسنة",
@@ -993,7 +994,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         "note",
         "notes"
       ].map((x) => normalizeText(x)));
-
+ 
       const badContainsLabels = [
         "بالاف",
         "بآلاف",
@@ -1003,36 +1004,36 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         "sar",
         "usd"
       ].map((x) => normalizeText(x));
-
+ 
       if (badExactLabels.has(normalized)) return false;
       if (badContainsLabels.some((x) => x && normalized.includes(x))) return false;
-
+ 
       if (/^ب[\sـ]*الاف/i.test(trimmed) || /^ب[\sـ]*آلاف/i.test(trimmed)) return false;
       if (!hasLetterChars(trimmed)) return false;
       if (normalized.length <= 2) return false;
       if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
       if (/^(19|20)\d{2}$/.test(trimmed)) return false;
       if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
-
+ 
       if (
         /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed) ||
         /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed)
       ) {
         return false;
       }
-
+ 
       if (isLikelyCurrencyOrUnitHeader(trimmed)) return false;
       if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
       if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
-
+ 
       const words = normalized.split(/\s+/).filter(Boolean);
       if (words.length === 1 && normalized.length < 4) return false;
-
+ 
       if (isLikelyReferenceValue(trimmed)) return false;
       if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
       if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
       if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
-
+ 
       if (
         normalized.includes("الايضاحات المرفقه") ||
         normalized.includes("الإيضاحات المرفقة") ||
@@ -1041,22 +1042,22 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       ) {
         return false;
       }
-
+ 
       return true;
     }
-
+ 
     function extractLabelCandidatesFromPageText(pageCtx, statementType) {
       const firstRowsText = (pageCtx?.mainRows || [])
         .slice(0, 12)
         .map((r) => Array.isArray(r) ? r.join(" | ") : "")
         .join("\n");
-
+ 
       const textBlob = [
         pageCtx?.headerText || "",
         firstRowsText,
         pageCtx?.mainTableText || ""
       ].join("\n");
-
+ 
       const candidates = splitTextIntoLogicalLines(textBlob)
         .map((line) => cleanupLabel(line))
         .filter(Boolean)
@@ -1067,9 +1068,9 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         .filter((line) => !isPureNumericSymbolCell(line))
         .filter((line) => !isLikelyOnlyReferenceText(line))
         .filter((line) => hasLetterChars(line));
-
+ 
       const enriched = [];
-
+ 
       for (const line of candidates) {
         enriched.push(line);
         const salvaged = salvageFinancialLabelCandidate(line);
@@ -1077,32 +1078,32 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           enriched.push(salvaged);
         }
       }
-
+ 
       return dedupePreserveOrder(enriched).filter((line) => {
         return !isLikelyMetaOrHeaderLabel(line) &&
           !isLikelyStatementTitleRow(line, statementType);
       });
     }
-
-
+ 
+ 
     function getTablesForPage(pageNumber) {
       return tablesPreview.filter((t) => pageNumFromObj(t) === pageNumber);
     }
-
+ 
     function getTableDensityScore(table) {
       return (getTableRowCount(table) * 10) + getTableColumnCount(table);
     }
-
+ 
     function pickMainTable(tables) {
       const list = Array.isArray(tables) ? tables : [];
       if (!list.length) return null;
       return list.slice().sort((a, b) => getTableDensityScore(b) - getTableDensityScore(a))[0];
     }
-
+ 
     function getHeaderRows(rows) {
       return [rows[0] || [], rows[1] || [], rows[2] || [], rows[3] || [], rows[4] || [], rows[5] || []];
     }
-
+ 
     function getNumericColumnDensity(rows, limit = 24) {
       const out = {};
       for (const row of (rows || []).slice(0, limit)) {
@@ -1114,16 +1115,16 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           }
         });
       }
-
+ 
       return Object.keys(out)
         .map((k) => ({ idx: Number(k), score: out[k] }))
         .sort((a, b) => b.score - a.score || a.idx - b.idx);
     }
-
+ 
     function detectTableLanguageDirection(rows) {
       let arabicScore = 0;
       let latinScore = 0;
-
+ 
       for (const row of (rows || []).slice(0, 20)) {
         if (!Array.isArray(row)) continue;
         for (const cell of row) {
@@ -1133,7 +1134,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           if (hasLatinChars(raw)) latinScore += 1;
         }
       }
-
+ 
       return {
         isArabicTable: arabicScore > latinScore,
         direction: arabicScore > latinScore ? "rtl" : "ltr",
@@ -1141,11 +1142,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         latinScore
       };
     }
-
+ 
     function detectHeaderColumns(rows) {
       const headerRows = getHeaderRows(rows);
       const language = detectTableLanguageDirection(rows);
-
+ 
       let latest = null;
       let previous = null;
       let currentCol = null;
@@ -1154,15 +1155,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       let labelCol = null;
       let headerRowIndex = null;
       let mode = "fallback";
-
+ 
       for (let i = 0; i < headerRows.length; i += 1) {
         const row = headerRows[i];
         if (!Array.isArray(row) || !row.length) continue;
-
+ 
         const yearCells = row
           .map((cell, idx) => ({ idx, year: getYearFromCell(cell) }))
           .filter((x) => Number.isFinite(x.year));
-
+ 
         if (yearCells.length >= 2) {
           const sortedYears = yearCells.slice().sort((a, b) => b.year - a.year || a.idx - b.idx);
           latest = sortedYears[0]?.year ?? null;
@@ -1174,7 +1175,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           break;
         }
       }
-
+ 
       for (const row of headerRows) {
         for (let i = 0; i < row.length; i += 1) {
           if (isNoteHeaderCell(row[i])) {
@@ -1184,18 +1185,18 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         }
         if (noteCol != null) break;
       }
-
+ 
       if (currentCol == null || previousCol == null) {
         const numericCols = getNumericColumnDensity(rows, 24)
           .filter((x) => x.idx !== noteCol);
-
+ 
         if (numericCols.length >= 2) {
           const candidates = numericCols
             .slice(0, 6)
             .map((x) => x.idx)
             .sort((a, b) => a - b)
             .slice(-2);
-
+ 
           previousCol = candidates[0] ?? previousCol;
           currentCol = candidates[1] ?? currentCol;
           mode = mode === "fallback" ? "numeric_density" : mode;
@@ -1204,27 +1205,27 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           mode = mode === "fallback" ? "single_numeric_column" : mode;
         }
       }
-
+ 
       const maxColCount = Math.max(
         0,
         ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0))
       );
-
+ 
       const reservedCols = new Set(
         [currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x))
       );
-
+ 
       const freeCols = [];
       for (let c = 0; c < maxColCount; c += 1) {
         if (!reservedCols.has(c)) freeCols.push(c);
       }
-
+ 
       if (freeCols.length > 0) {
         labelCol = language.direction === "rtl" ? Math.max(...freeCols) : Math.min(...freeCols);
       }
-
+ 
       const distinctLabel = Number.isFinite(labelCol) && !reservedCols.has(labelCol);
-
+ 
       return {
         latest,
         previous,
@@ -1243,14 +1244,14 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         }
       };
     }
-
+ 
     function buildPageContext(pageNumber, orderedPageNumbers) {
       const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
       const pageTables = getTablesForPage(pageNumber);
       const mainTable = pickMainTable(pageTables);
       const mainRows = extractTableRows(mainTable);
       const header = detectHeaderColumns(mainRows);
-
+ 
       const mainTableText = tableText(mainTable);
       const allText = pageTables.map(tableText).join("\n\n");
       const headerText = getHeaderRows(mainRows).map((r) => flattenValue(r)).join("\n");
@@ -1258,12 +1259,12 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       const lastRowsText = mainRows.slice(-10).map((r) => r.join(" | ")).join("\n");
       const structuralText = `${headerText}\n${firstRowsText}\n${lastRowsText}\n${mainTableText}\n${allText}`;
       const normalizedText = normalizeText(structuralText);
-
+ 
       const index = orderedPageNumbers.indexOf(pageNumber);
       const positionRatio = orderedPageNumbers.length > 1
         ? index / (orderedPageNumbers.length - 1)
         : 0;
-
+ 
       const hasStatementTitle = containsAny(`${headerText}\n${mainTableText}\n${allText}`, [
         "قائمة المركز المالي",
         "قائمة الدخل",
@@ -1278,7 +1279,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         "statement of comprehensive income",
         "statement of profit or loss and other comprehensive income"
       ]);
-
+ 
       const hasYearLikeHeader = getHeaderRows(mainRows).some((r) => {
         const joined = normalizeText(r.join(" | "));
         return extractYears(joined).length >= 2 && (
@@ -1288,7 +1289,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           isQuarterOrPeriodCell(joined)
         );
       });
-
+ 
       const isLikelyIndexPage =
         containsAny(normalizedText, [
           "الفهرس",
@@ -1305,7 +1306,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           "statement of profit or loss",
           "statement of cash flows"
         ]);
-
+ 
       const isLikelyStandardsPage =
         (
           containsAny(normalizedText, [
@@ -1326,7 +1327,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           isLikelyStandardEffectiveDateText(normalizedText)
         ) &&
         !hasStatementTitle;
-
+ 
       const isLikelyEquityStatement =
         getTableColumnCount(mainTable) >= 8 ||
         containsAny(normalizedText, [
@@ -1342,7 +1343,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           "share capital",
           "share premium"
         ]);
-
+ 
       const isLikelyComprehensiveIncome =
         containsAny(normalizedText, [
           "قائمة الدخل الشامل",
@@ -1352,11 +1353,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           "بنود الدخل الشامل الاخر",
           "other comprehensive"
         ]);
-
+ 
       const isLikelyNarrativePage =
         isLikelyNarrativeLine(normalizedText) ||
         isLikelyStandardEffectiveDateText(normalizedText);
-
+ 
       return {
         pageNumber,
         pageMeta,
@@ -1388,22 +1389,22 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         isLikelyNarrativePage
       };
     }
-
+ 
     const allPageNumbers = unique(
       tablesPreview
         .map((t) => pageNumFromObj(t))
         .filter((n) => Number.isFinite(n) && n > 0)
     ).sort((a, b) => a - b);
-
+ 
     const pageContexts = allPageNumbers.map((pageNumber) =>
       buildPageContext(pageNumber, allPageNumbers)
     );
-
+ 
     function getPageContextsByNumbers(pageNumbers) {
       const wanted = new Set((pageNumbers || []).filter((n) => Number.isFinite(n)));
       return pageContexts.filter((p) => wanted.has(p.pageNumber));
     }
-
+ 
     function isLikelyAssetRollforwardPage(pageCtx) {
       const text = normalizeText(
         [
@@ -1413,9 +1414,9 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           pageCtx?.text || ""
         ].join("\n")
       );
-
+ 
       if (!text) return false;
-
+ 
       const rollforwardHeaderHits = countDistinctPhraseHits(text, [
         "صافي القيمة الدفترية",
         "خسارة الانخفاض في القيمة",
@@ -1430,7 +1431,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         "net book value",
         "carrying amount"
       ]);
-
+ 
       const cashflowCoreHits = countDistinctPhraseHits(text, [
         "التدفقات النقدية من الانشطة التشغيلية",
         "التدفقات النقدية من الانشطه التشغيليه",
@@ -1448,22 +1449,22 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         "net cash used in investing activities",
         "net cash from financing activities"
       ]);
-
+ 
       const hasRollforwardHeader =
         rollforwardHeaderHits.length >= 3 &&
         (pageCtx?.mainColumnCount || 0) >= 4 &&
         (pageCtx?.mainRowCount || 0) >= 8;
-
+ 
       const lacksCashflowLanguage = cashflowCoreHits.length === 0;
-
+ 
       return hasRollforwardHeader && lacksCashflowLanguage;
     }
-
-
+ 
+ 
         // =========================================================
     // Layer 3: Statement Profile Detection
     // =========================================================
-
+ 
     const PROFILE_CONFIG = {
       bank: {
         key: "bank",
@@ -1495,7 +1496,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           "investment properties"
         ]
       },
-
+ 
       insurance: {
         key: "insurance",
         positive: [
@@ -1521,7 +1522,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           "investment properties"
         ]
       },
-
+ 
       reit: {
         key: "reit",
         positive: [
@@ -1543,7 +1544,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           "gross financing and investment income"
         ]
       },
-
+ 
       operating_company: {
         key: "operating_company",
         positive: [
@@ -1581,24 +1582,24 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         ]
       }
     };
-
+ 
     function detectStatementProfile() {
       const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
       const scores = {};
-
+ 
       for (const key of Object.keys(PROFILE_CONFIG)) {
         const cfg = PROFILE_CONFIG[key];
         const positive = keywordHits(fullText, cfg.positive);
         const negative = keywordHits(fullText, cfg.negative);
         scores[key] = (positive * 8) - (negative * 5);
       }
-
+ 
       const sorted = Object.keys(scores)
         .map((k) => ({ key: k, score: scores[k] }))
         .sort((a, b) => b.score - a.score);
-
+ 
       const statementProfile = sorted[0]?.key || "operating_company";
-
+ 
       return {
         statementProfile,
         scores,
@@ -1606,11 +1607,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         reason: `${statementProfile} keywords strongest`
       };
     }
-
+ 
     const profileDetection = detectStatementProfile();
     const statementProfile = profileDetection.statementProfile;
     let finalSector = detectedSector;
-
+ 
     if (
       finalSector === "operating_company" &&
       statementProfile &&
@@ -1618,10 +1619,10 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
     ) {
       finalSector = statementProfile;
     }
-
+ 
     const finalSectorProfile =
       sectorProfiles[finalSector] || sectorProfiles.operating_company || {};
-
+ 
     const sectorInfo =
       finalSector !== rawSectorInfo?.sector
         ? {
@@ -1635,11 +1636,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
             ...rawSectorInfo,
             sector: finalSector
           };
-
+ 
     // =========================================================
     // Layer 4: Statement Page Ranking and Selection
     // =========================================================
-
+ 
     const STATEMENT_CONFIGS = {
       bank: {
         balance: {
@@ -1776,7 +1777,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           ]
         }
       },
-
+ 
       insurance: {
         balance: {
           key: "balance",
@@ -1872,7 +1873,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           ]
         }
       },
-
+ 
       reit: {
         balance: {
           key: "balance",
@@ -1960,7 +1961,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           ]
         }
       },
-
+ 
       operating_company: {
         balance: {
           key: "balance",
@@ -2047,10 +2048,10 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         }
       }
     };
-
+ 
     const ACTIVE_STATEMENT_CONFIGS =
       STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
-
+ 
     function mergeStatementConfigWithSectorKeywords(kind, cfg) {
       const sectorStructure =
         kind === "income"
@@ -2058,7 +2059,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           : kind === "balance"
             ? balanceKeywords
             : cashflowKeywords;
-
+ 
       return {
         ...cfg,
         structure: unique([
@@ -2067,17 +2068,17 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         ])
       };
     }
-
+ 
     function getHeaderSearchText(pageCtx) {
       return flattenValue(pageCtx?.header || "");
     }
-
+ 
     function getPageStatementText(pageCtx) {
       const firstRowsText = (pageCtx?.mainRows || [])
         .slice(0, 10)
         .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
         .join("\n");
-
+ 
       return [
         getHeaderSearchText(pageCtx),
         pageCtx?.headerText || "",
@@ -2087,23 +2088,23 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         pageCtx?.structuralText || ""
       ].join("\n");
     }
-
+ 
         function statementRankScore(pageCtx, cfg, kind) {
       let score = 0;
       const reasons = [];
       const signals = {};
-
+ 
       if (!pageCtx) {
         return { score, reasons, signals };
       }
-
+ 
       const headerText = getHeaderSearchText(pageCtx);
       const wholeText = getPageStatementText(pageCtx);
       const firstRowsText = (pageCtx.mainRows || [])
         .slice(0, 6)
         .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
         .join("\n");
-
+ 
       const pageText = normalizeText(
         [
           pageCtx.text || "",
@@ -2112,7 +2113,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           firstRowsText
         ].join("\n")
       );
-
+ 
       const titleHitsHeader = countDistinctPhraseHits(
         `${headerText}\n${pageCtx.headerText || ""}\n${pageCtx.mainTableText || ""}`,
         cfg.titles || []
@@ -2124,13 +2125,13 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         cfg.structure || []
       );
       const negativeHits = countDistinctPhraseHits(wholeText, cfg.negatives || []);
-
+ 
       signals.titleHitsHeader = titleHitsHeader;
       signals.titleHitsAll = titleHitsAll;
       signals.structureHitsAll = structureHitsAll;
       signals.structureHitsFirstRows = structureHitsFirstRows;
       signals.negativeHits = negativeHits;
-
+ 
       if (titleHitsHeader.length > 0) {
         const base = titleHitsHeader.length * 90;
         const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
@@ -2144,33 +2145,33 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         score += s;
         reasons.push(`titleAll:+${s}`);
       }
-
+ 
       if (structureHitsAll.length > 0) {
         const s = Math.min(structureHitsAll.length, 10) * 16;
         score += s;
         reasons.push(`structureAll:+${s}`);
       }
-
+ 
       if (structureHitsFirstRows.length > 0) {
         const s = Math.min(structureHitsFirstRows.length, 6) * 18;
         score += s;
         reasons.push(`structureFirstRows:+${s}`);
       }
-
+ 
       const structureSupportCount =
         structureHitsAll.length + structureHitsFirstRows.length;
-
+ 
       if (structureSupportCount >= 5 && pageCtx.positionRatio <= 0.35) {
         score += 25;
         reasons.push("strongStructureBonus:+25");
       }
-
+ 
       if (pageCtx.hasYearLikeHeader) {
         const s = structureSupportCount > 0 ? 22 : 10;
         score += s;
         reasons.push(`yearHeader:+${s}`);
       }
-
+ 
       if (pageCtx.years && pageCtx.years.length >= 2) {
         const s = structureSupportCount > 0 ? 14 : 6;
         score += s;
@@ -2180,25 +2181,25 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         score += s;
         reasons.push(`singleYearDetected:+${s}`);
       }
-
+ 
       if (pageCtx.numbersCount > 20) {
         const s = structureSupportCount > 0 ? 10 : 4;
         score += s;
         reasons.push(`numbersDensity:+${s}`);
       }
-
+ 
       if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
         const s = structureSupportCount > 0 ? 8 : 3;
         score += s;
         reasons.push(`rowRange:+${s}`);
       }
-
+ 
       if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
         const s = structureSupportCount > 0 ? 8 : 3;
         score += s;
         reasons.push(`columnRange:+${s}`);
       }
-
+ 
       if (pageCtx.positionRatio <= 0.30) {
         const s = structureSupportCount > 0 ? 8 : 3;
         score += s;
@@ -2207,75 +2208,75 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         score -= 180;
         reasons.push("latePagePenalty:-180");
       }
-
+ 
       if (pageCtx.isLikelyIndexPage) {
         score -= 220;
         reasons.push("indexPenalty:-220");
       }
-
+ 
       if (pageCtx.isLikelyStandardsPage) {
         score -= 190;
         reasons.push("standardsPenalty:-190");
       }
-
+ 
       if (pageCtx.isLikelyNarrativePage) {
         score -= 170;
         reasons.push("narrativePenalty:-170");
       }
-
+ 
       if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
         score -= 140;
         reasons.push("comprehensiveIncomePenalty:-140");
       }
-
+ 
       if (kind !== "income" && pageCtx.isLikelyComprehensiveIncome) {
         score -= 60;
         reasons.push("crossStatementComprehensivePenalty:-60");
       }
-
+ 
       if (pageCtx.isLikelyEquityStatement) {
         score -= 120;
         reasons.push("equityStatementPenalty:-120");
       }
-
+ 
       if (negativeHits.length > 0) {
         const s = Math.min(negativeHits.length, 8) * 22;
         score -= s;
         reasons.push(`negativeHits:-${s}`);
       }
-
+ 
       const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
       const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
-
+ 
       if (hasNoTitle) {
         const penalty = kind === "balance" ? 90 : 170;
         score -= penalty;
         reasons.push(`noTitlePenalty:-${penalty}`);
       }
-
+ 
       if (hasNoTitle && hasNoStructure) {
         const penalty = kind === "balance" ? 140 : 260;
         score -= penalty;
         reasons.push(`noTitleNoStructure:-${penalty}`);
       }
-
+ 
       const isTitleOnlyCoverPage =
         (titleHitsHeader.length > 0 || titleHitsAll.length > 0) &&
         hasNoStructure &&
         (!pageCtx.years || pageCtx.years.length === 0) &&
         pageCtx.mainColumnCount <= 2 &&
         pageCtx.mainRowCount <= 10;
-
+ 
       if (isTitleOnlyCoverPage) {
         score -= 180;
         reasons.push("titleOnlyCoverPagePenalty:-180");
       }
-
+ 
       if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
         score -= 120;
         reasons.push("cashflowTitleWithoutStructurePenalty:-120");
       }
-
+ 
       if (
         kind === "cashflow" &&
         hasNoTitle &&
@@ -2287,7 +2288,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         score += 40;
         reasons.push("cashflowTall3ColFallbackBonus:+40");
       }
-
+ 
       const auditNarrativeHits =
         pageText.includes("امر المراجعه") ||
         pageText.includes("امور المراجعه") ||
@@ -2298,34 +2299,34 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         pageText.includes("key audit matters") ||
         pageText.includes("auditor") ||
         pageText.includes("independent auditor");
-
+ 
       if (auditNarrativeHits) {
         score -= 220;
         reasons.push("auditNarrativePenalty:-220");
       }
-
+ 
       if (kind === "cashflow" && isLikelyAssetRollforwardPage(pageCtx)) {
         score -= 260;
         reasons.push("assetRollforwardPenalty:-260");
       }
-
+ 
       return {
         score,
         reasons,
         signals
       };
     }
-
+ 
     function rankPages(kind) {
       const cfg = mergeStatementConfigWithSectorKeywords(
         kind,
         ACTIVE_STATEMENT_CONFIGS[kind]
       );
-
+ 
       return pageContexts
         .map((pageCtx) => {
           const ranked = statementRankScore(pageCtx, cfg, kind);
-
+ 
           return {
             pageNumber: pageCtx.pageNumber,
             score: ranked.score,
@@ -2343,90 +2344,90 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         })
         .sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
     }
-
+ 
     const rankedBalance = rankPages("balance");
     const rankedIncome = rankPages("income");
     const rankedCashflow = rankPages("cashflow");
-
+ 
     function normalizeRankingScores(list) {
       if (!Array.isArray(list) || !list.length) return [];
-
+ 
       const maxScore = Math.max(...list.map((x) => x.score));
       const minScore = Math.min(...list.map((x) => x.score));
       const range = Math.max(1, maxScore - minScore);
-
+ 
       return list.map((item) => ({
         ...item,
         normalizedScore: Math.round(((item.score - minScore) / range) * 100)
       }));
     }
-
+ 
     const calibratedIncome = normalizeRankingScores(rankedIncome);
     const calibratedBalance = normalizeRankingScores(rankedBalance);
     const calibratedCashflow = normalizeRankingScores(rankedCashflow);
-
+ 
     function computeConfidence(rankList) {
       if (!rankList || rankList.length < 2) return 0.5;
-
+ 
       const top = rankList[0].score;
       const second = rankList[1].score;
       const diff = top - second;
-
+ 
       if (diff > 200) return 0.95;
       if (diff > 120) return 0.9;
       if (diff > 60) return 0.8;
       if (diff > 30) return 0.7;
       if (diff > 10) return 0.6;
-
+ 
       return 0.5;
     }
-
+ 
     const confidence = {
       income: computeConfidence(rankedIncome),
       balance: computeConfidence(rankedBalance),
       cashflow: computeConfidence(rankedCashflow)
     };
-
+ 
     let incomePage = rankedIncome[0]?.pageNumber || null;
     let balancePage = rankedBalance[0]?.pageNumber || null;
     let cashFlowPage = ((rankedCashflow[0]?.score ?? -999) >= 0)
       ? (rankedCashflow[0]?.pageNumber || null)
       : null;
-
+ 
     function topPages(list, limit = 3) {
       return (list || []).slice(0, limit).map((x) => x.pageNumber);
     }
-
+ 
     const strongIncomePages = new Set(topPages(rankedIncome, 3));
     const strongBalancePages = new Set(topPages(rankedBalance, 3));
     const strongCashflowPages = new Set(topPages(rankedCashflow, 3));
-
+ 
     function findAlternative(list, blockedPages) {
       return (list || []).find((p) => !blockedPages.has(p.pageNumber))?.pageNumber || null;
     }
-
+ 
     function getPageContextByNumber(pageNumber) {
       return pageContexts.find((p) => p.pageNumber === pageNumber) || null;
     }
-
+ 
     function hasReliableCashflowEvidence(rankedEntry, pageCtx) {
       if (!rankedEntry || !pageCtx) return false;
       if ((rankedEntry?.score ?? -999) < 0) return false;
       if (isLikelyAssetRollforwardPage(pageCtx)) return false;
       if (pageCtx.isLikelyIndexPage) return false;
       if (pageCtx.isLikelyNarrativePage) return false;
-
+ 
       const header = pageCtx?.header || {};
       const resolutionMode = String(header?.resolutionMode || "").trim();
-
+ 
       const titleHitsCount =
         (rankedEntry?.signals?.titleHitsHeader?.length || 0) +
         (rankedEntry?.signals?.titleHitsAll?.length || 0);
-
+ 
       const structureHitsCount =
         (rankedEntry?.signals?.structureHitsAll?.length || 0) +
         (rankedEntry?.signals?.structureHitsFirstRows?.length || 0);
-
+ 
       const cashflowCoreHits = countDistinctPhraseHits(
         getPageStatementText(pageCtx),
         [
@@ -2450,12 +2451,12 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           "cash and cash equivalents"
         ]
       );
-
+ 
       const topRecoveredLabels = extractRowsFromPageContext(pageCtx, "cashflow")
         .slice(0, 5)
         .map((row) => (row?.label))
         .filter(Boolean);
-
+ 
       const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
         return (
           hasLetterChars(label) &&
@@ -2464,17 +2465,17 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           !isLikelyStatementTitleRow(label, "cashflow")
         );
       }).length;
-
+ 
       const weakSingleNumericColumn =
         resolutionMode === "single_numeric_column" &&
         titleHitsCount === 0 &&
         structureHitsCount === 0 &&
         cashflowCoreHits.length === 0;
-
+ 
       if (weakSingleNumericColumn) {
         return false;
       }
-
+ 
       if (
         (titleHitsCount > 0 && (structureHitsCount > 0 || cashflowCoreHits.length > 0)) ||
         structureHitsCount >= 2 ||
@@ -2482,73 +2483,73 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       ) {
         return true;
       }
-
+ 
       if ((rankedEntry?.score ?? -999) >= 80 && validRecoveredLabelCount >= 3) {
         return true;
       }
-
+ 
       return false;
     }
-
+ 
     function getNeighborPageContext(basePageNumber, offset = 1) {
       if (!Number.isFinite(basePageNumber)) return null;
       return getPageContextByNumber(basePageNumber + offset);
     }
-
+ 
     function getContinuationConfig(kind) {
       const cfg = mergeStatementConfigWithSectorKeywords(
         kind,
         ACTIVE_STATEMENT_CONFIGS[kind]
       );
-
+ 
       return {
         titles: cfg?.titles || [],
         structure: cfg?.structure || [],
         negatives: cfg?.negatives || []
       };
     }
-
+ 
     function continuationScore(candidateCtx, kind) {
       if (!candidateCtx) {
         return { score: -999, reasons: [] };
       }
-
+ 
       const cfg = getContinuationConfig(kind);
       const text = getPageStatementText(candidateCtx);
       const firstRowsText = (candidateCtx.mainRows || [])
         .slice(0, 8)
         .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
         .join("\n");
-
+ 
       const titleHits = countDistinctPhraseHits(
         `${candidateCtx.headerText || ""}\n${candidateCtx.mainTableText || ""}`,
         cfg.titles
       );
-
+ 
       const structureHitsAll = countDistinctPhraseHits(text, cfg.structure);
       const structureHitsFirstRows = countDistinctPhraseHits(firstRowsText, cfg.structure);
       const negativeHits = countDistinctPhraseHits(text, cfg.negatives);
-
+ 
       let score = 0;
       const reasons = [];
-
+ 
       if (structureHitsAll.length > 0) {
         const s = Math.min(structureHitsAll.length, 8) * 18;
         score += s;
         reasons.push(`structureAll:+${s}`);
       }
-
+ 
       if (titleHits.length === 0 && structureHitsFirstRows.length === 0) {
         score -= 70;
         reasons.push("noTitleNoFirstRows:-70");
       }
-
+ 
       if (structureHitsFirstRows.length > 0) {
         const s = Math.min(structureHitsFirstRows.length, 5) * 20;
         score += s;
         reasons.push(`structureFirstRows:+${s}`);
       }
-
+ 
       if (titleHits.length > 0) {
         const base = Math.min(titleHits.length, 2) * 20;
         const multiplier = structureHitsAll.length > 0 || structureHitsFirstRows.length > 0 ? 1 : 0.5;
@@ -2556,110 +2557,110 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         score += s;
         reasons.push(`title:+${s}`);
       }
-
+ 
       if (candidateCtx.hasYearLikeHeader) {
         score += 15;
         reasons.push("yearHeader:+15");
       }
-
+ 
       if ((candidateCtx.years || []).length >= 2) {
         score += 12;
         reasons.push("years:+12");
       }
-
+ 
       if (candidateCtx.numbersCount >= 12) {
         score += 12;
         reasons.push("numbers:+12");
       }
-
+ 
       if (candidateCtx.mainRowCount >= 6) {
         score += 10;
         reasons.push("rowCount:+10");
       }
-
+ 
       if (candidateCtx.mainColumnCount >= 3) {
         score += 8;
         reasons.push("columnCount:+8");
       }
-
+ 
       if (candidateCtx.isLikelyIndexPage) {
         score -= 220;
         reasons.push("indexPenalty:-220");
       }
-
+ 
       if (candidateCtx.isLikelyStandardsPage) {
         score -= 180;
         reasons.push("standardsPenalty:-180");
       }
-
+ 
       if (candidateCtx.isLikelyNarrativePage) {
         score -= 150;
         reasons.push("narrativePenalty:-150");
       }
-
+ 
       if (candidateCtx.isLikelyEquityStatement) {
         score -= 120;
         reasons.push("equityPenalty:-120");
       }
-
+ 
       if (kind === "income" && candidateCtx.isLikelyComprehensiveIncome) {
         score -= 120;
         reasons.push("comprehensivePenalty:-120");
       }
-
+ 
       if (negativeHits.length > 0) {
         const s = Math.min(negativeHits.length, 6) * 22;
         score -= s;
         reasons.push(`negativeHits:-${s}`);
       }
-
+ 
       return { score, reasons };
     }
-
+ 
         function pageLooksLikeOtherStatementTitle(pageCtx, currentKind) {
       if (!pageCtx) return false;
-
+ 
       const kinds = ["income", "balance", "cashflow"].filter((k) => k !== currentKind);
-
+ 
       const titleText = [
         pageCtx.headerText || "",
         ...(pageCtx.mainRows || [])
           .slice(0, 3)
           .map((r) => Array.isArray(r) ? r.join(" | ") : "")
       ].join("\n");
-
+ 
       for (const kind of kinds) {
         const cfg = mergeStatementConfigWithSectorKeywords(
           kind,
           ACTIVE_STATEMENT_CONFIGS[kind]
         );
-
+ 
         const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
         if (otherTitleHits.length >= 1) {
           return true;
         }
       }
-
+ 
       return false;
     }
-
+ 
     function looksLikeSameStatement(baseCtx, candidateCtx) {
       if (!baseCtx || !candidateCtx) return false;
-
+ 
       let score = 0;
-
+ 
       if (Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1) score += 20;
       if (Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20) score += 20;
       if (Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20) score += 20;
       if (baseCtx.years && candidateCtx.years && baseCtx.years.some((y) => candidateCtx.years.includes(y))) score += 20;
       if ((baseCtx.mainRowCount || 0) > 5 && (candidateCtx.mainRowCount || 0) > 5) score += 20;
-
+ 
       return score >= 60;
     }
-
+ 
     function detectStatementContinuation(basePageNumber, kind) {
       const baseCtx = getPageContextByNumber(basePageNumber);
-
+ 
       if (!baseCtx) {
         return {
           basePage: basePageNumber || null,
@@ -2670,15 +2671,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           }
         };
       }
-
+ 
       const prevCtx = getNeighborPageContext(basePageNumber, -1);
       const nextCtx = getNeighborPageContext(basePageNumber, 1);
-
+ 
       const prevEval = continuationScore(prevCtx, kind);
       const nextEval = continuationScore(nextCtx, kind);
-
+ 
       const pages = [basePageNumber];
-
+ 
       if (
         prevCtx &&
         prevEval.score >= 55 &&
@@ -2687,7 +2688,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       ) {
         pages.unshift(prevCtx.pageNumber);
       }
-
+ 
       if (
         nextCtx &&
         nextEval.score >= 65 &&
@@ -2696,7 +2697,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       ) {
         pages.push(nextCtx.pageNumber);
       }
-
+ 
       return {
         basePage: basePageNumber,
         pages: unique(pages).sort((a, b) => a - b),
@@ -2720,11 +2721,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         }
       };
     }
-
+ 
     if (incomePage && balancePage && incomePage === balancePage) {
       const incomeScore = rankedIncome.find((p) => p.pageNumber === incomePage)?.score ?? -999999;
       const balanceScore = rankedBalance.find((p) => p.pageNumber === balancePage)?.score ?? -999999;
-
+ 
       if (balanceScore >= incomeScore) {
         incomePage =
           findAlternative(rankedIncome, new Set([balancePage, cashFlowPage].filter(Boolean))) || incomePage;
@@ -2736,7 +2737,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           ) || balancePage;
       }
     }
-
+ 
     if (incomePage && cashFlowPage && incomePage === cashFlowPage) {
       cashFlowPage =
         findAlternative(
@@ -2744,7 +2745,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
         ) || cashFlowPage;
     }
-
+ 
     if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
       cashFlowPage =
         findAlternative(
@@ -2752,7 +2753,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           new Set([balancePage, incomePage, ...strongBalancePages].filter(Boolean))
         ) || cashFlowPage;
     }
-
+ 
     if (incomePage && strongCashflowPages.has(incomePage) && !strongIncomePages.has(incomePage)) {
       incomePage =
         findAlternative(
@@ -2760,7 +2761,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           new Set([balancePage, cashFlowPage, ...strongCashflowPages].filter(Boolean))
         ) || incomePage;
     }
-
+ 
     if (cashFlowPage && strongIncomePages.has(cashFlowPage) && !strongCashflowPages.has(cashFlowPage)) {
       cashFlowPage =
         findAlternative(
@@ -2768,15 +2769,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
         ) || cashFlowPage;
     }
-
+ 
     const cashflowSelectionDiagnostics = (() => {
       const selectedEntry = rankedCashflow.find((p) => p.pageNumber === cashFlowPage) || null;
       const selectedPageCtx = getPageContextByNumber(cashFlowPage);
-
+ 
       const reliableEntries = rankedCashflow.filter((entry) =>
         hasReliableCashflowEvidence(entry, getPageContextByNumber(entry.pageNumber))
       );
-
+ 
       if (!selectedEntry || !selectedPageCtx) {
         return {
           reliableCandidateFound: false,
@@ -2785,9 +2786,9 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           topReliablePages: []
         };
       }
-
+ 
       const selectedReliable = hasReliableCashflowEvidence(selectedEntry, selectedPageCtx);
-
+ 
       if (selectedReliable) {
         return {
           reliableCandidateFound: true,
@@ -2796,11 +2797,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           topReliablePages: reliableEntries.slice(0, 5).map((x) => x.pageNumber)
         };
       }
-
+ 
       const fallbackReliable = reliableEntries.find((entry) =>
         ![incomePage, balancePage].filter(Boolean).includes(entry.pageNumber)
       ) || reliableEntries[0] || null;
-
+ 
       if (fallbackReliable) {
         cashFlowPage = fallbackReliable.pageNumber;
         return {
@@ -2812,7 +2813,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           topReliablePages: reliableEntries.slice(0, 5).map((x) => x.pageNumber)
         };
       }
-
+ 
       cashFlowPage = null;
       return {
         reliableCandidateFound: false,
@@ -2822,17 +2823,17 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         topReliablePages: []
       };
     })();
-
+ 
     const incomeContinuation = detectStatementContinuation(incomePage, "income");
     const balanceContinuation = detectStatementContinuation(balancePage, "balance");
     const cashflowContinuation = detectStatementContinuation(cashFlowPage, "cashflow");
-
+ 
     const statementPageRanges = {
       income: incomeContinuation.pages,
       balance: balanceContinuation.pages,
       cashflow: cashflowContinuation.pages
     };
-
+ 
     const statementSelectionResolved = {
       income: {
         basePage: incomePage,
@@ -2850,44 +2851,44 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         pageContexts: getPageContextsByNumbers(statementPageRanges.cashflow)
       }
     };
-
+ 
     // =========================================================
     // Layer 5: Raw Financial Row Extraction
     // =========================================================
-
+ 
     function getCell(row, idx) {
       if (!Array.isArray(row)) return "";
       if (!Number.isFinite(idx)) return "";
       return String(row[idx] == null ? "" : row[idx]).trim();
     }
-
+ 
     function pickFallbackLabelCell(row, header, statementType) {
       if (!Array.isArray(row) || !row.length) return "";
-
+ 
       const cells = row.map((cell, idx) => ({
         idx,
         cell: String(cell == null ? "" : cell).trim()
       }));
-
+ 
       const reserved = new Set(
         [
           header?.currentCol,
           header?.previousCol
         ].filter((x) => Number.isFinite(x))
       );
-
+ 
       const textCandidates = cells
         .filter((x) => !reserved.has(x.idx))
         .filter((x) => isLikelyTextLabelCell(x.cell))
         .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
         .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
         .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType));
-
+ 
       if (textCandidates.length > 0) {
         const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
         return rtlPick?.cell || "";
       }
-
+ 
       const fallbackFromAnyText = cells
         .filter((x) => !reserved.has(x.idx))
         .filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
@@ -2895,26 +2896,26 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
         .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType))
         .sort((a, b) => b.idx - a.idx)[0];
-
+ 
       return fallbackFromAnyText?.cell || "";
     }
-
+ 
     function (label, row = null) {
   if (
     (!label || isLikelyReferenceValue(label)) &&
     row && Array.isArray(row.rawRow)
   ) {
     const joined = row.rawRow.join(" ");
-
+ 
     const cleaned = joined
       .replace(/[\d\s.,()%\-–—]+/g, " ")
       .trim();
-
+ 
     if (cleaned && cleaned.length > 3) {
       return cleaned;
     }
   }
-
+ 
   return cleanupLabel(
     String(label || "")
       .replace(/\.+$/g, "")
@@ -2922,12 +2923,12 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       .trim()
   );
 }
-
+ 
     function isLikelyStatementTitleRow(label, statementType) {
       const s = normalizeText(label);
-
+ 
       if (!s) return false;
-
+ 
       const titleMap = {
         income: [
           "قائمة الدخل",
@@ -2956,15 +2957,15 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           "cash flow statement"
         ]
       };
-
+ 
       return (titleMap[statementType] || []).some((x) => s.includes(normalizeText(x)));
     }
-
+ 
     function isLikelyMetaOrHeaderLabel(label) {
       const s = normalizeText(label);
-
+ 
       if (!s) return true;
-
+ 
       return (
         isLikelyStatementDateText(s) ||
         isLikelyStandardEffectiveDateText(s) ||
@@ -2983,17 +2984,17 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         s === "الايضاح"
       );
     }
-
+ 
     function rowHasUsefulNumericValue(row, header) {
       const currentRaw = getCell(row, header?.currentCol);
       const previousRaw = getCell(row, header?.previousCol);
-
+ 
       const currentValue = parseNumberSmart(currentRaw);
       const previousValue = parseNumberSmart(previousRaw);
-
+ 
       return currentValue != null || previousValue != null;
     }
-
+ 
     function shouldSkipExtractedRow({
       row,
       rowIndex,
@@ -3004,11 +3005,11 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       previousYearValue
     }) {
       const cleanLabel = (label);
-
+ 
       if (!cleanLabel) return true;
       if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
       if (!rowHasUsefulNumericValue(row, pageCtx?.header)) return true;
-
+ 
       if (
         statementType === "income" &&
         currentYearValue == null &&
@@ -3016,14 +3017,14 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
       ) {
         return true;
       }
-
+ 
       if (statementType === "cashflow") {
         const resolutionMode = String(pageCtx?.header?.resolutionMode || "").trim();
-
+ 
         if (pageCtx?.isLikelyIndexPage || pageCtx?.isLikelyNarrativePage) {
           return true;
         }
-
+ 
         if (
           resolutionMode === "single_numeric_column" &&
           !containsAny(
@@ -3042,29 +3043,29 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           return true;
         }
       }
-
+ 
       if (!isAcceptableFinancialLabel(cleanLabel, statementType)) {
         return true;
       }
-
+ 
       return false;
     }
-
+ 
     function collectNumericRows(pageCtx, statementType) {
       const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
       const header = pageCtx?.header || {};
       const numericRows = [];
-
+ 
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
         const row = rows[rowIndex];
         if (!Array.isArray(row) || !row.length) continue;
         if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
         if (!rowHasUsefulNumericValue(row, header)) continue;
-
+ 
         const labelFromHeader = getCell(row, header.labelCol);
         const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
         const noteRaw = getCell(row, header.noteCol);
-
+ 
         const noteLooksLikeLabel =
           header.labelCol == null &&
           !!noteRaw &&
@@ -3073,24 +3074,24 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           !isLikelyMetaOrHeaderLabel(noteRaw) &&
           !isLikelyStatementTitleRow(noteRaw, statementType) &&
           !isSectionHeaderOnlyLabel(noteRaw, statementType);
-
+ 
         const labelCandidate = (
           labelFromHeader ||
           fallbackLabel ||
           (noteLooksLikeLabel ? noteRaw : "")
         );
-
+ 
         const note =
           noteLooksLikeLabel
             ? null
             : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
-
+ 
         const currentYearValueRaw = getCell(row, header.currentCol);
         const previousYearValueRaw = getCell(row, header.previousCol);
-
+ 
         const currentYearValue = parseNumberSmart(currentYearValueRaw);
         const previousYearValue = parseNumberSmart(previousYearValueRaw);
-
+ 
         numericRows.push({
           statementType,
           pageNumber: pageCtx.pageNumber,
@@ -3110,29 +3111,29 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           }
         });
       }
-
+ 
       return numericRows;
     }
-
+ 
         function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
       if (!Array.isArray(candidates) || !candidates.length) return null;
-
+ 
       const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
-
+ 
       for (const offset of offsets) {
         const idx = startIndex + offset;
         if (idx < 0 || idx >= candidates.length) continue;
-
+ 
         const candidate = (candidates[idx]);
         const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
-
+ 
         if (isAcceptableFinancialLabel(candidate, statementType)) {
           return {
             label: candidate,
             recoveredFrom: "page_text_nearby"
           };
         }
-
+ 
         if (
           salvagedCandidate &&
           isAcceptableFinancialLabel(salvagedCandidate, statementType)
@@ -3143,39 +3144,39 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           };
         }
       }
-
+ 
       return null;
     }
-
+ 
     function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
-
+ 
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
       if (!candidates.length) return rawEntries;
-
+ 
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
-
+ 
       return rawEntries.map((en) => {
         const finalLabel = (en.labelCandidate);
-
+ 
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
             ...en,
             label: finalLabel
           };
         }
-
+ 
         const relativeRowIndex = Math.max(
           0,
           safeNumber(en?.rowIndex, 0) - headerRowIndex - 1
         );
-
+ 
         const nearby = findBestNearbyLabelCandidate(
           candidates,
           relativeRowIndex,
           statementType
         );
-
+ 
         if (nearby && isAcceptableFinancialLabel(nearby.label, statementType)) {
           return {
             ...en,
@@ -3186,27 +3187,27 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
             }
           };
         }
-
+ 
         return {
           ...en,
           label: isAcceptableFinancialLabel(finalLabel, statementType) ? finalLabel : null
         };
       });
     }
-
+ 
     function extractRowsFromPageContext(pageCtx, statementType) {
       if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
         return [];
       }
-
+ 
       const rawEntries = collectNumericRows(pageCtx, statementType);
       const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
       const header = pageCtx.header || {};
       const extracted = [];
-
+ 
       for (const en of repairedEntries) {
         const label = (en.label);
-
+ 
         if (
           shouldSkipExtractedRow({
             row: en.row,
@@ -3220,7 +3221,7 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
         ) {
           continue;
         }
-
+ 
         extracted.push({
           statementType,
           pageNumber: pageCtx.pageNumber,
@@ -3239,14 +3240,14 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           rawRow: en.row
         });
       }
-
+ 
       return extracted;
     }
-
+ 
     function dedupeExtractedRows(rows) {
       const seen = new Set();
       const out = [];
-
+ 
       for (const row of rows || []) {
         const key = [
           row.statementType,
@@ -3257,31 +3258,31 @@ const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
           row.previousYear?.year,
           row.previousYear?.value
         ].join("|");
-
+ 
         if (seen.has(key)) continue;
         seen.add(key);
         out.push(row);
       }
-
+ 
       return out;
     }
-
+ 
     function buildMissingLabelDiagnostics(rawEntries, repairedEntries, pageCtx, statementType) {
       const rawTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
-
+ 
 const acceptableTextCandidates = rawTextCandidates
   .filter((label) => isAcceptableFinancialLabel(label, statementType));
-
+ 
       const noteLikeRawCount = (rawEntries || []).filter((entry) => {
         const candidate = (entry?.labelCandidate);
         return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
       }).length;
-
+ 
       const acceptedCount = (repairedEntries || []).filter((entry) => {
         const label = normalizeLabelForRow(entry?.label, entry);
         return isAcceptableFinancialLabel(label, statementType);
       }).length;
-
+ 
       const header = pageCtx?.header || {};
       const likelyMissingLabelsInPayload =
         statementType === "income" &&
@@ -3289,7 +3290,7 @@ const acceptableTextCandidates = rawTextCandidates
         rawEntries.length > 0 &&
         acceptedCount === 0 &&
         acceptableTextCandidates.length === 0;
-
+ 
       return {
         likelyMissingLabelsInPayload,
         acceptableTextCandidatesCount: acceptableTextCandidates.length,
@@ -3301,20 +3302,20 @@ const acceptableTextCandidates = rawTextCandidates
           : null
       };
     }
-
+ 
     function buildExtractionDiagnostics(statementSelection) {
       const diagnostics = {};
-
+ 
       for (const statementType of ["income", "balance", "cashflow"]) {
         const en = statementSelection?.[statementType];
         const pageContextsForStatement = Array.isArray(en?.pageContexts)
           ? en.pageContexts
           : [];
-
+ 
         const perPage = pageContextsForStatement.map((pageCtx) => {
           const rawEntries = collectNumericRows(pageCtx, statementType);
           const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
-
+ 
           const acceptedEntries = repairedEntries.filter((row) => {
             const label = normalizeLabelForRow(row.label);
             return !shouldSkipExtractedRow({
@@ -3327,14 +3328,14 @@ const acceptableTextCandidates = rawTextCandidates
               previousYearValue: row.previousYearValue
             });
           });
-
+ 
           const missingLabelDiagnostics = buildMissingLabelDiagnostics(
             rawEntries,
             repairedEntries,
             pageCtx,
             statementType
           );
-
+ 
           return {
             pageNumber: pageCtx.pageNumber,
             rawEntriesCount: rawEntries.length,
@@ -3365,41 +3366,41 @@ const acceptableTextCandidates = rawTextCandidates
             }))
           };
         });
-
+ 
         diagnostics[statementType] = {
           pages: pageContextsForStatement.map((p) => p.pageNumber),
           perPage
         };
       }
-
+ 
       return diagnostics;
     }
-
+ 
     function extractStatementRows(statementSelection) {
       const result = {
         income: [],
         balance: [],
         cashflow: []
       };
-
+ 
       for (const statementType of ["income", "balance", "cashflow"]) {
         const entry = statementSelection?.[statementType];
         const pageContextsForStatement = Array.isArray(entry?.pageContexts)
           ? entry.pageContexts
           : [];
-
+ 
         const rows = pageContextsForStatement.flatMap((pageCtx) =>
           extractRowsFromPageContext(pageCtx, statementType)
         );
-
+ 
         result[statementType] = dedupeExtractedRows(rows);
       }
-
+ 
       return result;
     }
         const financialRows = extractStatementRows(statementSelectionResolved);
     const extractionDiagnostics = buildExtractionDiagnostics(statementSelectionResolved);
-
+ 
     return send(200, {
       ok: true,
       sector: finalSector,
@@ -3409,13 +3410,13 @@ const acceptableTextCandidates = rawTextCandidates
       phase: "5_financial_line_item_extraction_professional_input_resolution",
       fileName: inputFileName || null,
       statementProfile,
-
+ 
       selectedPages: {
         incomePage,
         balancePage,
         cashFlowPage
       },
-
+ 
       statementPageRanges,
       statementSelection: {
         income: {
@@ -3433,9 +3434,9 @@ const acceptableTextCandidates = rawTextCandidates
       },
       statementSelectionResolved,
       financialRows,
-
+ 
       confidence,
-
+ 
       debug: {
         inputResolution: {
           source: resolvedInput.source,
@@ -3470,34 +3471,39 @@ const acceptableTextCandidates = rawTextCandidates
           cashFlowTop: calibratedCashflow.slice(0, 15)
         }
       },
-
+ 
       meta: {
         pages: normalized?.meta?.pages ?? pages.length ?? null,
         tables: normalized?.meta?.tables ?? tablesPreview.length ?? null,
         textLength: normalized?.meta?.textLength ?? null
       },
-
+ 
       normalizedPrevExists: !!normalizedPrev
     });
   } catch (err) {
+    context.log.error("extract-financial:error", err?.stack || err?.message || err);
     return send(500, {
       ok: false,
-      error: err?.message || "unknown error in extract-financial"
+      error: err?.message || "unknown error in extract-financial",
+      debug: {
+        stack: String(err?.stack || "").split("\n").slice(0, 8),
+        localTestFile: req?.body?.localTestFile || "almarai-layout.json"
+      }
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
   
-
+ 
