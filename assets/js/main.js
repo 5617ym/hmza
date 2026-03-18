@@ -1,3 +1,4 @@
+main.js (local test professional fixed)
 
 const DEV_MODE = true // true أثناء التطوير، false للإنتاج
 console.log("MAIN_JS_VERSION = 3B_COMPARE_NORMALIZE_AND_2FILES_WITH_LASTNORMALIZED_2026-03-04_UI_REFRESH");
@@ -353,14 +354,14 @@ if (DEV_MODE) {
     normalized: null,
     devLocalTestFile: guessLocalTestFileName(selectedFiles[0]),
     fileName: selectedFiles[0]?.name || null,
-    meta: { pages: 0, tables: 0, textLength: 0 }
+    meta: { pages: 0, tables: 0, textLength: 0 },
+    isDevLocalOnly: true
   };
 } else {
   dataA = await analyzeSingleFile(selectedFiles[0], ui);
 }
 
     window.lastAnalyzeA = dataA;
-    window.lastNormalized = dataA?.normalized || null;
 
     const pagesA = Number(dataA?.normalized?.meta?.pages || 0);
     const tablesA = Number(dataA?.normalized?.meta?.tables || 0);
@@ -382,14 +383,14 @@ if (DEV_MODE) {
           normalized: null,
           devLocalTestFile: guessLocalTestFileName(selectedFiles[1]),
           fileName: selectedFiles[1]?.name || null,
-          meta: { pages: 0, tables: 0, textLength: 0 }
+          meta: { pages: 0, tables: 0, textLength: 0 },
+          isDevLocalOnly: true
         };
       } else {
         dataB = await analyzeSingleFile(selectedFiles[1], ui);
       }
 
       window.lastAnalyzeB = dataB;
-      window.lastNormalizedPrev = dataB?.normalized || null;
 
       pagesB = Number(dataB?.normalized?.meta?.pages || 0);
       tablesB = Number(dataB?.normalized?.meta?.tables || 0);
@@ -403,7 +404,7 @@ if (DEV_MODE) {
     }
 
     if (!tablesPreviewCountA) {
-      console.warn("⚠️ normalized.tablesPreview = 0. هذا يعني extract-financial لن يجد الجداول.");
+      console.warn("⚠️ normalized.tablesPreview = 0. في وضع DEV_MODE هذا طبيعي قبل نداء extract-financial المحلي.");
     }
 
     setStatus("تم التحليل ✅ — جاري استخراج البيانات المالية...", "info");
@@ -430,7 +431,16 @@ if (DEV_MODE) {
       payload.normalizedPrev = dataB.normalized;
     }
 
+    console.log("EXTRACT-FINANCIAL PAYLOAD:", payload);
     const fin = await extractFinancial(payload);
+
+    if (DEV_MODE) {
+      window.lastNormalized = null;
+      window.lastNormalizedPrev = null;
+    } else {
+      window.lastNormalized = dataA?.normalized || null;
+      window.lastNormalizedPrev = dataB?.normalized || null;
+    }
     const selectionInfo = fin?.financial?.selectionPolicy || null;
 
     cardsEl.innerHTML = `
@@ -497,5 +507,6 @@ if (DEV_MODE) {
 });
 
 clearUI();
+
 
 
