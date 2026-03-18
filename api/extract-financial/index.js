@@ -1,4 +1,3 @@
-
 const { detectSector } = require("../_lib/sector-detection");
 const sectorProfiles = require("../_lib/sector-profiles");
 
@@ -16,7 +15,7 @@ module.exports = async function (context, req) {
     const fs = require("fs");
     const path = require("path");
 
-    const LOCAL_TEST_FILE = "almarai-layout.json";
+    const LOCAL_TEST_FILE = "jadwa-reit-layout.json";
     const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
 
     function isPlainObject(value) {
@@ -1019,66 +1018,36 @@ module.exports = async function (context, req) {
     }
 
     function extractLabelCandidatesFromPageText(pageCtx, statementType) {
-      const firstRowsText = (pageCtx?.mainRows || [])
-        .slice(0, 18)
-        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-        .join("
-");
-
       const textBlob = [
-        pageCtx?.headerText || "",
-        firstRowsText,
-        pageCtx?.mainTableText || ""
-      ].join("
-");
+        pageCtx?.mainTableText || "",
+        pageCtx?.text || "",
+        pageCtx?.structuralText || ""
+      ].join("\n");
 
       const candidates = splitTextIntoLogicalLines(textBlob)
         .map((line) => cleanupLabel(line))
         .filter(Boolean)
-        .filter((line) => line.length <= 120)
         .filter((line) => !isLikelyStatementDateText(line))
         .filter((line) => !isLikelyStandardEffectiveDateText(line))
         .filter((line) => !isLikelyNarrativeLine(line))
         .filter((line) => !isQuarterOrPeriodCell(line))
         .filter((line) => !isPureNumericSymbolCell(line))
         .filter((line) => !isLikelyOnlyReferenceText(line))
-        .filter((line) => hasLetterChars(line))
-        .filter((line) => !isLikelyMetaOrHeaderLabel(line))
-        .filter((line) => !isLikelyStatementTitleRow(line, statementType))
-        .filter((line) => {
-          const s = normalizeText(line);
-          return !(
-            s.includes("يرجى الرجوع") ||
-            s.includes("كيفية معالجة") ||
-            s.includes("كيفيه معالجه") ||
-            s.includes("أمر المراجعة") ||
-            s.includes("امر المراجعه") ||
-            s.includes("key audit") ||
-            s.includes("auditor")
-          );
-        });
+        .filter((line) => hasLetterChars(line));
 
       const enriched = [];
 
       for (const line of candidates) {
         enriched.push(line);
         const salvaged = salvageFinancialLabelCandidate(line);
-        if (
-          salvaged &&
-          normalizeText(salvaged) !== normalizeText(line) &&
-          !isLikelyMetaOrHeaderLabel(salvaged) &&
-          !isLikelyStatementTitleRow(salvaged, statementType)
-        ) {
+        if (salvaged && normalizeText(salvaged) !== normalizeText(line)) {
           enriched.push(salvaged);
         }
       }
 
       return dedupePreserveOrder(enriched).filter((line) => {
-        return (
-          isAcceptableFinancialLabel(line, statementType) &&
-          !isLikelyMetaOrHeaderLabel(line) &&
-          !isLikelyStatementTitleRow(line, statementType)
-        );
+        return !isLikelyMetaOrHeaderLabel(line) &&
+          !isLikelyStatementTitleRow(line, statementType);
       });
     }
 
@@ -2206,17 +2175,6 @@ module.exports = async function (context, req) {
         reasons.push("latePagePenalty:-180");
       }
 
-      if (
-        kind === "cashflow" &&
-        pageCtx.positionRatio <= 0.15 &&
-        titleHitsHeader.length === 0 &&
-        titleHitsAll.length === 0 &&
-        structureSupportCount < 2
-      ) {
-        score -= 220;
-        reasons.push("cashflowEarlyWeakPagePenalty:-220");
-      }
-
       if (pageCtx.isLikelyIndexPage) {
         score -= 220;
         reasons.push("indexPenalty:-220");
@@ -2283,11 +2241,6 @@ module.exports = async function (context, req) {
       if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
         score -= 120;
         reasons.push("cashflowTitleWithoutStructurePenalty:-120");
-      }
-
-      if (kind === "cashflow" && hasNoTitle && structureSupportCount < 2) {
-        score -= 140;
-        reasons.push("cashflowWeakStructurePenalty:-140");
       }
 
       if (
@@ -2464,7 +2417,7 @@ module.exports = async function (context, req) {
 
       const topRecoveredLabels = extractRowsFromPageContext(pageCtx, "cashflow")
         .slice(0, 5)
-        .map((row) => (row?.label))
+        .map((row) => normalizeLabelForRow(row?.label))
         .filter(Boolean);
 
       const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
@@ -2908,43 +2861,26 @@ module.exports = async function (context, req) {
 
     function normalizeLabelForRow(label, row = null) {
   if (
-    (!label || isLikelyReferenceValue(label) || isLikelyMetaOrHeaderLabel(label)) &&
-    row && Array.isArray(row.rawRow)
+    (!label || isLikelyReferenceValue(label)) &&
+    Array.isArray(row?.rawRow)
   ) {
     const joined = row.rawRow.join(" ");
 
-    const cleaned = cleanupLabel(
-      joined
-        .replace(/[\d\s.,()%\-–—]+/g, " ")
-        .trim()
-    );
+    const cleaned = joined
+      .replace(/[\d\s.,()%\-–—]+/g, " ")
+      .trim();
 
-    if (
-      cleaned &&
-      cleaned.length > 3 &&
-      !isLikelyReferenceValue(cleaned) &&
-      !isLikelyMetaOrHeaderLabel(cleaned)
-    ) {
+    if (cleaned && cleaned.length > 3) {
       return cleaned;
     }
   }
 
-  const normalizedLabel = cleanupLabel(
+  return cleanupLabel(
     String(label || "")
       .replace(/\.+$/g, "")
       .replace(/\s{2,}/g, " ")
       .trim()
   );
-
-  if (
-    !normalizedLabel ||
-    isLikelyReferenceValue(normalizedLabel) ||
-    isLikelyMetaOrHeaderLabel(normalizedLabel)
-  ) {
-    return "";
-  }
-
-  return normalizedLabel;
 }
 
     function isLikelyStatementTitleRow(label, statementType) {
@@ -3004,34 +2940,7 @@ module.exports = async function (context, req) {
         s === "notes" ||
         s === "note" ||
         s === "ايضاح" ||
-        s === "الايضاح" ||
-        s === "ايضاحات" ||
-        s === "الإيضاحات" ||
-        s === "للسنه" ||
-        s === "للسنة" ||
-        s === "للفتره" ||
-        s === "للفترة" ||
-        s === "بآلاف" ||
-        s === "بالاف" ||
-        s === "بالآلاف" ||
-        s === "بالالاف" ||
-        s === "بآلاف ( )" ||
-        s === "بآلاف ()" ||
-        s === "بـآلاف ( )" ||
-        s === "بـآلاف ()" ||
-        s === "بآلاف (3)" ||
-        s === "بـآلاف (3)" ||
-        s.includes("ريال سعودي") ||
-        s.includes("الف ريال") ||
-        s.includes("ألف ريال") ||
-        s.includes("بالريال") ||
-        s.includes("يرجى الرجوع") ||
-        s.includes("كيفية معالجة") ||
-        s.includes("كيفيه معالجه") ||
-        s.includes("امر المراجعه") ||
-        s.includes("امور المراجعه") ||
-        s.includes("key audit") ||
-        s.includes("auditor")
+        s === "الايضاح"
       );
     }
 
@@ -3054,7 +2963,7 @@ module.exports = async function (context, req) {
       currentYearValue,
       previousYearValue
     }) {
-      const cleanLabel = (label);
+      const cleanLabel = normalizeLabelForRow(label);
 
       if (!cleanLabel) return true;
       if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
@@ -3125,7 +3034,7 @@ module.exports = async function (context, req) {
           !isLikelyStatementTitleRow(noteRaw, statementType) &&
           !isSectionHeaderOnlyLabel(noteRaw, statementType);
 
-        const labelCandidate = (
+        const labelCandidate = normalizeLabelForRow(
           labelFromHeader ||
           fallbackLabel ||
           (noteLooksLikeLabel ? noteRaw : "")
@@ -3174,7 +3083,7 @@ module.exports = async function (context, req) {
         const idx = startIndex + offset;
         if (idx < 0 || idx >= candidates.length) continue;
 
-        const candidate = (candidates[idx]);
+        const candidate = normalizeLabelForRow(candidates[idx]);
         const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
 
         if (isAcceptableFinancialLabel(candidate, statementType)) {
@@ -3202,12 +3111,7 @@ module.exports = async function (context, req) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
 
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
-      if (!candidates.length) {
-        return rawEntries.map((en) => ({
-          ...en,
-          label: normalizeLabelForRow(en.labelCandidate, en)
-        }));
-      }
+      if (!candidates.length) return rawEntries;
 
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
 
@@ -3217,11 +3121,7 @@ module.exports = async function (context, req) {
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
             ...en,
-            label: finalLabel,
-            source: {
-              ...en.source,
-              labelRecoveredFrom: en?.source?.labelRecoveredFrom || "row_candidate"
-            }
+            label: finalLabel
           };
         }
 
@@ -3249,7 +3149,7 @@ module.exports = async function (context, req) {
 
         return {
           ...en,
-          label: ""
+          label: finalLabel
         };
       });
     }
@@ -3265,7 +3165,7 @@ module.exports = async function (context, req) {
       const extracted = [];
 
       for (const en of repairedEntries) {
-        const label = (en.label);
+        const label = normalizeLabelForRow(en.label, en);
 
         if (
           shouldSkipExtractedRow({
@@ -3333,7 +3233,7 @@ const acceptableTextCandidates = rawTextCandidates
   .filter((label) => isAcceptableFinancialLabel(label, statementType));
 
       const noteLikeRawCount = (rawEntries || []).filter((entry) => {
-        const candidate = (entry?.labelCandidate);
+        const candidate = normalizeLabelForRow(entry?.labelCandidate, entry);
         return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
       }).length;
 
