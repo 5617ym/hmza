@@ -1,3 +1,4 @@
+index.js (patched)
 const { detectSector } = require("../_lib/sector-detection");
 const sectorProfiles = require("../_lib/sector-profiles");
 
@@ -2859,7 +2860,7 @@ module.exports = async function (context, req) {
       return fallbackFromAnyText?.cell || "";
     }
 
-    function (label, row = null) {
+    function normalizeLabelForRow(label, row = null) {
   if (
     (!label || isLikelyReferenceValue(label)) &&
     row && Array.isArray(row.rawRow)
@@ -3460,3 +3461,4 @@ const acceptableTextCandidates = rawTextCandidates
 
 
   
+
