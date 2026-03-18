@@ -16,7 +16,7 @@ module.exports = async function (context, req) {
     const fs = require("fs");
     const path = require("path");
 
-    const LOCAL_TEST_FILE = "jadwa-reit-layout.json";
+    const LOCAL_TEST_FILE = process.env.LOCAL_TEST_FILE || "jadwa-reit-layout.json";
     const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
 
     function isPlainObject(value) {
@@ -281,6 +281,19 @@ module.exports = async function (context, req) {
       const reqCandidates = collectNormalizedCandidates(reqBody);
       const reqBest = reqCandidates[0] || null;
 
+      const requestExplicitlyProvidedNormalized =
+        !!(
+          reqBody &&
+          (
+            Object.prototype.hasOwnProperty.call(reqBody, "normalized") ||
+            Object.prototype.hasOwnProperty.call(reqBody, "normalizedResult") ||
+            Object.prototype.hasOwnProperty.call(reqBody, "lastNormalized") ||
+            Object.prototype.hasOwnProperty.call(reqBody, "fileName") ||
+            Object.prototype.hasOwnProperty.call(reqBody, "period") ||
+            Object.prototype.hasOwnProperty.call(reqBody, "compare")
+          )
+        );
+
       if (reqBest) {
         return {
           source: reqBest.label,
@@ -299,6 +312,7 @@ module.exports = async function (context, req) {
             reqBodyKeys: safeObjectKeys(reqBody),
             envelopeKeys: safeObjectKeys(reqBody),
             normalizedKeys: safeObjectKeys(reqBest.value),
+            requestExplicitlyProvidedNormalized,
             candidateScores: reqCandidates.slice(0, 5).map((item) => ({
               source: item.label,
               score: item.score,
@@ -309,6 +323,30 @@ module.exports = async function (context, req) {
               metaTables: item.metaTables,
               metaTextLength: item.metaTextLength
             }))
+          }
+        };
+      }
+
+      if (requestExplicitlyProvidedNormalized) {
+        return {
+          source: "request_unresolved",
+          body: reqBody || {},
+          envelope: reqBody || {},
+          normalized: isPlainObject(reqBody?.normalized) ? reqBody.normalized : {},
+          normalizedPrev: resolveNormalizedPrevFromEnvelope(reqBody),
+          fileName:
+            reqBody?.fileName ||
+            reqBody?.data?.fileName ||
+            reqBody?.payload?.fileName ||
+            reqBody?.normalized?.meta?.fileName ||
+            null,
+          diagnostics: {
+            localFileExists: fs.existsSync(localTestPath),
+            reqBodyKeys: safeObjectKeys(reqBody),
+            envelopeKeys: safeObjectKeys(reqBody),
+            normalizedKeys: safeObjectKeys(reqBody?.normalized),
+            requestExplicitlyProvidedNormalized: true,
+            candidateScores: []
           }
         };
       }
@@ -3472,5 +3510,6 @@ const acceptableTextCandidates = rawTextCandidates
 
 
   
+
 
 
