@@ -1,4 +1,4 @@
-index.js (patched)
+
 const { detectSector } = require("../_lib/sector-detection");
 const sectorProfiles = require("../_lib/sector-profiles");
 
