@@ -16,8 +16,10 @@ module.exports = async function (context, req) {
     const fs = require("fs");
     const path = require("path");
 
-    const LOCAL_TEST_FILE = req.body?.localTestFile || "almarai-layout.json";
-    const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
+    const LOCAL_TEST_FILE =
+  req.body?.localTestFile || "almarai-layout.json";
+
+const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
 
     function isPlainObject(value) {
       return !!value && typeof value === "object" && !Array.isArray(value);
