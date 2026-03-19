@@ -971,43 +971,12 @@ module.exports = async function (context, req) {
     function isLikelyCurrencyOrUnitHeader(label) {
       const s = normalizeText(label);
       if (!s) return false;
-
-      const compact = s
-        .replace(/[()\[\]{}:؛;,،._-]+/g, " ")
-        .replace(/[0-9٠-٩]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      return (
+ 
+            return (
         s.includes("ريال سعودي") ||
         s.includes("الف ريال") ||
         s.includes("ألف ريال") ||
         s.includes("بالريال") ||
-        s.includes("بالاف") ||
-        s.includes("بالالاف") ||
-        s.includes("بالالف") ||
-        s.includes("بالآلاف") ||
-        s.includes("بالألاف") ||
-        s.includes("بالألف") ||
-        s.includes("notes") ||
-        s.includes("note") ||
-        compact === "الاف" ||
-        compact === "آلاف" ||
-        compact === "الف" ||
-        compact === "ألف" ||
-        compact === "بالاف" ||
-        compact === "بالالف" ||
-        compact === "بالالاف" ||
-        compact === "بالآلاف" ||
-        compact === "بالألاف" ||
-        compact === "بالألف" ||
-        compact === "الف ريال" ||
-        compact === "ألف ريال" ||
-        compact === "ريال سعودي" ||
-        compact === "للسنة" ||
-        compact === "للفترة" ||
-        compact === "المنتهية" ||
-        compact === "المنتهيه" ||
         s === "sar" ||
         s === "usd" ||
         s === "دولار"
@@ -3038,67 +3007,91 @@ module.exports = async function (context, req) {
       return false;
     }
  
-    function buildRowLabelCandidates(row, header, statementType) {
-      if (!Array.isArray(row) || !row.length) return [];
-
-      const labelFromHeader = getCell(row, header?.labelCol);
-      const fallbackLabel = pickFallbackLabelCell(row, header || {}, statementType);
-      const noteRaw = getCell(row, header?.noteCol);
-
+    function getSameRowLabelCandidate(row, header, statementType) {
+      const labelFromHeader = getCell(row, header.labelCol);
+      const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
+      const noteRaw = getCell(row, header.noteCol);
+ 
       const noteLooksLikeLabel =
-        header?.labelCol == null &&
+        header.labelCol == null &&
         !!noteRaw &&
         isLikelyTextLabelCell(noteRaw) &&
         !isLikelyReferenceValue(noteRaw) &&
         !isLikelyMetaOrHeaderLabel(noteRaw) &&
         !isLikelyStatementTitleRow(noteRaw, statementType) &&
         !isSectionHeaderOnlyLabel(noteRaw, statementType);
-
-      const rawCandidates = [
-        labelFromHeader,
-        fallbackLabel,
-        noteLooksLikeLabel ? noteRaw : ""
-      ]
-        .map((x) => normalizeLabelForRow(x))
-        .filter(Boolean);
-
-      const expanded = [];
-      for (const candidate of rawCandidates) {
-        expanded.push(candidate);
-        const salvaged = salvageFinancialLabelCandidate(candidate);
-        if (salvaged && normalizeText(salvaged) !== normalizeText(candidate)) {
-          expanded.push(normalizeLabelForRow(salvaged));
-        }
-      }
-
-      return dedupePreserveOrder(expanded).filter((candidate) => {
-        return (
-          !!candidate &&
-          !isLikelyReferenceValue(candidate) &&
-          !isLikelyMetaOrHeaderLabel(candidate) &&
-          !isLikelyStatementTitleRow(candidate, statementType) &&
-          !isSectionHeaderOnlyLabel(candidate, statementType) &&
-          !isLikelyCurrencyOrUnitHeader(candidate)
-        );
-      });
+ 
+      const labelCandidate = normalizeLabelForRow(
+        labelFromHeader ||
+        fallbackLabel ||
+        (noteLooksLikeLabel ? noteRaw : "")
+      );
+ 
+      const note =
+        noteLooksLikeLabel
+          ? null
+          : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
+ 
+      return { labelCandidate, note, noteRaw };
     }
 
-    function findBestNearbyTableLabelCandidate(pageCtx, rowIndex, statementType) {
-      const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
-      const header = pageCtx?.header || {};
+    function collectTableDerivedLabelCandidates(row, header, statementType) {
+      if (!Array.isArray(row) || !row.length) return [];
+
+      const candidates = [];
+      const pushCandidate = (value) => {
+        const clean = normalizeLabelForRow(value);
+        if (!clean) return;
+        if (!hasLetterChars(clean)) return;
+        if (isLikelyReferenceValue(clean)) return;
+        if (isLikelyMetaOrHeaderLabel(clean)) return;
+        if (isLikelyStatementTitleRow(clean, statementType)) return;
+        if (isSectionHeaderOnlyLabel(clean, statementType)) return;
+        if (isLikelyCurrencyOrUnitHeader(clean)) return;
+        candidates.push(clean);
+      };
+
+      pushCandidate(getCell(row, header.labelCol));
+      pushCandidate(pickFallbackLabelCell(row, header, statementType));
+
+      for (let idx = 0; idx < row.length; idx += 1) {
+        if (idx === header.currentCol || idx === header.previousCol) continue;
+        const cell = getCell(row, idx);
+        if (!isLikelyTextLabelCell(cell)) continue;
+        pushCandidate(cell);
+      }
+
+      return dedupePreserveOrder(candidates);
+    }
+
+    function findBestNearbyTableLabelCandidate(rows, startIndex, header, statementType) {
+      if (!Array.isArray(rows) || !rows.length) return null;
+
       const offsets = [0, -1, 1, -2, 2, -3, 3];
 
       for (const offset of offsets) {
-        const idx = rowIndex + offset;
+        const idx = startIndex + offset;
         if (idx < 0 || idx >= rows.length) continue;
-        if (idx <= safeNumber(header?.headerRowIndex, -1)) continue;
+        const candidateRow = rows[idx];
+        const candidates = collectTableDerivedLabelCandidates(candidateRow, header, statementType);
 
-        const rowCandidates = buildRowLabelCandidates(rows[idx], header, statementType);
-        for (const candidate of rowCandidates) {
+        for (const candidate of candidates) {
+          const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
+
           if (isAcceptableFinancialLabel(candidate, statementType)) {
             return {
               label: candidate,
-              recoveredFrom: offset === 0 ? "table_row_primary" : "table_row_nearby"
+              recoveredFrom: offset === 0 ? "table_row_primary" : "table_row_primary_nearby"
+            };
+          }
+
+          if (
+            salvagedCandidate &&
+            isAcceptableFinancialLabel(salvagedCandidate, statementType)
+          ) {
+            return {
+              label: salvagedCandidate,
+              recoveredFrom: offset === 0 ? "table_row_salvaged" : "table_row_salvaged_nearby"
             };
           }
         }
@@ -3118,50 +3111,37 @@ module.exports = async function (context, req) {
         if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
         if (!rowHasUsefulNumericValue(row, header)) continue;
  
-        const labelFromHeader = getCell(row, header.labelCol);
-        const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
-        const noteRaw = getCell(row, header.noteCol);
- 
-        const noteLooksLikeLabel =
-          header.labelCol == null &&
-          !!noteRaw &&
-          isLikelyTextLabelCell(noteRaw) &&
-          !isLikelyReferenceValue(noteRaw) &&
-          !isLikelyMetaOrHeaderLabel(noteRaw) &&
-          !isLikelyStatementTitleRow(noteRaw, statementType) &&
-          !isSectionHeaderOnlyLabel(noteRaw, statementType);
- 
-        let labelCandidate = normalizeLabelForRow(
-          labelFromHeader ||
-          fallbackLabel ||
-          (noteLooksLikeLabel ? noteRaw : "")
-        );
+        const sameRowMeta = getSameRowLabelCandidate(row, header, statementType);
+        let labelCandidate = sameRowMeta.labelCandidate;
+        const note = sameRowMeta.note;
 
-        let tableLabelRecovery = null;
-        if (!isAcceptableFinancialLabel(labelCandidate, statementType)) {
-          tableLabelRecovery = findBestNearbyTableLabelCandidate(pageCtx, rowIndex, statementType);
-          if (tableLabelRecovery?.label) {
-            labelCandidate = normalizeLabelForRow(tableLabelRecovery.label);
+        let labelRecoveredFrom = null;
+        if (statementType === "income") {
+          const sameRowAcceptable =
+            labelCandidate && isAcceptableFinancialLabel(labelCandidate, statementType);
+
+          if (!sameRowAcceptable) {
+            const nearbyTableLabel = findBestNearbyTableLabelCandidate(
+              rows,
+              rowIndex,
+              header,
+              statementType
+            );
+
+            if (!nearbyTableLabel) {
+              continue;
+            }
+
+            labelCandidate = nearbyTableLabel.label;
+            labelRecoveredFrom = nearbyTableLabel.recoveredFrom;
           }
         }
- 
-        const note =
-          noteLooksLikeLabel
-            ? null
-            : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
  
         const currentYearValueRaw = getCell(row, header.currentCol);
         const previousYearValueRaw = getCell(row, header.previousCol);
  
         const currentYearValue = parseNumberSmart(currentYearValueRaw);
         const previousYearValue = parseNumberSmart(previousYearValueRaw);
-
-        if (
-          statementType === "income" &&
-          !isAcceptableFinancialLabel(labelCandidate, statementType)
-        ) {
-          continue;
-        }
  
         numericRows.push({
           statementType,
@@ -3179,9 +3159,7 @@ module.exports = async function (context, req) {
             previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
             resolutionMode: header.resolutionMode || null,
             direction: header.direction || null,
-            ...(tableLabelRecovery?.recoveredFrom
-              ? { labelRecoveredFrom: tableLabelRecovery.recoveredFrom }
-              : {})
+            ...(labelRecoveredFrom ? { labelRecoveredFrom } : {})
           }
         });
       }
@@ -3226,38 +3204,10 @@ module.exports = async function (context, req) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
 
       if (statementType === "income") {
-        return rawEntries.map((en) => {
-          const finalLabel = normalizeLabelForRow(en.labelCandidate);
-
-          if (isAcceptableFinancialLabel(finalLabel, statementType)) {
-            return {
-              ...en,
-              label: finalLabel
-            };
-          }
-
-          const nearbyTableLabel = findBestNearbyTableLabelCandidate(
-            pageCtx,
-            safeNumber(en?.rowIndex, 0),
-            statementType
-          );
-
-          if (nearbyTableLabel) {
-            return {
-              ...en,
-              label: nearbyTableLabel.label,
-              source: {
-                ...en.source,
-                labelRecoveredFrom: nearbyTableLabel.recoveredFrom
-              }
-            };
-          }
-
-          return {
-            ...en,
-            label: finalLabel
-          };
-        });
+        return rawEntries.map((en) => ({
+          ...en,
+          label: normalizeLabelForRow(en.labelCandidate)
+        }));
       }
  
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
