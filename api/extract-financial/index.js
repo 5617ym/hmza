@@ -984,50 +984,65 @@ module.exports = async function (context, req) {
     }
  
     function isAcceptableFinancialLabel(label, statementType) {
-      const cleanLabel = cleanupLabel(label);
-      const normalizedLabel = normalizeText(cleanLabel);
- 
-      if (!cleanLabel) return false;
- 
-      const trimmed = cleanLabel.trim();
-      const normalized = (normalizedLabel || "").trim();
- 
-      if (!hasLetterChars(trimmed)) return false;
-      if (normalized.length <= 2) return false;
-      if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
-      if (/^(19|20)\d{2}$/.test(trimmed)) return false;
-      if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
- 
-      if (
-        /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed) ||
-        /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed)
-      ) {
-        return false;
-      }
- 
-      if (isLikelyCurrencyOrUnitHeader(trimmed)) return false;
-      if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
-      if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
- 
-      const words = normalized.split(/\s+/).filter(Boolean);
-      if (words.length === 1 && normalized.length < 4) return false;
- 
-      if (isLikelyReferenceValue(trimmed)) return false;
-      if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
-      if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
-      if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
- 
-      if (
-        normalized.includes("الايضاحات المرفقه") ||
-        normalized.includes("الإيضاحات المرفقة") ||
-        normalized.includes("integral part") ||
-        normalized.includes("accompanying notes")
-      ) {
-        return false;
-      }
- 
-      return true;
-    }
+  const cleanLabel = cleanupLabel(label);
+  const normalizedLabel = normalizeText(cleanLabel);
+
+  if (!cleanLabel) return false;
+
+  const trimmed = cleanLabel.trim();
+  const normalized = (normalizedLabel || "").trim();
+
+  if (!hasLetterChars(trimmed)) return false;
+  if (normalized.length <= 2) return false;
+  if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
+  if (/^(19|20)\d{2}$/.test(trimmed)) return false;
+  if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
+
+  if (
+    normalized === "in thousands" ||
+    /\b(thousand|thousands)\b/.test(normalized) ||
+    normalized.includes("بالاف") ||
+    normalized.includes("بآلاف")
+  ) {
+    return false;
+  }
+
+  if (normalized === "note" || normalized === "notes") return false;
+  if (/^\(\s*[0-9٠-٩]+\s*\)$/.test(trimmed)) return false;
+
+  const digitCount = (trimmed.match(/[0-9٠-٩]/g) || []).length;
+  if (digitCount > 0 && digitCount / Math.max(1, trimmed.length) >= 0.85) return false;
+
+  if (
+    /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed) ||
+    /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed)
+  ) {
+    return false;
+  }
+
+  if (isLikelyCurrencyOrUnitHeader(trimmed)) return false;
+  if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
+  if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 1 && normalized.length < 4) return false;
+
+  if (isLikelyReferenceValue(trimmed)) return false;
+  if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
+  if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
+  if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
+
+  if (
+    normalized.includes("الايضاحات المرفقه") ||
+    normalized.includes("الإيضاحات المرفقة") ||
+    normalized.includes("integral part") ||
+    normalized.includes("accompanying notes")
+  ) {
+    return false;
+  }
+
+  return true;
+}
  
     function extractLabelCandidatesFromPageText(pageCtx, statementType) {
       const textBlob = [
