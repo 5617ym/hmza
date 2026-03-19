@@ -1,278 +1,173 @@
-PROJECT_STATE.md
+# PROJECT_STATE.md
 
 PROJECT:
 Financial Statement Extraction Engine
 
 LAST_UPDATE:
-2026-03-17
+2026-03-19
 
 CURRENT_ENGINE_VERSION:
-extract-financial-v7.6
+extract-financial-v7.7
 
 CURRENT_PHASE:
 PHASE 5 – Financial Statement Intelligence Layer
 
 CURRENT_TASK:
-معالجة جودة استخراج البنود (Line Items)
-وحل مشكلة فقدان الـ Labels في القوائم المالية
-مع الحفاظ على استقرار Input Resolution و Ranking
+تشخيص مسار التنفيذ الفعلي (Runtime Execution Path)
+والتحقق من أن الكود المعدّل يُستخدم فعليًا في الاختبار
 
 بعد اختبار جديد على:
 
 almarai-layout.json
 
-تم الوصول إلى نتائج مهمة جدًا:
+تم الوصول إلى استنتاج حاسم:
 
-Input Resolution يعمل بثبات 100%
+🟢 ما يعمل بشكل صحيح
 
-meta.pages و meta.tables تُقرأ بشكل صحيح
+✔ Input Resolution يعمل بثبات 100%
+✔ meta.pages و meta.tables تُقرأ بشكل صحيح
+✔ selectedPages دقيقة:
+   - incomePage = 10
+   - balancePage = 9
+   - cashFlowPage = 4
+✔ Ranking يعمل بشكل دقيق
+✔ النظام يحدد القوائم الصحيحة بصريًا
+✔ Balance extraction يعمل بشكل جيد
+✔ Income extraction (الأرقام) يعمل بشكل صحيح
 
-selectedPages صحيحة:
+🔴 المشكلة الحالية المؤكدة
 
-incomePage = 10
-
-balancePage = 9
-
-cashFlowPage = 4
-
-Ranking يعمل بشكل دقيق
-
-النظام يختار القوائم الصحيحة بصريًا
-
-Balance extraction يعمل بشكل جيد
-
-Income extraction يعمل جزئيًا (الأرقام صحيحة)
-
-Cash Flow page تم اختيارها لكن extraction فشل
-
-لكن ظهرت مشكلة أساسية:
-
-🔴 المشكلة الجوهرية الجديدة
-1️⃣ Label Corruption (تشوه اللابل)
-
-النظام يستخرج:
-
-"بآلاف"
-
-"إيضاحات"
-
-"للسنة"
-
-بدل:
-
-إيرادات
-
-تكلفة الإيرادات
-
-مجمل الربح
-
-...
-
-السبب:
-
-الـ payload لا يحتوي labels نظيفة داخل الجداول
-والنظام يعتمد بشكل زائد على:
-
-page_text_nearby
-
-مما يؤدي إلى التقاط:
-
-header text
-
-column titles
-
-unit labels
-
-بدل financial line items
-
-2️⃣ Cash Flow Extraction Failure
+1️⃣ Runtime Mismatch (عدم تطابق بيئة التنفيذ)
 
 رغم:
+- تطبيق فلترة صارمة داخل isAcceptableFinancialLabel
+- منع labels التي تحتوي:
+  digits / parentheses / "بآلاف"
 
-cashFlowPage = 4 (صحيح)
+إلا أن النتائج ما زالت تحتوي:
 
-إلا أن:
+"بـآلاف (3)"
 
-financialRows.cashflow = []
+داخل:
+- sampleAccepted
+- financialRows.income
 
-السبب:
+👉 هذا يثبت أن:
 
-فشل collectNumericRows في التقاط الصفوف
+الكود المعدّل لا يتم تنفيذه فعليًا أثناء الاختبار
 
-أو رفضها داخل isAcceptableFinancialLabel
+السبب المحتمل:
+- deployment قديم
+- endpoint مختلف
+- artifact غير محدث
+- أو وجود handler آخر يتم استدعاؤه
 
-أو ضعف الربط بين rows و labels
+🧠 الاستنتاج الهندسي
 
-🟢 ما تم إثباته
+✔ المشكلة لم تعد في:
+- parsing
+- ranking
+- extraction logic
 
-هذه نقطة مهمة جدًا:
+❗ المشكلة الآن في:
+Execution Layer / Deployment Consistency
 
-✔ المشكلة ليست في Azure
-✔ ليست في parsing
-✔ ليست في ranking
+🔧 التوجه الحالي (Current Engineering Focus)
 
-👉 المشكلة الآن في:
+التركيز انتقل من:
 
-Post-Processing Intelligence Layer
+Extraction Logic
 
-التركيز الحالي أصبح على:
+إلى:
 
-إصلاح استخراج labels من داخل الجداول نفسها
+Runtime Verification
 
-تقليل الاعتماد على page_text
+وذلك عبر:
 
-تحسين:
+1️⃣ Runtime Fingerprinting
 
-repairMissingLabelsFromPageText
+إضافة log داخل handler:
 
-تحسين:
+console.log("RUN_CHECK_123", __filename);
 
-isAcceptableFinancialLabel
+الهدف:
+- التأكد من الملف الذي يتم تشغيله فعليًا
+- التأكد أن النسخة الحالية من الكود هي المستخدمة
 
-ليميز بين:
+2️⃣ Endpoint Verification
 
-✔ Financial labels
-❌ Headers / Notes / Units
+التحقق من:
+- أن الواجهة الأمامية تستدعي نفس API المعدل
+- عدم وجود نسخة قديمة أو endpoint مكرر
 
-تحسين:
+3️⃣ Deployment Integrity
 
-Row → Label mapping
+التأكد من:
+- نجاح git push
+- نجاح build/deploy
+- عدم وجود caching
 
-إصلاح Cash Flow row extraction
-بدون كسر الحمايات السابقة
-
-🔧 التحسينات المطلوبة (Current Engineering Focus)
-
-1️⃣ تحسين Label Source Priority
-
-بدلاً من:
-
-page_text → table
-
-يصبح:
-
-table → nearby text (fallback فقط)
-
-2️⃣ Label Cleaning Layer
-
-إضافة فلترة لإزالة:
-
-"بآلاف"
-
-"إيضاحات"
-
-"للسنة"
-
-"ريال سعودي"
-
-قبل قبول label
-
-3️⃣ Strengthening isAcceptableFinancialLabel
-
-إضافة:
-
-blacklist للكلمات غير المالية
-
-minimum semantic length
-
-رفض labels الرقمية أو القصيرة جدًا
-
-4️⃣ Cash Flow Extraction Hardening
-
-تحسين:
-
-collectNumericRows
-
-detectRowStructure
-
-الربط بين الأرقام والصفوف الفعلية
-
-5️⃣ Diagnostic Upgrade
-
-توسيع:
-
-missingLabelDiagnostics
-
-ليوضح:
-
-هل اللابل من header
-
-هل من unit row
-
-هل من note column
-
-CURRENT_STATUS
+📊 CURRENT STATUS
 
 النظام الآن:
 
-✔ يقرأ البيانات بدقة
-✔ يحدد الصفحات بدقة
-✔ يفهم القطاع
-✔ يبني pageContexts
-✔ ينجح في Balance extraction
+✔ ذكي في اختيار الصفحات
+✔ دقيق في تحليل الهيكل
+✔ مستقر في Input Resolution
+✔ قوي في Ranking
 
 لكن:
 
-✖ Income labels غير موثوقة
-✖ Cash Flow extraction غير مكتمل
-✖ الاعتماد على page_text عالي جدًا
+✖ لا يمكن الوثوق بنتائج الفلترة
+✖ لا يمكن تقييم جودة label extraction
+✖ بسبب عدم التأكد من الكود المنفذ فعليًا
 
-NEXT STEP
+🎯 NEXT STEP
 
 الخطوة القادمة:
 
-تحسين طبقة استخراج البنود (Line Items Intelligence)
+تأكيد بيئة التنفيذ (Runtime Confirmation)
 
 الهدف:
 
-استخراج labels حقيقية من الجداول
+- إثبات أن الكود الحالي يعمل
+- أو اكتشاف المسار الخاطئ في deployment
 
-ربط كل رقم بالبند الصحيح
+ثم فقط بعد ذلك:
 
-تقليل الضوضاء من headers
+العودة إلى:
+
+Label Intelligence Layer
+
+🔒 DEFINITION OF DONE (Updated)
+
+تعتبر المرحلة مكتملة عندما:
+
+✔ يتم تأكيد أن الكود المعدّل هو الذي يعمل فعليًا
+✔ تظهر logs الخاصة بالـ runtime fingerprint
+✔ يتم حل مشكلة mismatch بالكامل
 
 ثم:
 
-إعادة اختبار على:
+✔ تبدأ نتائج الفلترة بالظهور فعليًا
+✔ يتم التخلص من:
+   "بآلاف"
+   "إيضاحات"
+   "للسنة"
 
-المراعي
+✔ يتم استخراج labels صحيحة
 
-جاهز
+⚠️ KNOWN RULE
 
-مصرف
+لا يتم تعديل منطق الاستخراج مرة أخرى
+حتى يتم التأكد من:
 
-REIT
-
-DEFINITION OF DONE (Updated)
-
-تعتبر المرحلة مكتملة عندما يصبح النظام قادرًا على:
-
-استخراج labels صحيحة (إيرادات، تكلفة، ...)
-
-تجاهل headers و units بالكامل
-
-ربط الأرقام بالبند الصحيح
-
-استخراج Income و Balance بشكل كامل
-
-استخراج Cash Flow عند توفر بيانات فعلية
-
-الاستمرار في رفض النتائج الخاطئة
-
-الحفاظ على استقرار Input Resolution و Ranking
-
-KNOWN RULE
-
-لا يتم تغيير المعمارية العامة
-
-أي تحسين يكون:
-
-Layer فوق النظام الحالي
+Runtime Consistency
 
 التركيز الحالي:
 
-Intelligence > Parsing
+Execution > Logic
 
-Accuracy > Coverage
+Verification > Assumptions
 
-Honesty > Fake Results
+Reality > Guessing
