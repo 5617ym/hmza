@@ -1,3211 +1,2932 @@
 
 const { detectSector } = require("../lib/sector-detection");
 const sectorProfiles = require("../lib/sector-profiles");
+ 
 // api/extract-financial/index.js
 module.exports = async function (context, req) {
-const send = (status, payload) => {
-context.res = {
-status,
-headers: { "Content-Type": "application/json; charset=utf-8" },
-body: payload
-};
-};
-try {
-const fs = require("fs");
-const path = require("path");
-const LOCAL_TEST_FILE =
-req?.body?.localTestFile ||
-req?.body?.fileName ||
-"almarai-layout.json";
-const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
-context.log("extract-financial:start", {
-localTestFile: LOCAL_TEST_FILE,
-reqBodyKeys:
-req?.body && typeof req.body === "object"
-? Object.keys(req.body)
-: []
-function isPlainObject(value) {
-return !!value && typeof value === "object" && !Array.isArray(value);
-function isNonEmptyObject(value) {
-return isPlainObject(value) && Object.keys(value).length > 0;
-function safeObjectKeys(value) {
-return isPlainObject(value) ? Object.keys(value) : [];
-function toArray(value) {
-return Array.isArray(value) ? value : [];
-});
-}
-}
-}
-}
-function getResolvedPagesFromNormalized(value) {
-if (!isPlainObject(value)) return [];
-const candidates = [
-value.pages,
-value.layout?.pages,
-value.document?.pages,
-value.result?.pages,
-value.result?.layout?.pages,
-value.analysisResult?.pages
-];
-for (const candidate of candidates) {
-if (Array.isArray(candidate) && candidate.length > 0) {
-return candidate;
-}
-}
-return [];
-}
-function getResolvedTablesFromNormalized(value) {
-if (!isPlainObject(value)) return [];
-const candidates = [
-value.tablesPreview,
-value.tables,
-value.pageTables,
-value.layout?.tables,
-value.layout?.pageTables,
-value.document?.tables,
-value.document?.pageTables,
-value.result?.tables,
-value.result?.pageTables,
-value.result?.layout?.tables,
-value.result?.layout?.pageTables,
-value.analysisResult?.tables
-];
-for (const candidate of candidates) {
-if (Array.isArray(candidate) && candidate.length > 0) {
-return candidate;
-}
-}
-return [];
-}
-function getResolvedTextLength(value) {
-if (!isPlainObject(value)) return 0;
-const directText = [
-value.text,
-value.content,
-value.rawText,
-value.fullText,
-value.documentText,
-value.layout?.text,
-value.result?.text
-]
-.map((x) => (typeof x === "string" ? x.length : 0))
-.reduce((a, b) => a + b, 0);
-const metaTextLength = Number(
-value.meta?.textLength ??
-value.metadata?.textLength ??
-value.stats?.textLength ??
-0
-);
-return Math.max(directText, Number.isFinite(metaTextLength) ? metaTextLength : 0);
-}
-function getNormalizedMetaCounts(value) {
-if (!isPlainObject(value)) {
-return {
-metaPages: 0,
-metaTables: 0,
-metaTextLength: 0
-};
-}
-const metaPages = Number(
-value.meta?.pages ??
-value.metadata?.pages ??
-value.stats?.pages ??
-0
-);
-const metaTables = Number(
-value.meta?.tables ??
-value.metadata?.tables ??
-value.stats?.tables ??
-0
-);
-const metaTextLength = Number(
-value.meta?.textLength ??
-value.metadata?.textLength ??
-value.stats?.textLength ??
-0
-);
-return {
-metaPages: Number.isFinite(metaPages) ? metaPages : 0,
-metaTables: Number.isFinite(metaTables) ? metaTables : 0,
-metaTextLength: Number.isFinite(metaTextLength) ? metaTextLength : 0
-};
-}
-function looksLikeNormalizedPayload(value) {
-if (!isPlainObject(value)) return false;
-const resolvedPages = getResolvedPagesFromNormalized(value);
-const resolvedTables = getResolvedTablesFromNormalized(value);
-const resolvedTextLength = getResolvedTextLength(value);
-const { metaPages, metaTables, metaTextLength } = getNormalizedMetaCounts(value);
-return (
-resolvedPages.length > 0 ||
-resolvedTables.length > 0 ||
-resolvedTextLength > 0 ||
-metaPages > 0 ||
-metaTables > 0 ||
-metaTextLength > 0
-);
-}
-function scoreNormalizedCandidate(value, label, isEnvelopeRoot = false) {
-if (!looksLikeNormalizedPayload(value)) return null;
-const resolvedPages = getResolvedPagesFromNormalized(value);
-const resolvedTables = getResolvedTablesFromNormalized(value);
-const resolvedTextLength = getResolvedTextLength(value);
-const { metaPages, metaTables, metaTextLength } = getNormalizedMetaCounts(value);
-let score = 0;
-score += resolvedPages.length * 100000;
-score += resolvedTables.length * 1000;
-score += Math.min(resolvedTextLength, 100000);
-score += metaPages * 100;
-score += metaTables * 10;
-score += Math.min(metaTextLength, 10000);
-if (resolvedPages.length === 0 && resolvedTables.length === 0 && (metaPages > 0 || metaTables > 0)) {
-score -= 5000;
-}
-if (isEnvelopeRoot) {
-score -= 2000;
-}
-return {
-label,
-value,
-score,
-resolvedPagesCount: resolvedPages.length,
-resolvedTablesCount: resolvedTables.length,
-resolvedTextLength,
-metaPages,
-metaTables,
-metaTextLength
-};
-}
-function readLocalTestPayload() {
-if (!fs.existsSync(localTestPath)) {
-return {
-ok: false,
-exists: false,
-payload: null
-};
-}
-const raw = fs.readFileSync(localTestPath, "utf8");
-const parsed = JSON.parse(raw);
-return {
-ok: true,
-exists: true,
-payload: parsed
-};
-}
-function collectNormalizedCandidates(payload) {
-if (!isPlainObject(payload)) return [];
-const candidateDefs = [
-["payload.normalized", payload.normalized],
-["payload.data.normalized", payload.data?.normalized],
-["payload.payload.normalized", payload.payload?.normalized],
-["payload.result.normalized", payload.result?.normalized],
-["payload.analysis.normalized", payload.analysis?.normalized],
-["payload.data.payload.normalized", payload.data?.payload?.normalized],
-["payload.payload.data.normalized", payload.payload?.data?.normalized],
-["payload.data.result.normalized", payload.data?.result?.normalized],
-["payload.result.data.normalized", payload.result?.data?.normalized],
-["payload.result.payload.normalized", payload.result?.payload?.normalized],
-["payload.analysis.result.normalized", payload.analysis?.result?.normalized],
-["payload.result.analysis.normalized", payload.result?.analysis?.normalized],
-["payload.lastNormalized", payload.lastNormalized],
-["payload.normalizedResult", payload.normalizedResult],
-["payload.raw", payload]
-];
-const scored = [];
-for (const [label, candidate] of candidateDefs) {
-const item = scoreNormalizedCandidate(candidate, label, candidate === payload);
-if (item) scored.push(item);
-}
-return scored.sort((a, b) => b.score - a.score);
-}
-function resolveNormalizedPrevFromEnvelope(envelope) {
-if (!isPlainObject(envelope)) return null;
-const candidates = [
-envelope.normalizedPrev,
-envelope.data?.normalizedPrev,
-envelope.payload?.normalizedPrev,
-envelope.result?.normalizedPrev,
-envelope.analysis?.normalizedPrev,
-envelope.data?.payload?.normalizedPrev,
-envelope.result?.data?.normalizedPrev
-];
-for (const candidate of candidates) {
-if (isPlainObject(candidate) || Array.isArray(candidate)) {
-return candidate;
-}
-}
-return null;
-}
-function resolveInputEnvelope(req) {
-const reqBody =
-req?.body && typeof req.body === "object"
-? req.body
-: null;
-const reqCandidates = collectNormalizedCandidates(reqBody);
-const reqBest = reqCandidates[0] || null;
-if (reqBest) {
-return {
-source: reqBest.label,
-body: reqBody || {},
-envelope: reqBody || {},
-normalized: reqBest.value,
-normalizedPrev: resolveNormalizedPrevFromEnvelope(reqBody),
-fileName:
-reqBody?.fileName ||
-reqBody?.data?.fileName ||
-reqBody?.payload?.fileName ||
-reqBest.value?.meta?.fileName ||
-null,
-diagnostics: {
-localFileExists: fs.existsSync(localTestPath),
-reqBodyKeys: safeObjectKeys(reqBody),
-envelopeKeys: safeObjectKeys(reqBody),
-normalizedKeys: safeObjectKeys(reqBest.value),
-candidateScores: reqCandidates.slice(0, 5).map((item) => ({
-source: item.label,
-score: item.score,
-resolvedPagesCount: item.resolvedPagesCount,
-resolvedTablesCount: item.resolvedTablesCount,
-resolvedTextLength: item.resolvedTextLength,
-metaPages: item.metaPages,
-metaTables: item.metaTables,
-metaTextLength: item.metaTextLength
-}))
-}
-};
-}
-const localRead = readLocalTestPayload();
-const localPayload = localRead?.payload || null;
-const localCandidates = collectNormalizedCandidates(localPayload);
-const localBest = localCandidates[0] || null;
-if (localRead.ok && localBest) {
-return {
-source: localBest.label.replace(/^payload\./, "local."),
-body: localPayload || {},
-envelope: localPayload || {},
-normalized: localBest.value,
-normalizedPrev: resolveNormalizedPrevFromEnvelope(localPayload),
-fileName:
-localPayload?.fileName ||
-localPayload?.data?.fileName ||
-localPayload?.payload?.fileName ||
-localBest.value?.meta?.fileName ||
-null,
-diagnostics: {
-localFileExists: true,
-reqBodyKeys: safeObjectKeys(reqBody),
-envelopeKeys: safeObjectKeys(localPayload),
-normalizedKeys: safeObjectKeys(localBest.value),
-candidateScores: localCandidates.slice(0, 5).map((item) => ({
-source: item.label.replace(/^payload\./, "local."),
-score: item.score,
-resolvedPagesCount: item.resolvedPagesCount,
-resolvedTablesCount: item.resolvedTablesCount,
-resolvedTextLength: item.resolvedTextLength,
-metaPages: item.metaPages,
-metaTables: item.metaTables,
-metaTextLength: item.metaTextLength
-}))
-}
-};
-}
-return {
-source: "none",
-body: reqBody || {},
-envelope: {},
-normalized: {},
-normalizedPrev: null,
-fileName: null,
-diagnostics: {
-localFileExists: fs.existsSync(localTestPath),
-reqBodyKeys: safeObjectKeys(reqBody),
-envelopeKeys: [],
-normalizedKeys: [],
-candidateScores: []
-}
-};
-}
-const resolvedInput = resolveInputEnvelope(req);
-const body = resolvedInput.body;
-const normalized = resolvedInput.normalized;
-const normalizedPrev = resolvedInput.normalizedPrev;
-const inputFileName = resolvedInput.fileName;
-if (!isNonEmptyObject(normalized)) {
-return send(400, {
-ok: false,
-error: "normalized payload is required",
-debugInput: {
-source: resolvedInput.source,
-localTestPath,
-...resolvedInput.diagnostics
-}
-});
-}
-const pages = getResolvedPagesFromNormalized(normalized);
-const tablesPreview = getResolvedTablesFromNormalized(normalized);
-const rawSectorInfo = detectSector(normalized);
-const detectedSector = rawSectorInfo?.sector || "operating_company";
-const activeSectorProfile =
-sectorProfiles[detectedSector] || sectorProfiles.operating_company || {};
-const sectorStatements = activeSectorProfile.statements || {};
-const incomeKeywords = Array.isArray(sectorStatements.income)
-? sectorStatements.income
-: Array.isArray(activeSectorProfile.incomeStatement)
-? activeSectorProfile.incomeStatement
-: [];
-const balanceKeywords = Array.isArray(sectorStatements.balance)
-? sectorStatements.balance
-: Array.isArray(activeSectorProfile.balanceSheet)
-? activeSectorProfile.balanceSheet
-;][ :
-const cashflowKeywords = Array.isArray(sectorStatements.cashflow)
-? sectorStatements.cashflow
-: Array.isArray(activeSectorProfile.cashFlow)
-? activeSectorProfile.cashFlow
-;][ :
-========================================================= //
-// Layer 1: Normalization Helpers
-========================================================= //
-const DIGIT_MAP = {
-,"4" :"٤" ,"3" :"٣" ,"2" :"٢" ,"1" :"١" ,"0" :"٠"
-,"9" :"٩" ,"8" :"٨" ,"7" :"٧" ,"6" :"٦" ,"5" :"٥"
-"
--
-" :"
-—
-" ,"
--
-" :"
-–
-" ,"
--
-" :"−" ,"," :"
-،" ,"." :"
-"" :" ـ" ,"
-٫
-function toEnglishDigits(value) {
-—
-–
-−
-return String(value || "").replace(/[٠-
-،٩٫
-;)g, (m) => DIGIT_MAP[m] || m/] ـ
-;}
-}
-function normalizeArabic(text) {
-return String(text || "")
-.replace(/[\u064B-\u065F\u0670]/g, "")
-)"ا" ,g/] اآأإ [/(replace.
-)"ي" ,g/ى/(replace.
-)"ه" ,g/ة/(replace.
-)"و" ,g/ؤ/(replace.
-;)"ي" ,g/ئ/(replace.
-}
-function normalizeText(value) {
-return normalizeArabic(toEnglishDigits(String(value || "")))
-.replace(/[^\S\r\n]+/g, " ")
-.replace(/\s+/g, " ")
-.trim()
-.toLowerCase();
-function unique(arr) {
-return Array.from(new Set((arr || []).filter(Boolean)));
-}
-}
-function safeNumber(v, fallback = 0) {
-const n = Number(v);
-return Number.isFinite(n) ? n : fallback;
-}
-function flattenValue(v) {
-if (v == null) return "";
-if (Array.isArray(v)) return v.map(flattenValue).join("\n");
-if (typeof v === "object") return Object.values(v).map(flattenValue).join("\n");
-return String(v);
-}
-function parseNumberSmart(value) {
-if (value == null) return null;
-let s = String(value).trim();
-if (!s) return null;
-s = toEnglishDigits(s)
-.replace(/\s/g, "")
-.replace(/[ ﺔﯾدﻮﻌﺳﺮﻟﺎﯾر sarusd$]/gi, "")
-.replace(/[^\d.,()\-]/g, "");
-if (!s) return null;
-let negative = false;
-if (s.includes("(") && s.includes(")")) negative = true;
-s = s.replace(/[()]/g, "");
-const hasDot = s.includes(".");
-const hasComma = s.includes(",");
-if (hasDot && hasComma) {
-const lastDot = s.lastIndexOf(".");
-const lastComma = s.lastIndexOf(",");
-if (lastDot > lastComma) {
-s = s.replace(/,/g, "");
-} else {
-s = s.replace(/\./g, "").replace(",", ".");
-}
-} else if (hasComma && !hasDot) {
-const parts = s.split(",");
-const last = parts[parts.length - 1];
-if (last.length === 1 || last.length === 2) {
-s = parts.slice(0, -1).join("") + "." + last;
-} else {
-s = s.replace(/,/g, "");
-}
-} else if (hasDot && !hasComma) {
-const parts = s.split(".");
-const last = parts[parts.length - 1];
-if (!(last.length === 1 || last.length === 2)) {
-s = s.replace(/\./g, "");
-}
-}
-const n = Number(s);
-if (!Number.isFinite(n)) return null;
-return negative ? -n : n;
-}
-function extractYears(text) {
-const s = toEnglishDigits(String(text || ""));
-const years = s.match(/\b(19\d{2}|20\d{2})\b/g) || [];
-return unique(years.map(Number)).sort((a, b) => b - a);
-function isYearCell(cell) {
-return /^(19|20)\d{2}$/.test(toEnglishDigits(String(cell || "").trim()));
-}
-}
-function getYearFromCell(cell) {
-const raw = toEnglishDigits(String(cell || "").trim());
-if (!raw) return null;
-if (/^(19|20)\d{2}$/.test(raw)) {
-return Number(raw);
-}
-const years = raw.match(/\b(19\d{2}|20\d{2})\b/g) || [];
-if (years.length === 1) {
-const n = Number(years[0]);
-if (Number.isFinite(n)) return n;
-}
-return null;
-function isNoteHeaderCell(cell) {
-      const s = normalizeText(cell);
+  const send = (status, payload) => {
+    context.res = {
+      status,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: payload
+    };
+  };
+ 
+  try {
+    const fs = require("fs");
+    const path = require("path");
+ 
+    const LOCAL_TEST_FILE =
+      req?.body?.localTestFile ||
+      req?.body?.fileName ||
+      "almarai-layout.json";
+    const localTestPath = path.join(__dirname, "..", LOCAL_TEST_FILE);
+ 
+    context.log("extract-financial:start", {
+      localTestFile: LOCAL_TEST_FILE,
+      reqBodyKeys:
+        req?.body && typeof req.body === "object"
+          ? Object.keys(req.body)
+          : []
+    });
+ 
+    function isPlainObject(value) {
+      return !!value && typeof value === "object" && !Array.isArray(value);
+    }
+ 
+    function isNonEmptyObject(value) {
+      return isPlainObject(value) && Object.keys(value).length > 0;
+    }
+ 
+    function safeObjectKeys(value) {
+      return isPlainObject(value) ? Object.keys(value) : [];
+    }
+ 
+    function toArray(value) {
+      return Array.isArray(value) ? value : [];
+    }
+ 
+    function getResolvedPagesFromNormalized(value) {
+      if (!isPlainObject(value)) return [];
+ 
+      const candidates = [
+        value.pages,
+        value.layout?.pages,
+        value.document?.pages,
+        value.result?.pages,
+        value.result?.layout?.pages,
+        value.analysisResult?.pages
+      ];
+ 
+      for (const candidate of candidates) {
+        if (Array.isArray(candidate) && candidate.length > 0) {
+          return candidate;
+        }
+      }
+ 
+      return [];
+    }
+ 
+    function getResolvedTablesFromNormalized(value) {
+      if (!isPlainObject(value)) return [];
+ 
+      const candidates = [
+        value.tablesPreview,
+        value.tables,
+        value.pageTables,
+        value.layout?.tables,
+        value.layout?.pageTables,
+        value.document?.tables,
+        value.document?.pageTables,
+        value.result?.tables,
+        value.result?.pageTables,
+        value.result?.layout?.tables,
+        value.result?.layout?.pageTables,
+        value.analysisResult?.tables
+      ];
+ 
+      for (const candidate of candidates) {
+        if (Array.isArray(candidate) && candidate.length > 0) {
+          return candidate;
+        }
+      }
+ 
+      return [];
+    }
+ 
+    function getResolvedTextLength(value) {
+      if (!isPlainObject(value)) return 0;
+ 
+      const directText = [
+        value.text,
+        value.content,
+        value.rawText,
+        value.fullText,
+        value.documentText,
+        value.layout?.text,
+        value.result?.text
+      ]
+        .map((x) => (typeof x === "string" ? x.length : 0))
+        .reduce((a, b) => a + b, 0);
+ 
+      const metaTextLength = Number(
+        value.meta?.textLength ??
+        value.metadata?.textLength ??
+        value.stats?.textLength ??
+        0
+      );
+ 
+      return Math.max(directText, Number.isFinite(metaTextLength) ? metaTextLength : 0);
+    }
+ 
+    function getNormalizedMetaCounts(value) {
+      if (!isPlainObject(value)) {
+        return {
+          metaPages: 0,
+          metaTables: 0,
+          metaTextLength: 0
+        };
+      }
+ 
+      const metaPages = Number(
+        value.meta?.pages ??
+        value.metadata?.pages ??
+        value.stats?.pages ??
+        0
+      );
+ 
+      const metaTables = Number(
+        value.meta?.tables ??
+        value.metadata?.tables ??
+        value.stats?.tables ??
+        0
+      );
+ 
+      const metaTextLength = Number(
+        value.meta?.textLength ??
+        value.metadata?.textLength ??
+        value.stats?.textLength ??
+        0
+      );
+ 
+      return {
+        metaPages: Number.isFinite(metaPages) ? metaPages : 0,
+        metaTables: Number.isFinite(metaTables) ? metaTables : 0,
+        metaTextLength: Number.isFinite(metaTextLength) ? metaTextLength : 0
+      };
+    }
+ 
+    function looksLikeNormalizedPayload(value) {
+      if (!isPlainObject(value)) return false;
+ 
+      const resolvedPages = getResolvedPagesFromNormalized(value);
+      const resolvedTables = getResolvedTablesFromNormalized(value);
+      const resolvedTextLength = getResolvedTextLength(value);
+      const { metaPages, metaTables, metaTextLength } = getNormalizedMetaCounts(value);
+ 
       return (
-        s === "ايضاح" ||
-        s === "الايضاح" ||
-        s === "ايضاحات" ||
-        s === "الايضاحات" ||
-        s === "الإيضاحات" ||
-        s === "notes" ||
-        s === "note"
+        resolvedPages.length > 0 ||
+        resolvedTables.length > 0 ||
+        resolvedTextLength > 0 ||
+        metaPages > 0 ||
+        metaTables > 0 ||
+        metaTextLength > 0
       );
     }
-}
-حﺎﻀﯾﻻا " || s === "notes" || s === "note";
-function isQuarterOrPeriodCell(cell) {
-const s = normalizeText(cell);
-return (
-ﮫﺛﻼﺛ "(s.includes
-|| )" ﺮﮭﺷا
-ﺔﺛﻼﺛ "(s.includes
-|| )" ﺮﮭﺷا
-|| )" ﺮﮭﺷا 3"(s.includes
-s.includes("for the year ended") ||
-s.includes("for the period ended") ||
-s.includes("for the year") ||
-s.includes("for the period") ||
-s.includes("3 months") ||
-s.includes("12 months") ||
-ﮫﻨﺴﻟا "(s.includes
-|| )" ﮫﯿﮭﺘﻨﻤﻟا
-هﺮﺘﻔﻟا "(s.includes
-|| )" ﮫﯿﮭﺘﻨﻤﻟا
-s.includes("as of") ||
-ﺎﻤﻛ "(s.includes
-|| )" ﻲﻓ
-ﮫﯿﮭﺘﻨﻤﻟا "(s.includes
-)" ﻲﻓ
-;)
-}
-function countNumbers(text) {
-const s = toEnglishDigits(String(text || ""));
-const matches = s.match(/(?:\(?-?\d[\d,]*\.?\d*\)?)/g);
-return matches ? matches.length : 0;
-function containsAny(text, phrases) {
-const s = normalizeText(text);
-return (phrases || []).some((p) => s.includes(normalizeText(p)));
-}
-}
-function keywordHits(text, phrases) {
-const s = normalizeText(text);
-let score = 0;
-for (const p of (phrases || [])) {
-const x = normalizeText(p);
-if (!x) continue;
-if (s.includes(x)) score += 1;
-}
-return score;
-}
-function countDistinctPhraseHits(text, phrases) {
-const s = normalizeText(text);
-const hits = [];
-for (const phrase of (phrases || [])) {
-const p = normalizeText(phrase);
-if (!p) continue;
-if (s.includes(p)) hits.push(p);
-}
-return unique(hits);
-function isBlank(v) {
-return String(v == null ? "" : v).trim() === "";
-}
-}
-function cleanupLabel(label) {
-let s = String(label || "").trim();
-s = s.replace(/\s+/g, " ").trim();
-s = s.replace(/^[\-\–\—•·*]+\s*/, "");
-s = s.replace(/\s*[:：]\s*$/, "");
-return s.trim();
-}
-function pageNumFromObj(obj) {
-return safeNumber(
-obj?.pageNumber ??
-obj?.page ??
-obj?.pageIndex ??
-obj?.page_no ??
-obj?.pageNum,
-null
-);
-}
-function tableText(table) {
-return [
-table?.sample,
-table?.sampleHead,
-table?.sampleTail,
-table?.text,
-table?.content,
-table?.markdown,
-table?.preview,
-table?.tableText,
-table?.rawText
-]
-.filter(Boolean)
-.map(flattenValue)
-.join("\n");
-function getTableRowCount(table) {
-return safeNumber(table?.rowCount ?? table?.rows ?? table?.nRows ?? 0, 0);
-function getTableColumnCount(table) {
-return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
-}
-}
-}
-function extractTableRows(table) {
-const rawCells = Array.isArray(table?.cells)
-? table.cells
-: Array.isArray(table?.tableCells)
-? table.tableCells
-: Array.isArray(table?.entries)
-? table.entries
-: [];
-if (rawCells.length > 0) {
-const rowMap = new Map();
-let maxColIndex = -1;
-for (const cell of rawCells) {
-const rowIndex = safeNumber(
-cell?.rowIndex ??
-cell?.row ??
-cell?.r,
-null
-);
-const columnIndex = safeNumber(
-cell?.columnIndex ??
-cell?.colIndex ??
-cell?.column ??
-cell?.col ??
-cell?.c,
-null
-);
-if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
-continue;
-}
-const content = String(
-cell?.content ??
-cell?.text ??
-cell?.value ??
-cell?.rawText ??
-""
-).trim();
-const columnSpan = Math.max(
-1,
-safeNumber(cell?.columnSpan ?? cell?.colSpan ?? 1, 1)
-if (!rowMap.has(rowIndex)) {
-rowMap.set(rowIndex, {});
-);
-}
-const rowObj = rowMap.get(rowIndex);
-for (let offset = 0; offset < columnSpan; offset += 1) {
-const targetCol = columnIndex + offset;
-if (!rowObj[targetCol] || String(rowObj[targetCol]).trim() === "") {
-rowObj[targetCol] = content;
-}
-if (targetCol > maxColIndex) {
-maxColIndex = targetCol;
-}
-}
-}
-const reconstructedRows = Array.from(rowMap.keys())
-.sort((a, b) => a - b)
-.map((rowIndex) => {
-const rowObj = rowMap.get(rowIndex) || {};
-const row = [];
-for (let c = 0; c <= maxColIndex; c += 1) {
-row.push(String(rowObj[c] == null ? "" : rowObj[c]).trim());
-}
-return row;
-})
-.filter((r) => r.some((c) => !isBlank(c)));
-if (reconstructedRows.length > 0) {
-return reconstructedRows;
-}
-}
-const rows = [];
-const parts = [];
-if (Array.isArray(table?.sampleHead)) parts.push(...table.sampleHead);
-if (Array.isArray(table?.sample)) parts.push(...table.sample);
-if (Array.isArray(table?.sampleTail)) parts.push(...table.sampleTail);
-for (const row of parts) {
-if (Array.isArray(row)) {
-rows.push(row.map((x) => String(x == null ? "" : x).trim()));
-} else if (row != null) {
-rows.push([String(row).trim()]);
-}
-}
-return rows.filter((r) => r.some((c) => !isBlank(c)));
-}
-function rowsWithMeta(table) {
-const rows = extractTableRows(table);
-return rows.map((cells, index) => ({
-index,
-cells,
-joined: cells.join(" | "),
-normalized: normalizeText(cells.join(" | "))
-}));
-}
-function isLikelyOnlyReferenceText(value) {
-const raw = toEnglishDigits(String(value || "").trim());
-const s = normalizeText(raw);
-if (!raw) return false;
-if (/^\(?\d{1,3}[a-zA-Z]?\)?$/.test(raw)) return true;
-if (/^[a-zA-Z]\d{1,3}$/.test(raw)) return true;
-if (/^\d{1,2}(\.\d{1,2})?$/.test(raw)) return true;
-if (/^\d+\s*\/\s*\d+$/.test(raw)) return true;
-if (/^\d+\s*-\s*\d+$/.test(raw)) return true;
-if (/^\d+\s*(,|&)\s*\d+$/.test(raw)) return true;
-if (/^\d+\s*and\s*\d+$/i.test(raw)) return true;
-if (/^\d+\s*و\s*\d+$/.test(raw)) return true;
-if (/^\d+\s*و\d+$/.test(raw)) return true;
-if (/^\(?\d{1,3}\)?\s*(و|and|\/|-)\s*\(?\d{1,3}\)?$/i.test(raw)) return true;
-if (s === "n/a") return false;
-return false;
-}
-function isLikelyReferenceValue(cell) {
-const raw = String(cell || "").trim();
-if (!raw) return false;
-if (isNoteHeaderCell(raw)) return true;
-if (isYearCell(raw)) return false;
-return isLikelyOnlyReferenceText(raw);
-}
-function isLikelyStatementDateText(text) {
-const s = normalizeText(text);
-return (
-s.includes("31 december") ||
-|| )" ﺮﺒﻤﺴﯾد 31"(s.includes
-ﺎﻤﻛ "(s.includes
-|| )" ﻲﻓ
-s.includes("as of") ||
-s.includes("for the year ended") ||
-s.includes("for the period ended") ||
-ﮫﻨﺴﻟا "(s.includes
-|| )" ﮫﯿﮭﺘﻨﻤﻟا
-هﺮﺘﻔﻟا "(s.includes
-)" ﮫﯿﮭﺘﻨﻤﻟا
-;)
-}
-function isLikelyStandardEffectiveDateText(text) {
-const s = normalizeText(text);
-return (
-s.includes("effective date") ||
-s.includes("effective dates") ||
-s.includes("1 january") ||
-|| )" ﺮﯾﺎﻨﯾ 1"(s.includes
-ﺦﯾرﺎﺗ "(s.includes
-|| )" نﺎﯾﺮﺳ
-s.includes("ifrs amendments") ||
-s.includes("international accounting standard") ||
-s.includes("international financial reporting standard")
-;)
-}
-function isLikelyNarrativeLine(text) {
-const s = normalizeText(text);
-if (!s) return false;
-return (
-ﻢﺗ "(s.includes
-|| )" ﻞﯿﺟﺎﺗ
-ﻢﻟ "(s.includes
-|| )" ﺪﯾﺪﺤﺗ
-ﻢﺘﯾ
-ﺮﺒﺘﻌﺗ "(s.includes
-|| )" تﺎﺣﺎﻀﯾﻻا
-ﻞﻜﺸﺗ "(s.includes
-|| )" تﺎﺣﺎﻀﯾﻻا
-s.includes("integral part of these consolidated financial statements") ||
-s.includes("accompanying notes") ||
-ﻞﻜﺸﺗ "(s.includes
-|| )" ﺔﻘﻓﺮﻤﻟا
-تﺎﺣﺎﻀﯾﻻا
-ﻻ
-اءﺰﺟ "(s.includes
-)" اﺰﺠﺘﯾ
-;)
-}
-function isPureNumericSymbolCell(text) {
-const raw = toEnglishDigits(String(text || "").trim());
-if (!raw) return false;
-return /^[\d,.\-()]+$/.test(raw);
-function hasArabicChars(text) {
-return /[\u0600-\u06FF]/.test(String(text || ""));
-function hasLatinChars(text) {
-return /[A-Za-z]/.test(String(text || ""));
-function hasLetterChars(text) {
-return /[A-Za-z\u0621-\u064A]/.test(String(text || ""));
-}
-}
-}
-}
-function isLikelyTextLabelCell(cell) {
-const raw = String(cell || "").trim();
-if (!raw) return false;
-if (isNoteHeaderCell(raw)) return false;
-if (getYearFromCell(raw) != null) return false;
-if (isLikelyReferenceValue(raw)) return false;
-if (isLikelyStatementDateText(raw)) return false;
-if (isLikelyStandardEffectiveDateText(raw)) return false;
-if (isLikelyNarrativeLine(raw)) return false;
-if (isQuarterOrPeriodCell(raw)) return false;
-if (isPureNumericSymbolCell(raw)) return false;
-const n = parseNumberSmart(raw);
-if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return false;
-return hasLetterChars(raw);
-}
-function countLikelyTextLabels(rows, limit = 24) {
-let count = 0;
-for (const row of (rows || []).slice(0, limit)) {
-if (!Array.isArray(row)) continue;
-for (const cell of row) {
-if (isLikelyTextLabelCell(cell)) count += 1;
-}
-}
-return count;
-}
-function dedupePreserveOrder(arr) {
-const seen = new Set();
-const out = [];
-for (const item of arr || []) {
-const key = normalizeText(item);
-if (!key || seen.has(key)) continue;
-seen.add(key);
-out.push(String(item).trim());
-}
-return out;
-}
-function splitTextIntoLogicalLines(text) {
-return String(text || "")
-.split(/\r?\n+/)
-.map((x) => String(x || "").trim())
-.filter(Boolean)
-.flatMap((line) => {
-if (line.includes(" | ")) {
-return line
-.split("|")
-.map((x) => String(x || "").trim())
-.filter(Boolean);
-}
-;)}
-return [line];
-}
-function isSectionHeaderOnlyLabel(label, statementType) {
-const s = normalizeText(label);
-const genericHeaders = [
-," تاداﺮﯾﻻا "
-," تاداﺮﯾﻹا "
-," ﻒﯾرﺎﺼﻤﻟا "
-," تادﻮﺟﻮﻤﻟا "
-," تﺎﺑﻮﻠﻄﻤﻟا "
-قﻮﻘﺣ "
-," ﮫﯿﻜﻠﻤﻟا
-قﻮﻘﺣ "
-," ﺔﯿﻜﻠﻤﻟا
-تادﻮﺟﻮﻤﻟا "
-," ﮫﻟواﺪﺘﻤﻟا
-ﺮﯿﻏ
-تادﻮﺟﻮﻤﻟا "
-," ﺔﻟواﺪﺘﻤﻟا
-ﺮﯿﻏ
-تادﻮﺟﻮﻤﻟا "
-," ﮫﻟواﺪﺘﻤﻟا
-تادﻮﺟﻮﻤﻟا "
-," ﺔﻟواﺪﺘﻤﻟا
-تﺎﺑﻮﻠﻄﻤﻟا "
-," ﮫﻟواﺪﺘﻤﻟا
-ﺮﯿﻏ
-تﺎﺑﻮﻠﻄﻤﻟا "
-," ﺔﻟواﺪﺘﻤﻟا
-ﺮﯿﻏ
-تﺎﺑﻮﻠﻄﻤﻟا "
-," ﮫﻟواﺪﺘﻤﻟا
-تﺎﺑﻮﻠﻄﻤﻟا "
-," ﺔﻟواﺪﺘﻤﻟا
-"other income",
-"expenses",
-"revenue"
-].map(normalizeText);
-if (genericHeaders.includes(s)) return true;
-if (statementType === "income") {
-return (
-|| )" تاداﺮﯾﻹا "(s === normalizeText
-|| )" تاداﺮﯾﻻا "(s === normalizeText
-)" ﻒﯾرﺎﺼﻤﻟا "(s === normalizeText
-;)
-}
-return false;
-}
-function salvageFinancialLabelCandidate(rawLabel) {
-const clean = cleanupLabel(rawLabel);
-if (!clean) return null;
-let text = clean;
-text = text.replace(/\b(19|20)\d{2}\b/g, " ");
-٩
-text = text.replace(/\b (
-] {2}\b/g, " ");
--٠[)
-٢٠
-|
-١٩
-﷼ (text = text.replace(/\b
-)" " |
-﷼
-ﻒﻟا
-|
-﷼
-ﻒﻟأ
-|
-﷼
-|
-/gi\) رﻻود |sar|usd|text = text.replace(/\b[0-9٠-
-٩ ]{1,3}[\s,،٫.\-][0-9٠-
-٩ ]{1,3}\b/g, " ");
-text = text.replace(/\b[0-9٠-
-٩ ]+\b/g, " ");
-text = text.replace(/\s+/g, " ").trim();
-if (!text) return null;
-return text;
-}
-function isLikelyCurrencyOrUnitHeader(label) {
+ 
+    function scoreNormalizedCandidate(value, label, isEnvelopeRoot = false) {
+      if (!looksLikeNormalizedPayload(value)) return null;
+ 
+      const resolvedPages = getResolvedPagesFromNormalized(value);
+      const resolvedTables = getResolvedTablesFromNormalized(value);
+      const resolvedTextLength = getResolvedTextLength(value);
+      const { metaPages, metaTables, metaTextLength } = getNormalizedMetaCounts(value);
+ 
+      let score = 0;
+      score += resolvedPages.length * 100000;
+      score += resolvedTables.length * 1000;
+      score += Math.min(resolvedTextLength, 100000);
+      score += metaPages * 100;
+      score += metaTables * 10;
+      score += Math.min(metaTextLength, 10000);
+ 
+      if (resolvedPages.length === 0 && resolvedTables.length === 0 && (metaPages > 0 || metaTables > 0)) {
+        score -= 5000;
+      }
+ 
+      if (isEnvelopeRoot) {
+        score -= 2000;
+      }
+ 
+      return {
+        label,
+        value,
+        score,
+        resolvedPagesCount: resolvedPages.length,
+        resolvedTablesCount: resolvedTables.length,
+        resolvedTextLength,
+        metaPages,
+        metaTables,
+        metaTextLength
+      };
+    }
+ 
+    function readLocalTestPayload() {
+      if (!fs.existsSync(localTestPath)) {
+        return {
+          ok: false,
+          exists: false,
+          payload: null
+        };
+      }
+ 
+      const raw = fs.readFileSync(localTestPath, "utf8");
+      const parsed = JSON.parse(raw);
+ 
+      return {
+        ok: true,
+        exists: true,
+        payload: parsed
+      };
+    }
+ 
+    function collectNormalizedCandidates(payload) {
+      if (!isPlainObject(payload)) return [];
+ 
+      const candidateDefs = [
+        ["payload.normalized", payload.normalized],
+        ["payload.data.normalized", payload.data?.normalized],
+        ["payload.payload.normalized", payload.payload?.normalized],
+        ["payload.result.normalized", payload.result?.normalized],
+        ["payload.analysis.normalized", payload.analysis?.normalized],
+        ["payload.data.payload.normalized", payload.data?.payload?.normalized],
+        ["payload.payload.data.normalized", payload.payload?.data?.normalized],
+        ["payload.data.result.normalized", payload.data?.result?.normalized],
+        ["payload.result.data.normalized", payload.result?.data?.normalized],
+        ["payload.result.payload.normalized", payload.result?.payload?.normalized],
+        ["payload.analysis.result.normalized", payload.analysis?.result?.normalized],
+        ["payload.result.analysis.normalized", payload.result?.analysis?.normalized],
+        ["payload.lastNormalized", payload.lastNormalized],
+        ["payload.normalizedResult", payload.normalizedResult],
+        ["payload.raw", payload]
+      ];
+ 
+      const scored = [];
+ 
+      for (const [label, candidate] of candidateDefs) {
+        const item = scoreNormalizedCandidate(candidate, label, candidate === payload);
+        if (item) scored.push(item);
+      }
+ 
+      return scored.sort((a, b) => b.score - a.score);
+    }
+ 
+    function resolveNormalizedPrevFromEnvelope(envelope) {
+      if (!isPlainObject(envelope)) return null;
+ 
+      const candidates = [
+        envelope.normalizedPrev,
+        envelope.data?.normalizedPrev,
+        envelope.payload?.normalizedPrev,
+        envelope.result?.normalizedPrev,
+        envelope.analysis?.normalizedPrev,
+        envelope.data?.payload?.normalizedPrev,
+        envelope.result?.data?.normalizedPrev
+      ];
+ 
+      for (const candidate of candidates) {
+        if (isPlainObject(candidate) || Array.isArray(candidate)) {
+          return candidate;
+        }
+      }
+ 
+      return null;
+    }
+ 
+    function resolveInputEnvelope(req) {
+      const reqBody =
+        req?.body && typeof req.body === "object"
+          ? req.body
+          : null;
+ 
+      const reqCandidates = collectNormalizedCandidates(reqBody);
+      const reqBest = reqCandidates[0] || null;
+ 
+      if (reqBest) {
+        return {
+          source: reqBest.label,
+          body: reqBody || {},
+          envelope: reqBody || {},
+          normalized: reqBest.value,
+          normalizedPrev: resolveNormalizedPrevFromEnvelope(reqBody),
+          fileName:
+            reqBody?.fileName ||
+            reqBody?.data?.fileName ||
+            reqBody?.payload?.fileName ||
+            reqBest.value?.meta?.fileName ||
+            null,
+          diagnostics: {
+            localFileExists: fs.existsSync(localTestPath),
+            reqBodyKeys: safeObjectKeys(reqBody),
+            envelopeKeys: safeObjectKeys(reqBody),
+            normalizedKeys: safeObjectKeys(reqBest.value),
+            candidateScores: reqCandidates.slice(0, 5).map((item) => ({
+              source: item.label,
+              score: item.score,
+              resolvedPagesCount: item.resolvedPagesCount,
+              resolvedTablesCount: item.resolvedTablesCount,
+              resolvedTextLength: item.resolvedTextLength,
+              metaPages: item.metaPages,
+              metaTables: item.metaTables,
+              metaTextLength: item.metaTextLength
+            }))
+          }
+        };
+      }
+ 
+      const localRead = readLocalTestPayload();
+      const localPayload = localRead?.payload || null;
+      const localCandidates = collectNormalizedCandidates(localPayload);
+      const localBest = localCandidates[0] || null;
+ 
+      if (localRead.ok && localBest) {
+        return {
+          source: localBest.label.replace(/^payload\./, "local."),
+          body: localPayload || {},
+          envelope: localPayload || {},
+          normalized: localBest.value,
+          normalizedPrev: resolveNormalizedPrevFromEnvelope(localPayload),
+          fileName:
+            localPayload?.fileName ||
+            localPayload?.data?.fileName ||
+            localPayload?.payload?.fileName ||
+            localBest.value?.meta?.fileName ||
+            null,
+          diagnostics: {
+            localFileExists: true,
+            reqBodyKeys: safeObjectKeys(reqBody),
+            envelopeKeys: safeObjectKeys(localPayload),
+            normalizedKeys: safeObjectKeys(localBest.value),
+            candidateScores: localCandidates.slice(0, 5).map((item) => ({
+              source: item.label.replace(/^payload\./, "local."),
+              score: item.score,
+              resolvedPagesCount: item.resolvedPagesCount,
+              resolvedTablesCount: item.resolvedTablesCount,
+              resolvedTextLength: item.resolvedTextLength,
+              metaPages: item.metaPages,
+              metaTables: item.metaTables,
+              metaTextLength: item.metaTextLength
+            }))
+          }
+        };
+      }
+ 
+      return {
+        source: "none",
+        body: reqBody || {},
+        envelope: {},
+        normalized: {},
+        normalizedPrev: null,
+        fileName: null,
+        diagnostics: {
+          localFileExists: fs.existsSync(localTestPath),
+          reqBodyKeys: safeObjectKeys(reqBody),
+          envelopeKeys: [],
+          normalizedKeys: [],
+          candidateScores: []
+        }
+      };
+    }
+ 
+    const resolvedInput = resolveInputEnvelope(req);
+    const body = resolvedInput.body;
+    const normalized = resolvedInput.normalized;
+    const normalizedPrev = resolvedInput.normalizedPrev;
+    const inputFileName = resolvedInput.fileName;
+ 
+    if (!isNonEmptyObject(normalized)) {
+      return send(400, {
+        ok: false,
+        error: "normalized payload is required",
+        debugInput: {
+          source: resolvedInput.source,
+          localTestPath,
+          ...resolvedInput.diagnostics
+        }
+      });
+    }
+ 
+    const pages = getResolvedPagesFromNormalized(normalized);
+    const tablesPreview = getResolvedTablesFromNormalized(normalized);
+ 
+    const rawSectorInfo = detectSector(normalized);
+    const detectedSector = rawSectorInfo?.sector || "operating_company";
+    const activeSectorProfile =
+      sectorProfiles[detectedSector] || sectorProfiles.operating_company || {};
+ 
+    const sectorStatements = activeSectorProfile.statements || {};
+    const incomeKeywords = Array.isArray(sectorStatements.income)
+      ? sectorStatements.income
+      : Array.isArray(activeSectorProfile.incomeStatement)
+        ? activeSectorProfile.incomeStatement
+        : [];
+ 
+    const balanceKeywords = Array.isArray(sectorStatements.balance)
+      ? sectorStatements.balance
+      : Array.isArray(activeSectorProfile.balanceSheet)
+        ? activeSectorProfile.balanceSheet
+        : [];
+ 
+    const cashflowKeywords = Array.isArray(sectorStatements.cashflow)
+      ? sectorStatements.cashflow
+      : Array.isArray(activeSectorProfile.cashFlow)
+        ? activeSectorProfile.cashFlow
+        : [];
+ 
+    // =========================================================
+    // Layer 1: Normalization Helpers
+    // =========================================================
+ 
+    const DIGIT_MAP = {
+      "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+      "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+      "٫": ".", "٬": ",", "−": "-", "–": "-", "—": "-", "ـ": ""
+    };
+ 
+    function toEnglishDigits(value) {
+      return String(value || "").replace(/[٠-٩٫٬−–—ـ]/g, (m) => DIGIT_MAP[m] || m);
+    }
+ 
+    function normalizeArabic(text) {
+      return String(text || "")
+        .replace(/[\u064B-\u065F\u0670]/g, "")
+        .replace(/[إأآا]/g, "ا")
+        .replace(/ى/g, "ي")
+        .replace(/ة/g, "ه")
+        .replace(/ؤ/g, "و")
+        .replace(/ئ/g, "ي");
+    }
+ 
+    function normalizeText(value) {
+      return normalizeArabic(toEnglishDigits(String(value || "")))
+        .replace(/[^\S\r\n]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+    }
+ 
+    function unique(arr) {
+      return Array.from(new Set((arr || []).filter(Boolean)));
+    }
+ 
+    function safeNumber(v, fallback = 0) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    }
+ 
+    function flattenValue(v) {
+      if (v == null) return "";
+      if (Array.isArray(v)) return v.map(flattenValue).join("\n");
+      if (typeof v === "object") return Object.values(v).map(flattenValue).join("\n");
+      return String(v);
+    }
+ 
+    function parseNumberSmart(value) {
+      if (value == null) return null;
+ 
+      let s = String(value).trim();
+      if (!s) return null;
+ 
+      s = toEnglishDigits(s)
+        .replace(/\s/g, "")
+        .replace(/[ ريالرسعوديةsarusd$]/gi, "")
+        .replace(/[^\d.,()\-]/g, "");
+ 
+      if (!s) return null;
+ 
+      let negative = false;
+      if (s.includes("(") && s.includes(")")) negative = true;
+      s = s.replace(/[()]/g, "");
+ 
+      const hasDot = s.includes(".");
+      const hasComma = s.includes(",");
+ 
+            if (hasDot && hasComma) {
+        const lastDot = s.lastIndexOf(".");
+        const lastComma = s.lastIndexOf(",");
+        if (lastDot > lastComma) {
+          s = s.replace(/,/g, "");
+        } else {
+          s = s.replace(/\./g, "").replace(",", ".");
+        }
+      } else if (hasComma && !hasDot) {
+        const parts = s.split(",");
+        const last = parts[parts.length - 1];
+        if (last.length === 1 || last.length === 2) {
+          s = parts.slice(0, -1).join("") + "." + last;
+        } else {
+          s = s.replace(/,/g, "");
+        }
+      } else if (hasDot && !hasComma) {
+        const parts = s.split(".");
+        const last = parts[parts.length - 1];
+        if (!(last.length === 1 || last.length === 2)) {
+          s = s.replace(/\./g, "");
+        }
+      }
+ 
+      const n = Number(s);
+      if (!Number.isFinite(n)) return null;
+      return negative ? -n : n;
+    }
+ 
+    function extractYears(text) {
+      const s = toEnglishDigits(String(text || ""));
+      const years = s.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+      return unique(years.map(Number)).sort((a, b) => b - a);
+    }
+ 
+    function isYearCell(cell) {
+      return /^(19|20)\d{2}$/.test(toEnglishDigits(String(cell || "").trim()));
+    }
+ 
+    function getYearFromCell(cell) {
+      const raw = toEnglishDigits(String(cell || "").trim());
+      if (!raw) return null;
+ 
+      if (/^(19|20)\d{2}$/.test(raw)) {
+        return Number(raw);
+      }
+ 
+      const years = raw.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+      if (years.length === 1) {
+        const n = Number(years[0]);
+        if (Number.isFinite(n)) return n;
+      }
+ 
+      return null;
+    }
+ 
+    function isNoteHeaderCell(cell) {
+      const s = normalizeText(cell);
+      return s === "ايضاح" || s === "الايضاح" || s === "notes" || s === "note";
+    }
+ 
+    function isQuarterOrPeriodCell(cell) {
+      const s = normalizeText(cell);
+      return (
+        s.includes("ثلاثه اشهر") ||
+        s.includes("ثلاثة اشهر") ||
+        s.includes("3 اشهر") ||
+        s.includes("for the year ended") ||
+        s.includes("for the period ended") ||
+        s.includes("for the year") ||
+        s.includes("for the period") ||
+        s.includes("3 months") ||
+        s.includes("12 months") ||
+        s.includes("السنه المنتهيه") ||
+        s.includes("الفتره المنتهيه") ||
+        s.includes("as of") ||
+        s.includes("كما في") ||
+        s.includes("المنتهيه في")
+      );
+    }
+ 
+    function countNumbers(text) {
+      const s = toEnglishDigits(String(text || ""));
+      const matches = s.match(/(?:\(?-?\d[\d,]*\.?\d*\)?)/g);
+      return matches ? matches.length : 0;
+    }
+ 
+    function containsAny(text, phrases) {
+      const s = normalizeText(text);
+      return (phrases || []).some((p) => s.includes(normalizeText(p)));
+    }
+ 
+        function keywordHits(text, phrases) {
+      const s = normalizeText(text);
+      let score = 0;
+      for (const p of (phrases || [])) {
+        const x = normalizeText(p);
+        if (!x) continue;
+        if (s.includes(x)) score += 1;
+      }
+      return score;
+    }
+ 
+    function countDistinctPhraseHits(text, phrases) {
+      const s = normalizeText(text);
+      const hits = [];
+      for (const phrase of (phrases || [])) {
+        const p = normalizeText(phrase);
+        if (!p) continue;
+        if (s.includes(p)) hits.push(p);
+      }
+      return unique(hits);
+    }
+ 
+    function isBlank(v) {
+      return String(v == null ? "" : v).trim() === "";
+    }
+ 
+    function cleanupLabel(label) {
+      let s = String(label || "").trim();
+      s = s.replace(/\s+/g, " ").trim();
+      s = s.replace(/^[\-\–\—•·*]+\s*/, "");
+      s = s.replace(/\s*[:：]\s*$/, "");
+      return s.trim();
+    }
+ 
+    function pageNumFromObj(obj) {
+      return safeNumber(
+        obj?.pageNumber ??
+        obj?.page ??
+        obj?.pageIndex ??
+        obj?.page_no ??
+        obj?.pageNum,
+        null
+      );
+    }
+ 
+    function tableText(table) {
+      return [
+        table?.sample,
+        table?.sampleHead,
+        table?.sampleTail,
+        table?.text,
+        table?.content,
+        table?.markdown,
+        table?.preview,
+        table?.tableText,
+        table?.rawText
+      ]
+        .filter(Boolean)
+        .map(flattenValue)
+        .join("\n");
+    }
+ 
+    function getTableRowCount(table) {
+      return safeNumber(table?.rowCount ?? table?.rows ?? table?.nRows ?? 0, 0);
+    }
+ 
+    function getTableColumnCount(table) {
+      return safeNumber(table?.columnCount ?? table?.columns ?? table?.nCols ?? 0, 0);
+    }
+ 
+    function extractTableRows(table) {
+      const rawCells = Array.isArray(table?.cells)
+        ? table.cells
+        : Array.isArray(table?.tableCells)
+          ? table.tableCells
+          : Array.isArray(table?.entries)
+            ? table.entries
+            : [];
+ 
+      if (rawCells.length > 0) {
+        const rowMap = new Map();
+        let maxColIndex = -1;
+ 
+        for (const cell of rawCells) {
+          const rowIndex = safeNumber(
+            cell?.rowIndex ??
+            cell?.row ??
+            cell?.r,
+            null
+          );
+ 
+          const columnIndex = safeNumber(
+            cell?.columnIndex ??
+            cell?.colIndex ??
+            cell?.column ??
+            cell?.col ??
+            cell?.c,
+            null
+          );
+ 
+                    if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
+            continue;
+          }
+ 
+          const content = String(
+            cell?.content ??
+            cell?.text ??
+            cell?.value ??
+            cell?.rawText ??
+            ""
+          ).trim();
+ 
+          const columnSpan = Math.max(
+            1,
+            safeNumber(cell?.columnSpan ?? cell?.colSpan ?? 1, 1)
+          );
+ 
+          if (!rowMap.has(rowIndex)) {
+            rowMap.set(rowIndex, {});
+          }
+ 
+          const rowObj = rowMap.get(rowIndex);
+ 
+          for (let offset = 0; offset < columnSpan; offset += 1) {
+            const targetCol = columnIndex + offset;
+ 
+            if (!rowObj[targetCol] || String(rowObj[targetCol]).trim() === "") {
+              rowObj[targetCol] = content;
+            }
+ 
+            if (targetCol > maxColIndex) {
+              maxColIndex = targetCol;
+            }
+          }
+        }
+ 
+        const reconstructedRows = Array.from(rowMap.keys())
+          .sort((a, b) => a - b)
+          .map((rowIndex) => {
+            const rowObj = rowMap.get(rowIndex) || {};
+            const row = [];
+ 
+            for (let c = 0; c <= maxColIndex; c += 1) {
+              row.push(String(rowObj[c] == null ? "" : rowObj[c]).trim());
+            }
+ 
+            return row;
+          })
+          .filter((r) => r.some((c) => !isBlank(c)));
+ 
+        if (reconstructedRows.length > 0) {
+          return reconstructedRows;
+        }
+      }
+ 
+      const rows = [];
+      const parts = [];
+ 
+      if (Array.isArray(table?.sampleHead)) parts.push(...table.sampleHead);
+      if (Array.isArray(table?.sample)) parts.push(...table.sample);
+      if (Array.isArray(table?.sampleTail)) parts.push(...table.sampleTail);
+ 
+      for (const row of parts) {
+        if (Array.isArray(row)) {
+          rows.push(row.map((x) => String(x == null ? "" : x).trim()));
+        } else if (row != null) {
+          rows.push([String(row).trim()]);
+        }
+      }
+ 
+      return rows.filter((r) => r.some((c) => !isBlank(c)));
+    }
+ 
+    function rowsWithMeta(table) {
+      const rows = extractTableRows(table);
+      return rows.map((cells, index) => ({
+        index,
+        cells,
+        joined: cells.join(" | "),
+        normalized: normalizeText(cells.join(" | "))
+      }));
+    }
+ 
+    function isLikelyOnlyReferenceText(value) {
+      const raw = toEnglishDigits(String(value || "").trim());
+      const s = normalizeText(raw);
+      if (!raw) return false;
+ 
+      if (/^\(?\d{1,3}[a-zA-Z]?\)?$/.test(raw)) return true;
+      if (/^[a-zA-Z]\d{1,3}$/.test(raw)) return true;
+      if (/^\d{1,2}(\.\d{1,2})?$/.test(raw)) return true;
+      if (/^\d+\s*\/\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*-\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*(,|&)\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*and\s*\d+$/i.test(raw)) return true;
+ 
+            if (/^\d+\s*و\s*\d+$/.test(raw)) return true;
+      if (/^\d+\s*و\d+$/.test(raw)) return true;
+      if (/^\(?\d{1,3}\)?\s*(و|and|\/|-)\s*\(?\d{1,3}\)?$/i.test(raw)) return true;
+      if (s === "n/a") return false;
+ 
+      return false;
+    }
+ 
+    function isLikelyReferenceValue(cell) {
+      const raw = String(cell || "").trim();
+      if (!raw) return false;
+      if (isNoteHeaderCell(raw)) return true;
+      if (isYearCell(raw)) return false;
+      return isLikelyOnlyReferenceText(raw);
+    }
+ 
+    function isLikelyStatementDateText(text) {
+      const s = normalizeText(text);
+      return (
+        s.includes("31 december") ||
+        s.includes("31 ديسمبر") ||
+        s.includes("كما في") ||
+        s.includes("as of") ||
+        s.includes("for the year ended") ||
+        s.includes("for the period ended") ||
+        s.includes("السنه المنتهيه") ||
+        s.includes("الفتره المنتهيه")
+      );
+    }
+ 
+    function isLikelyStandardEffectiveDateText(text) {
+      const s = normalizeText(text);
+      return (
+        s.includes("effective date") ||
+        s.includes("effective dates") ||
+        s.includes("1 january") ||
+        s.includes("1 يناير") ||
+        s.includes("تاريخ سريان") ||
+        s.includes("ifrs amendments") ||
+        s.includes("international accounting standard") ||
+        s.includes("international financial reporting standard")
+      );
+    }
+ 
+    function isLikelyNarrativeLine(text) {
+      const s = normalizeText(text);
+      if (!s) return false;
+      return (
+        s.includes("تم تاجيل") ||
+        s.includes("لم يتم تحديد") ||
+        s.includes("تعتبر الايضاحات") ||
+        s.includes("تشكل الايضاحات") ||
+        s.includes("integral part of these consolidated financial statements") ||
+        s.includes("accompanying notes") ||
+        s.includes("تشكل الايضاحات المرفقة") ||
+        s.includes("جزءا لا يتجزا")
+      );
+    }
+ 
+    function isPureNumericSymbolCell(text) {
+      const raw = toEnglishDigits(String(text || "").trim());
+      if (!raw) return false;
+      return /^[\d,.\-()]+$/.test(raw);
+    }
+ 
+    function hasArabicChars(text) {
+      return /[\u0600-\u06FF]/.test(String(text || ""));
+    }
+ 
+    function hasLatinChars(text) {
+      return /[A-Za-z]/.test(String(text || ""));
+    }
+ 
+    function hasLetterChars(text) {
+      return /[A-Za-z\u0621-\u064A]/.test(String(text || ""));
+    }
+ 
+    function isLikelyTextLabelCell(cell) {
+      const raw = String(cell || "").trim();
+      if (!raw) return false;
+      if (isNoteHeaderCell(raw)) return false;
+      if (getYearFromCell(raw) != null) return false;
+      if (isLikelyReferenceValue(raw)) return false;
+      if (isLikelyStatementDateText(raw)) return false;
+      if (isLikelyStandardEffectiveDateText(raw)) return false;
+      if (isLikelyNarrativeLine(raw)) return false;
+      if (isQuarterOrPeriodCell(raw)) return false;
+      if (isPureNumericSymbolCell(raw)) return false;
+ 
+      const n = parseNumberSmart(raw);
+      if (n != null && !/[^\d.,()\-]/.test(toEnglishDigits(raw))) return false;
+ 
+      return hasLetterChars(raw);
+    }
+ 
+        function countLikelyTextLabels(rows, limit = 24) {
+      let count = 0;
+      for (const row of (rows || []).slice(0, limit)) {
+        if (!Array.isArray(row)) continue;
+        for (const cell of row) {
+          if (isLikelyTextLabelCell(cell)) count += 1;
+        }
+      }
+      return count;
+    }
+ 
+    function dedupePreserveOrder(arr) {
+      const seen = new Set();
+      const out = [];
+ 
+      for (const item of arr || []) {
+        const key = normalizeText(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(String(item).trim());
+      }
+ 
+      return out;
+    }
+ 
+    function splitTextIntoLogicalLines(text) {
+      return String(text || "")
+        .split(/\r?\n+/)
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+        .flatMap((line) => {
+          if (line.includes(" | ")) {
+            return line
+              .split("|")
+              .map((x) => String(x || "").trim())
+              .filter(Boolean);
+          }
+          return [line];
+        });
+    }
+ 
+    function isSectionHeaderOnlyLabel(label, statementType) {
+      const s = normalizeText(label);
+ 
+      const genericHeaders = [
+        "الايرادات",
+        "الإيرادات",
+        "المصاريف",
+        "الموجودات",
+        "المطلوبات",
+        "حقوق الملكيه",
+        "حقوق الملكية",
+        "الموجودات غير المتداوله",
+        "الموجودات غير المتداولة",
+        "الموجودات المتداوله",
+        "الموجودات المتداولة",
+        "المطلوبات غير المتداوله",
+        "المطلوبات غير المتداولة",
+        "المطلوبات المتداوله",
+        "المطلوبات المتداولة",
+        "other income",
+        "expenses",
+        "revenue"
+      ].map(normalizeText);
+ 
+      if (genericHeaders.includes(s)) return true;
+ 
+      if (statementType === "income") {
+        return (
+          s === normalizeText("الإيرادات") ||
+          s === normalizeText("الايرادات") ||
+          s === normalizeText("المصاريف")
+        );
+      }
+ 
+      return false;
+    }
+ 
+    function salvageFinancialLabelCandidate(rawLabel) {
+      const clean = cleanupLabel(rawLabel);
+      if (!clean) return null;
+ 
+      let text = clean;
+      text = text.replace(/\b(19|20)\d{2}\b/g, " ");
+      text = text.replace(/\b(١٩|٢٠)[٠-٩]{2}\b/g, " ");
+      text = text.replace(/\b(ريال سعودي|ريال|ألف ريال|الف ريال|بالريال|sar|usd|دولار)\b/gi, " ");
+      text = text.replace(/\b[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}\b/g, " ");
+      text = text.replace(/\b[0-9٠-٩]+\b/g, " ");
+      text = text.replace(/\s+/g, " ").trim();
+ 
+      if (!text) return null;
+      return text;
+    }
+ 
+    function isLikelyCurrencyOrUnitHeader(label) {
       const s = normalizeText(label);
       if (!s) return false;
-
-      return (
+ 
+            return (
         s.includes("ريال سعودي") ||
         s.includes("الف ريال") ||
         s.includes("ألف ريال") ||
         s.includes("بالريال") ||
-        s.includes("بالاف") ||
-        s.includes("بالالاف") ||
-        s.includes("بالالف") ||
-        s.includes("بالآلاف") ||
-        s.includes("بالألاف") ||
-        s.includes("بالألف") ||
-        s.includes("آلاف") ||
-        s.includes("الاف") ||
-        s.includes("ألف") ||
-        s.includes("الف") ||
         s === "sar" ||
         s === "usd" ||
         s === "دولار"
       );
     }
-function isAcceptableFinancialLabel(label, statementType) {
-const cleanLabel = cleanupLabel(label);
-const normalizedLabel = normalizeText(cleanLabel);
-if (!cleanLabel) return false;
-const trimmed = cleanLabel.trim();
-const normalized = (normalizedLabel || "").trim();
-if (!hasLetterChars(trimmed)) return false;
-if (normalized.length <= 2) return false;
-if (/^[0-9٠-
-٩ \s,،٫.\-()]+$/.test(trimmed)) return false;
-if (/^(19|20)\d{2}$/.test(trimmed)) return false;
-٩
-if (/^ (
-] {2}$/.test(trimmed)) return false;
--٠[)
-٢٠
-|
-١٩
-if (
-/^(19|20)\d{2}\s*(﷼|sar|usd| رﻻود )/i.test(trimmed) ||
-٩
-( ^/
--٠[)
-٢٠
-|
-١٩
-] {2}\s*(﷼|sar|usd| رﻻود )/i.test(trimmed)
-{ )
-return false;
-}
-if (isLikelyCurrencyOrUnitHeader(trimmed)) return false;
-if (/^[0-9٠-
-٩ ]{1,3}[\s,،٫.\-][0-9٠-
-٩ ]{1,3}$/.test(trimmed)) return false;
-if (/^[0-9٠-
-٩ ]+$/.test(trimmed)) return false;
-const words = normalized.split(/\s+/).filter(Boolean);
-if (words.length === 1 && normalized.length < 4) return false;
-if (isLikelyReferenceValue(trimmed)) return false;
-if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
-if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
-if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
-if (
-{ )
-تﺎﺣﺎﻀﯾﻻا "(normalized.includes
-|| )" ﮫﻘﻓﺮﻤﻟا
-تﺎﺣﺎﻀﯾﻹا "(normalized.includes
-|| )" ﺔﻘﻓﺮﻤﻟا
-normalized.includes("integral part") ||
-normalized.includes("accompanying notes")
-return false;
-}
-return true;
-}
-function extractLabelCandidatesFromPageText(pageCtx, statementType) {
-const textBlob = [
-pageCtx?.mainTableText || "",
-pageCtx?.text || "",
-pageCtx?.structuralText || ""
-].join("\n");
-const candidates = splitTextIntoLogicalLines(textBlob)
-.map((line) => cleanupLabel(line))
-.filter(Boolean)
-.filter((line) => !isLikelyStatementDateText(line))
-.filter((line) => !isLikelyStandardEffectiveDateText(line))
-.filter((line) => !isLikelyNarrativeLine(line))
-.filter((line) => !isQuarterOrPeriodCell(line))
-.filter((line) => !isPureNumericSymbolCell(line))
-.filter((line) => !isLikelyOnlyReferenceText(line))
-.filter((line) => hasLetterChars(line));
-const enriched = [];
-for (const line of candidates) {
-enriched.push(line);
-const salvaged = salvageFinancialLabelCandidate(line);
-if (salvaged && normalizeText(salvaged) !== normalizeText(line)) {
-enriched.push(salvaged);
-}
-}
-return dedupePreserveOrder(enriched).filter((line) => {
-return !isLikelyMetaOrHeaderLabel(line) &&
-!isLikelyStatementTitleRow(line, statementType);
-;)}
-}
-function getTablesForPage(pageNumber) {
-return tablesPreview.filter((t) => pageNumFromObj(t) === pageNumber);
-function getTableDensityScore(table) {
-return (getTableRowCount(table) * 10) + getTableColumnCount(table);
-}
-}
-function pickMainTable(tables) {
-const list = Array.isArray(tables) ? tables : [];
-if (!list.length) return null;
-return list.slice().sort((a, b) => getTableDensityScore(b) - getTableDensityScore(a))[0];
-function getHeaderRows(rows) {
-return [rows[0] || [], rows[1] || [], rows[2] || [], rows[3] || [], rows[4] || [], rows[5] || []];
-}
-}
-function getNumericColumnDensity(rows, limit = 24) {
-const out = {};
-for (const row of (rows || []).slice(0, limit)) {
-if (!Array.isArray(row)) continue;
-row.forEach((cell, idx) => {
-const num = parseNumberSmart(cell);
-if (num != null && !isLikelyReferenceValue(cell) && !isYearCell(cell)) {
-out[idx] = (out[idx] || 0) + 1;
-}
-});
-}
-return Object.keys(out)
-.map((k) => ({ idx: Number(k), score: out[k] }))
-.sort((a, b) => b.score - a.score || a.idx - b.idx);
-}
-function detectTableLanguageDirection(rows) {
-let arabicScore = 0;
-let latinScore = 0;
-for (const row of (rows || []).slice(0, 20)) {
-if (!Array.isArray(row)) continue;
-for (const cell of row) {
-const raw = String(cell || "").trim();
-if (!raw) continue;
-if (hasArabicChars(raw)) arabicScore += 2;
-if (hasLatinChars(raw)) latinScore += 1;
-}
-}
-return {
-isArabicTable: arabicScore > latinScore,
-direction: arabicScore > latinScore ? "rtl" : "ltr",
-arabicScore,
-latinScore
-};
-}
-function detectHeaderColumns(rows) {
-const headerRows = getHeaderRows(rows);
-const language = detectTableLanguageDirection(rows);
-let latest = null;
-let previous = null;
-let currentCol = null;
-let previousCol = null;
-let noteCol = null;
-let labelCol = null;
-let headerRowIndex = null;
-let mode = "fallback";
-for (let i = 0; i < headerRows.length; i += 1) {
-const row = headerRows[i];
-if (!Array.isArray(row) || !row.length) continue;
-const yearCells = row
-.map((cell, idx) => ({ idx, year: getYearFromCell(cell) }))
-.filter((x) => Number.isFinite(x.year));
-if (yearCells.length >= 2) {
-const sortedYears = yearCells.slice().sort((a, b) => b.year - a.year || a.idx - b.idx);
-latest = sortedYears[0]?.year ?? null;
-previous = sortedYears[1]?.year ?? null;
-currentCol = yearCells.find((x) => x.year === latest)?.idx ?? null;
-previousCol = yearCells.find((x) => x.year === previous)?.idx ?? null;
-headerRowIndex = i;
-mode = "year_header";
-break;
-}
-}
-for (const row of headerRows) {
-for (let i = 0; i < row.length; i += 1) {
-if (isNoteHeaderCell(row[i])) {
-noteCol = i;
-break;
-}
-}
-if (noteCol != null) break;
-}
-if (currentCol == null || previousCol == null) {
-const numericCols = getNumericColumnDensity(rows, 24)
-.filter((x) => x.idx !== noteCol);
-if (numericCols.length >= 2) {
-const candidates = numericCols
-.slice(0, 6)
-.map((x) => x.idx)
-.sort((a, b) => a - b)
-.slice(-2);
-previousCol = candidates[0] ?? previousCol;
-currentCol = candidates[1] ?? currentCol;
-mode = mode === "fallback" ? "numeric_density" : mode;
-} else if (numericCols.length === 1) {
-currentCol = numericCols[0].idx;
-mode = mode === "fallback" ? "single_numeric_column" : mode;
-}
-}
-const maxColCount = Math.max(
-0,
-...((rows || []).map((r) => Array.isArray(r) ? r.length : 0))
-);
-const reservedCols = new Set(
-[currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x))
-);
-const freeCols = [];
-for (let c = 0; c < maxColCount; c += 1) {
-if (!reservedCols.has(c)) freeCols.push(c);
-}
-if (freeCols.length > 0) {
-labelCol = language.direction === "rtl" ? Math.max(...freeCols) : Math.min(...freeCols);
-}
-const distinctLabel = Number.isFinite(labelCol) && !reservedCols.has(labelCol);
-return {
-latest,
-previous,
-currentCol,
-previousCol,
-noteCol,
-labelCol: distinctLabel ? labelCol : null,
-hasDistinctLabelColumn: distinctLabel,
-headerRowIndex,
-resolutionMode: mode,
-direction: language.direction,
-isArabicTable: language.isArabicTable,
-languageScores: {
-arabic: language.arabicScore,
-latin: language.latinScore
-}
-;}
-}
-function buildPageContext(pageNumber, orderedPageNumbers) {
-const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
-const pageTables = getTablesForPage(pageNumber);
-const mainTable = pickMainTable(pageTables);
-const mainRows = extractTableRows(mainTable);
-const header = detectHeaderColumns(mainRows);
-const mainTableText = tableText(mainTable);
-const allText = pageTables.map(tableText).join("\n\n");
-const headerText = getHeaderRows(mainRows).map((r) => flattenValue(r)).join("\n");
-const firstRowsText = mainRows.slice(0, 10).map((r) => r.join(" | ")).join("\n");
-const lastRowsText = mainRows.slice(-10).map((r) => r.join(" | ")).join("\n");
-const structuralText = `${headerText}\n${firstRowsText}\n${lastRowsText}\n${mainTableText}\n${allText}`;
-const normalizedText = normalizeText(structuralText);
-const index = orderedPageNumbers.indexOf(pageNumber);
-const positionRatio = orderedPageNumbers.length > 1
-? index / (orderedPageNumbers.length - 1)
-;0 :
-const hasStatementTitle = containsAny(`${headerText}\n${mainTableText}\n${allText}`, [
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-ﺔﻤﺋﺎﻗ "
-ﻞﺧﺪﻟا
-," ةﺪﺣﻮﻤﻟا
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-," ﺔﯾﺪﻘﻨﻟا
-"statement of financial position",
-"income statement",
-"statement of income",
-"statement of cash flows",
-"cash flow statement",
-"statement of profit or loss",
-"statement of comprehensive income",
-"statement of profit or loss and other comprehensive income"
-;)]
-const hasYearLikeHeader = getHeaderRows(mainRows).some((r) => {
-const joined = normalizeText(r.join(" | "));
-return extractYears(joined).length >= 2 && (
-|| )" حﺎﻀﯾا "(joined.includes
-joined.includes("notes") ||
-joined.includes("note") ||
-isQuarterOrPeriodCell(joined)
-;)
-;)}
-const isLikelyIndexPage =
-containsAny(normalizedText, [
-," سﺮﮭﻔﻟا "
-لوﺪﺟ "
-," تﺎﯾﻮﺘﺤﻤﻟا
-"table of contents",
-"independent auditor",
-ﺮﯾﺮﻘﺗ "
-"ﻦﯿﻠﻘﺘﺴﻤﻟا
-تﺎﺑﺎﺴﺤﻟا
-ﻲﻌﺟاﺮﻣ
-&& )]
-containsAny(normalizedText, [
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-," ﺔﯾﺪﻘﻨﻟا
-"statement of financial position",
-"statement of profit or loss",
-"statement of cash flows"
-;)]
-const isLikelyStandardsPage =
-(
-containsAny(normalizedText, [
-تﺎﺳﺎﯿﺴﻟا "
-," ﺔﯿﺒﺳﺎﺤﻤﻟا
-ﺔﺳﺎﯿﺴﻟا "
-," ﺔﯿﺒﺳﺎﺤﻤﻟا
-"accounting policies",
-"financial instruments",
-"risk management",
-ﻞﯿﻠﺤﺗ "
-," ﺔﯿﺳﺎﺴﺤﻟا
-"liquidity risk",
-"credit risk",
-"maturity",
-"repricing",
-"ifrs",
-"international accounting standard",
-"international financial reporting standard"
-|| )]
-isLikelyStandardEffectiveDateText(normalizedText)
-&& )
-!hasStatementTitle;
-const isLikelyEquityStatement =
-getTableColumnCount(mainTable) >= 8 ||
-containsAny(normalizedText, [
-ﺔﻤﺋﺎﻗ "
-," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-ﻲﻓ
-تاﺮﯿﻐﺘﻟا
-ﺔﻤﺋﺎﻗ "
-," ﻦﯿﻤھﺎﺴﻤﻟا
-قﻮﻘﺣ
-ﻲﻓ
-تاﺮﯿﻐﺘﻟا
-"statement of changes in equity",
-"retained earnings",
-"treasury shares",
-"non-controlling interests",
-ﻲﻃﺎﯿﺘﺣا "
-," ﻲﻣﺎﻈﻧ
-ﻢﮭﺳا "
-," ﺔﻨﯾﺰﺧ
-ﻢﮭﺳأ "
-," ﺔﻨﯾﺰﺧ
-"share capital",
-"share premium"
-;)]
-const isLikelyComprehensiveIncome =
-containsAny(normalizedText, [
-ﺔﻤﺋﺎﻗ "
-," ﻞﻣﺎﺸﻟا
-ﻞﺧﺪﻟا
-ﻞﺧﺪﻟا "
-," ﻞﻣﺎﺸﻟا
-"statement of comprehensive income",
-"other comprehensive income",
-ﻞﻣﺎﺸﻟا
-ﻞﺧﺪﻟا
-دﻮﻨﺑ "
-," ﺮﺧﻻا
-"other comprehensive"
-;)]
-const isLikelyNarrativePage =
-isLikelyNarrativeLine(normalizedText) ||
-isLikelyStandardEffectiveDateText(normalizedText);
-return {
-pageNumber,
-pageMeta,
-tables: pageTables,
-mainTable,
-mainTableText,
-mainRows,
-mainRowsMeta: rowsWithMeta(mainTable),
-mainColumnCount: getTableColumnCount(mainTable),
-mainRowCount: getTableRowCount(mainTable),
-tableCount: pageTables.length,
-rowCount: pageTables.reduce((sum, t) => sum + getTableRowCount(t), 0),
-columnCount: pageTables.reduce((sum, t) => sum + getTableColumnCount(t), 0),
-text: allText,
-headerText,
-structuralText,
-normalizedText,
-numbersCount: countNumbers(allText),
-years: extractYears(allText),
-header,
-hasDistinctLabelColumn: !!header?.hasDistinctLabelColumn,
-positionRatio,
-hasStatementTitle,
-hasYearLikeHeader,
-isLikelyIndexPage,
-isLikelyStandardsPage,
-isLikelyEquityStatement,
-isLikelyComprehensiveIncome,
-isLikelyNarrativePage
-;}
-}
-const allPageNumbers = unique(
-tablesPreview
-.map((t) => pageNumFromObj(t))
-.filter((n) => Number.isFinite(n) && n > 0)
-).sort((a, b) => a - b);
-const pageContexts = allPageNumbers.map((pageNumber) =>
-buildPageContext(pageNumber, allPageNumbers)
-;)
-function getPageContextsByNumbers(pageNumbers) {
-const wanted = new Set((pageNumbers || []).filter((n) => Number.isFinite(n)));
-return pageContexts.filter((p) => wanted.has(p.pageNumber));
-}
-function isLikelyAssetRollforwardPage(pageCtx) {
-const text = normalizeText(
-[
-pageCtx?.headerText || "",
-pageCtx?.mainTableText || "",
-pageCtx?.structuralText || "",
-pageCtx?.text || ""
-].join("\n")
-;)
-if (!text) return false;
-const rollforwardHeaderHits = countDistinctPhraseHits(text, [
-ﻲﻓﺎﺻ "
-," ﺔﯾﺮﺘﻓﺪﻟا
-ﺔﻤﯿﻘﻟا
-ةرﺎﺴﺧ "
-," ﺔﻤﯿﻘﻟا
-ﻲﻓ
-ضﺎﻔﺨﻧﻻا
-ضﺎﻔﺨﻧﻻا "
-," ﺮﺋﺎﺴﺧ
-ﺔﻤﯿﻘﻟا
-ﻲﻓ
-كﻼﮭﺘﺳﻻا "
-," ﻢﻛاﺮﺘﻤﻟا
-"
-," كﻼﮭﺘﺳﻻا
-ﻊﻤﺠﻣ
-," ﺔﻔﻠﻜﺘﻟا "
-"cost",
-"accumulated depreciation",
-"accumulated amortization",
-"impairment loss",
-"net book value",
-"carrying amount"
-;)]
-const cashflowCoreHits = countDistinctPhraseHits(text, [
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻻا
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﮫﻄﺸﻧﻻا
-," ﮫﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻻا
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻻا
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-ﻲﻓﺎﺻ "
-," ﻦﻣ
-ﺞﺗﺎﻨﻟا
-ﺪﻘﻨﻟا
-ﻲﻓﺎﺻ "
-," ﻲﻓ
-مﺪﺨﺘﺴﻤﻟا
-ﺪﻘﻨﻟا
-"cash flows from operating activities",
-"cash flows from investing activities",
-"cash flows from financing activities",
-"net cash from operating activities",
-"net cash used in investing activities",
-"net cash from financing activities"
-;)]
-const hasRollforwardHeader =
-rollforwardHeaderHits.length >= 3 &&
-(pageCtx?.mainColumnCount || 0) >= 4 &&
-(pageCtx?.mainRowCount || 0) >= 8;
-const lacksCashflowLanguage = cashflowCoreHits.length === 0;
-return hasRollforwardHeader && lacksCashflowLanguage;
-}
-========================================================= //
-// Layer 3: Statement Profile Detection
-========================================================= //
-const PROFILE_CONFIG = {
-bank: {
-key: "bank",
-positive: [
-ﻞﺧﺪﻟا "
-," ﻞﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﻞﯾﻮﻤﺘﻟا "
-," تارﺎﻤﺜﺘﺳﻻاو
-"
-تﺎﻣﺪﺨﻟا
-," ﺔﯿﻓﺮﺼﻤﻟا
-مﻮﺳر
-ﻞﺧد
-ﻲﻟﺎﻤﺟا "
-," تﺎﯿﻠﻤﻌﻟا
-ﻊﺋادو "
-," ءﻼﻤﻌﻟا
-كﻮﻨﺒﻟا "
-," ﺔﯾﺰﻛﺮﻤﻟا
-تﺎﺴﺳﺆﻤﻟا "
-," ىﺮﺧﻻا
-ﺔﯿﻟﺎﻤﻟا
-ﻞﯾﻮﻤﺗ "
-," ﻒﻠﺳو
-," كﻮﻜﺻ "
-"special commission",
-"customer deposits",
-"central banks",
-"due from banks",
-"due to banks",
-"financing and advances",
-"commission income"
-,]
-negative: [
-"revenue",
-"cost of sales",
-"gross profit",
-"inventories",
-"selling and distribution expenses",
-"insurance revenue",
-"investment properties"
-]
-,}
-insurance: {
-key: "insurance",
-positive: [
-تاداﺮﯾا "
-," ﻦﯿﻣﺎﺘﻟا
-تاداﺮﯾإ "
-," ﻦﯿﻣﺄﺘﻟا
-ﺔﻣﺪﺧ "
-," ﻦﯿﻣﺎﺘﻟا
-ﺔﻣﺪﺧ "
-," ﻦﯿﻣﺄﺘﻟا
-هدﺎﻋا "
-," ﻦﯿﻣﺎﺘﻟا
-ةدﺎﻋإ "
-," ﻦﯿﻣﺄﺘﻟا
-," تﺎﺒﻟﺎﻄﻣ "
-"claims",
-"reinsurance",
-"insurance revenue",
-"insurance service result",
-"insurance finance income",
-"insurance finance expenses",
-"liability for incurred claims"
-,]
-negative: [
-"customer deposits",
-"special commission",
-"gross financing",
-"investment properties"
-]
-,}
-reit: {
-key: "reit",
-positive: [
-تارﺎﻘﻋ "
-," ﺔﯾرﺎﻤﺜﺘﺳا
-ﻞﺧد "
-," رﺎﺠﯾا
-ﻞﺧد "
-," رﺎﺠﯾإ
-تاﺪﺣو "
-," قوﺪﻨﺼﻟا
-ﮫﻟدﺎﻌﻟا
-ﮫﻤﯿﻘﻟا "
-," هﺪﺣﻮﻠﻟ
-ﺔﻟدﺎﻌﻟا
-ﺔﻤﯿﻘﻟا "
-," ةﺪﺣﻮﻠﻟ
-"investment properties",
-"rental income",
-"fair value of unit",
-"fund units",
-"real estate"
-,]
-negative: [
-"customer deposits",
-"insurance revenue",
-"gross financing and investment income"
-]
-,}
-operating_company: {
-key: "operating_company",
-positive: [
-," تاداﺮﯾﻻا "
-," تﺎﻌﯿﺒﻤﻟا "
-ﺔﻔﻠﻜﺗ "
-," تﺎﻌﯿﺒﻤﻟا
-ﺔﻔﻠﻜﺗ "
-," تاداﺮﯾﻻا
-ﻞﻤﺠﻣ "
-," ﺢﺑﺮﻟا
-ﺢﺑﺮﻟا "
-," ﻲﻠﯿﻐﺸﺘﻟا
-," نوﺰﺨﻤﻟا "
-نﻮﻨﯾﺪﻤﻟا "
-," نﻮﯾرﺎﺠﺘﻟا
-," نودرﻮﻤﻟا "
-"revenue",
-"sales",
-"cost of sales",
-"cost of revenue",
-"gross profit",
-"operating profit",
-"inventories",
-"trade receivables",
-"trade payables",
-"selling and distribution expenses",
-"general and administrative expenses"
-,]
-negative: [
-ﻊﺋادو "
-," ءﻼﻤﻌﻟا
-كﻮﻨﺒﻟا "
-," ﺔﯾﺰﻛﺮﻤﻟا
-تﺎﺴﺳﺆﻤﻟا "
-," ىﺮﺧﻻا
-ﺔﯿﻟﺎﻤﻟا
-"special commission",
-"customer deposits",
-"central banks",
-"due from banks",
-"due to banks",
-"insurance revenue"
-]
-}
-};
-function detectStatementProfile() {
-const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
-const scores = {};
-for (const key of Object.keys(PROFILE_CONFIG)) {
-const cfg = PROFILE_CONFIG[key];
-const positive = keywordHits(fullText, cfg.positive);
-const negative = keywordHits(fullText, cfg.negative);
-scores[key] = (positive * 8) - (negative * 5);
-}
-const sorted = Object.keys(scores)
-.map((k) => ({ key: k, score: scores[k] }))
-.sort((a, b) => b.score - a.score);
-const statementProfile = sorted[0]?.key || "operating_company";
-return {
-statementProfile,
-scores,
-rankedProfiles: sorted,
-reason: `${statementProfile} keywords strongest`
-};
-}
-const profileDetection = detectStatementProfile();
-const statementProfile = profileDetection.statementProfile;
-let finalSector = detectedSector;
-if (
-) {
-finalSector === "operating_company" &&
-statementProfile &&
-sectorProfiles[statementProfile]
-finalSector = statementProfile;
-}
-const finalSectorProfile =
-sectorProfiles[finalSector] || sectorProfiles.operating_company || {};
-const sectorInfo =
-finalSector !== rawSectorInfo?.sector
-? {
-...rawSectorInfo,
-sector: finalSector,
-reasons: [
-`sector overridden by statement profile: ${rawSectorInfo?.sector} -> ${finalSector}`
-]
-}
-: {
-...rawSectorInfo,
-sector: finalSector
-;}
-========================================================= //
-// Layer 4: Statement Page Ranking and Selection
-========================================================= //
-const STATEMENT_CONFIGS = {
-bank: {
-balance: {
-key: "balance",
-titles: [
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺰﻛﺮﻤﻟا "
-," ﻲﻟﺎﻤﻟا
-ﺔﻤﺋﺎﻗ "
-," ﻲﻟﺎﻤﻟا
-ﻊﺿﻮﻟا
-," ﺔﯿﻧاﺰﯿﻤﻟا "
-ﺔﯿﻧاﺰﯿﻤﻟا "
-," ﺔﯿﻣﻮﻤﻌﻟا
-"statement of financial position",
-"financial position",
-"balance sheet",
-"consolidated statement of financial position"
-,]
-structure: [
-ﻲﻟﺎﻤﺟا "
-," تادﻮﺟﻮﻤﻟا
-ﻲﻟﺎﻤﺟا "
-," تﺎﺑﻮﻠﻄﻤﻟا
-ﻲﻟﺎﻤﺟا "
-," ﮫﯿﻜﻠﻤﻟا
-قﻮﻘﺣو
-تﺎﺑﻮﻠﻄﻤﻟا
-," تادﻮﺟﻮﻤﻟا "
-," تﺎﺑﻮﻠﻄﻤﻟا "
-قﻮﻘﺣ "
-," ﮫﯿﻜﻠﻤﻟا
-ﻊﺋادو "
-," ءﻼﻤﻌﻟا
-ﺪﻘﻧ "
-," ﮫﯾﺰﻛﺮﻤﻟا
-كﻮﻨﺒﻟا
-ىﺪﻟ
-هﺪﺻراو
-هﺪﺻرا "
-," ىﺮﺧﻻا
-ﮫﯿﻟﺎﻤﻟا
-تﺎﺴﺳﺆﻤﻟاو
-كﻮﻨﺒﻟا
-ىﺪﻟ
-ﻞﯾﻮﻤﺗ "
-," ﻒﻠﺳو
-," تارﺎﻤﺜﺘﺳا "
-"total assets",
-"total liabilities",
-"total equity",
-"total liabilities and equity",
-"assets",
-"liabilities",
-"equity"
-,]
-negatives: [
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-ﻞﺧﺪﻟا "
-," ﻞﻣﺎﺸﻟا
-ﺔﻤﺋﺎﻗ "
-," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-ﻲﻓ
-تاﺮﯿﻐﺘﻟا
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-," ﺔﯾﺪﻘﻨﻟا
-"statement of income",
-"statement of comprehensive income",
-"changes in equity",
-"cash flow"
-]
-,}
-income: {
-key: "income",
-titles: [
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-ﺔﻤﺋﺎﻗ "
-ﻞﺧﺪﻟا
-," ةﺪﺣﻮﻤﻟا
-ﺔﻤﺋﺎﻗ "
-," ﺮﺋﺎﺴﺨﻟاو
-حﺎﺑرﻻا
-ﺔﻤﺋﺎﻗ "
-," ةرﺎﺴﺨﻟاو
-ﺢﺑﺮﻟا
-"statement of income",
-"income statement",
-"profit and loss",
-"profit or loss",
-"statement of profit or loss",
-"consolidated statement of profit or loss"
-,]
-structure: [
-ﻞﺧﺪﻟا "
-," ﻞﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﻞﺧﺪﻟا "
-," تارﺎﻤﺜﺘﺳﻻاو
-ﻞﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﻲﻓﺎﺻ "
-," رﺎﻤﺜﺘﺳﻻاو
-ﻞﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﻞﺧﺪﻟا
-ﻲﻓﺎﺻ "
-," ﺔﺻﺎﺨﻟا
-تﻻﻮﻤﻌﻟا
-ﻞﺧد
-تاداﺮﯾا "
-," ﺔﺻﺎﺨﻟا
-تﻻﻮﻤﻌﻟا
-"
-تﺎﻣﺪﺨﻟا
-," ﺔﯿﻓﺮﺼﻤﻟا
-مﻮﺳر
-ﻲﻓﺎﺻ "
-," تﻻﻮﻤﻌﻟاو
-بﺎﻌﺗﻻا
-ﻞﺧد
-ﻞﺧد
-ﻲﻟﺎﻤﺟا "
-," تﺎﯿﻠﻤﻌﻟا
-ﻲﻟﺎﻤﺟا "
-," تﺎﯿﻠﻤﻌﻟا
-ﻒﯾرﺎﺼﻣ
-ﻞﺧد "
-," تﺎﯿﻠﻤﻌﻟا
-ﻞﺧد "
-," ةﺎﻛﺰﻟا
-ﻞﺒﻗ
-ﺔﻨﺴﻟا
-ﻲﻓﺎﺻ "
-," ﺔﻨﺴﻟا
-ﻞﺧد
-ﺔﯿﺤﺑر "
-," ﻢﮭﺴﻟا
-"gross financing and investment income",
-"net financing and investment income",
-"fee from banking services",
-"net special commission income",
-"total operating income",
-"operating income",
-"operating profit",
-"net income",
-"earnings"
-,]
-negatives: [
-ﻞﺧﺪﻟا "
-," ﻞﻣﺎﺸﻟا
-ﺔﻤﺋﺎﻗ "
-," ﻞﻣﺎﺸﻟا
-ﻞﺧﺪﻟا
-"statement of comprehensive income",
-"other comprehensive income",
-ﺔﻤﺋﺎﻗ "
-," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-ﻲﻓ
-تاﺮﯿﻐﺘﻟا
-"changes in equity",
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-"ﺔﯾﺪﻘﻨﻟا
-]
-,}
-cashflow: {
-key: "cashflow",
-titles: [
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-," ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا
-نﺎﯿﺑ "
-," ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-," ﺔﯾﺪﻘﻨﻟا
-"cash flow statement",
-"statement of cash flows",
-"consolidated statement of cash flows"
-,]
-structure: [
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺞﺗﺎﻨﻟا
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻲﻓ
-مﺪﺨﺘﺴﻤﻟا
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺞﺗﺎﻨﻟا
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺮﯿﻐﺘﻟا "
-," ﺪﻘﻨﻟا
-ﻲﻓ
-ﺮﯿﻐﺘﻟا "
-," ﮫﻤﻜﺣﻲﻓ
-ﺎﻣو
-ﺪﻘﻨﻟا
-ﻲﻓ
-ﺪﻘﻨﻟا "
-," ﺪﻘﻨﻟا
-ﮫﺒﺷو
-ﺪﻘﻨﻟا "
-," ﮫﻤﻜﺣ
-ﻲﻓ
-ﺎﻣو
-"operating activities",
-"investing activities",
-"financing activities",
-"cash and cash equivalents",
-"cash flows from operating activities",
-"cash flows from investing activities",
-"cash flows from financing activities"
-,]
-negatives: [
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-ﻞﺧﺪﻟا "
-," ﻞﻣﺎﺸﻟا
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺔﻤﺋﺎﻗ "
-," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-ﻲﻓ
-تاﺮﯿﻐﺘﻟا
-"statement of income",
-"comprehensive income",
-"financial position",
-"changes in equity"
-]
-}
-,}
-insurance: {
-balance: {
-key: "balance",
-titles: [
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺰﻛﺮﻤﻟا "
-," ﻲﻟﺎﻤﻟا
-"statement of financial position",
-"balance sheet",
-"consolidated statement of financial position"
-,]
-structure: [
-ﺪﻘﻧ "
-," ﮫﻤﻜﺣ
-ﻲﻓ
-ﺎﻣو
-ﻊﺋادو "
-," ﻞﺟﻻ
-," تارﺎﻤﺜﺘﺳا "
-هدﺎﻋا
-ﻢﻣذ "
-," ﻦﯿﻣﺎﺘﻟا
-هدﺎﻋا
-تادﻮﺟﻮﻣ "
-," ﻦﯿﻣﺎﺘﻟا
-تﺎﺑﻮﻠﻄﻣ "
-," ﻦﯿﻣﺎﺘﻟا
-دﻮﻘﻋ
-"liabilities for incurred claims",
-"reinsurance contract assets",
-"insurance contract liabilities",
-"total assets",
-"total liabilities",
-"total equity",
-"assets",
-"liabilities",
-"equity"
-,]
-negatives: [
-"statement of cash flows",
-"statement of comprehensive income",
-"changes in equity"
-]
-,}
-income: {
-key: "income",
-titles: [
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-"statement of income",
-"income statement",
-"statement of profit or loss",
-"consolidated statement of profit or loss"
-,]
-structure: [
-تاداﺮﯾا "
-," ﻦﯿﻣﺎﺘﻟا
-تاداﺮﯾإ "
-," ﻦﯿﻣﺄﺘﻟا
-ﮫﻣﺪﺧ
-ﮫﺠﯿﺘﻧ "
-," ﻦﯿﻣﺎﺘﻟا
-ﺔﻣﺪﺧ
-ﺔﺠﯿﺘﻧ "
-," ﻦﯿﻣﺄﺘﻟا
-," تﺎﺒﻟﺎﻄﻣ "
-هدﺎﻋا "
-," ﻦﯿﻣﺎﺘﻟا
-ةدﺎﻋإ "
-," ﻦﯿﻣﺄﺘﻟا
-"insurance revenue",
-"insurance service result",
-"reinsurance",
-"claims",
-"net income",
-"operating income"
-,]
-negatives: [
-"statement of comprehensive income",
-"other comprehensive income",
-"statement of cash flows",
-"changes in equity"
-]
-,}
-cashflow: {
-key: "cashflow",
-titles: [
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-," ﺔﯾﺪﻘﻨﻟا
-"statement of cash flows",
-"cash flow statement",
-"consolidated statement of cash flows"
-,]
-structure: [
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺞﺗﺎﻨﻟا
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻲﻓ
-مﺪﺨﺘﺴﻤﻟا
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺞﺗﺎﻨﻟا
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺮﯿﻐﺘﻟا "
-," ﺪﻘﻨﻟا
-ﻲﻓ
-ﺮﯿﻐﺘﻟا "
-," ﮫﻤﻜﺣ
-ﻲﻓ
-ﺎﻣو
-ﺪﻘﻨﻟا
-ﻲﻓ
-"cash flows from operating activities",
-"cash and cash equivalents",
-"operating activities",
-"investing activities",
-"financing activities"
-,]
-negatives: [
-"statement of comprehensive income",
-"effective date",
-," ﺮﯿﯾﺎﻌﻤﻟا "
-"changes in equity"
-]
-}
-,}
-reit: {
-balance: {
-key: "balance",
-titles: [
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺰﻛﺮﻤﻟا "
-," ﻲﻟﺎﻤﻟا
-"statement of financial position",
-"balance sheet",
-"consolidated statement of financial position"
-,]
-structure: [
-تارﺎﻘﻋ "
-," ﺔﯾرﺎﻤﺜﺘﺳا
-," تادﻮﺟﻮﻣ "
-," تﺎﺑﻮﻠﻄﻣ "
-قﻮﻘﺣ "
-," ﺔﯿﻜﻠﻤﻟا
-ﻲﻟﺎﻤﺟا "
-," تادﻮﺟﻮﻤﻟا
-ﻲﻟﺎﻤﺟا "
-," تﺎﺑﻮﻠﻄﻤﻟا
-ﻲﻟﺎﻤﺟا "
-," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-"investment properties",
-"assets",
-"liabilities",
-"equity",
-"total assets",
-"total liabilities",
-"total equity"
-,]
-negatives: [
-"statement of cash flows",
-"statement of comprehensive income",
-"changes in equity"
-]
-,}
-income: {
-key: "income",
-titles: [
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-"statement of income",
-"income statement",
-"statement of profit or loss",
-"statement of comprehensive income",
-"consolidated statement of profit or loss"
-,]
-structure: [
-ﻞﺧد "
-," رﺎﺠﯾا
-ﻞﺧد "
-," رﺎﺠﯾإ
-ﻲﻓﺎﺻ "
-," ﺢﺑﺮﻟا
-ﺢﺑر "
-," ﻞﯿﻐﺸﺘﻟا
-," تاداﺮﯾا "
-"investment properties",
-"rental income",
-"operating profit",
-"net income",
-"revenue",
-"total comprehensive income",
-"comprehensive income"
-,]
-negatives: [
-"statement of cash flows",
-"changes in equity"
-]
-,}
-cashflow: {
-key: "cashflow",
-titles: [
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-," ﺔﯾﺪﻘﻨﻟا
-"statement of cash flows",
-"cash flow statement",
-"consolidated statement of cash flows"
-,]
-structure: [
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺞﺗﺎﻨﻟا
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺮﯿﻐﺘﻟا "
-," ﺪﻘﻨﻟا
-ﻲﻓ
-ﺪﻘﻨﻟا "
-," ﮫﻤﻜﺣ
-ﻲﻓ
-ﺎﻣو
-"cash flows from operating activities",
-"cash flows from investing activities",
-"cash flows from financing activities",
-"cash and cash equivalents"
-,]
-negatives: [
-"statement of comprehensive income",
-"changes in equity"
-]
-}
-,}
-operating_company: {
-balance: {
-key: "balance",
-titles: [
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺰﻛﺮﻤﻟا "
-," ﻲﻟﺎﻤﻟا
-ﺔﻤﺋﺎﻗ "
-," ﻲﻟﺎﻤﻟا
-ﻊﺿﻮﻟا
-," ﺔﯿﻧاﺰﯿﻤﻟا "
-ﺔﯿﻧاﺰﯿﻤﻟا "
-," ﺔﯿﻣﻮﻤﻌﻟا
-"statement of financial position",
-"balance sheet",
-"consolidated statement of financial position"
-,]
-structure: balanceKeywords.length ? balanceKeywords : [
-" ,"
-تادﻮﺟﻮﻤﻟا "
-," تﺎﻣاﺰﺘﻟﻻا
-تﺎﺑﻮﻠﻄﻤﻟا
-" ,"
-لﻮﺻﻻا
-" ,"
-لﻮﺻﻷا
-" ,"
-قﻮﻘﺣ "
-," تادﻮﺟﻮﻤﻟا
-ﻲﻟﺎﻤﺟا
-" ,"
-تادﻮﺟﻮﻤﻟا
-ﻲﻟﺎﻤﺟإ
-" ,"
-ﺔﯿﻜﻠﻤﻟا
-" ,"
-" ,"
-," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-تﺎﺑﻮﻠﻄﻤﻟا
-تﺎﺑﻮﻠﻄﻤﻟا
-ﻲﻟﺎﻤﺟإ "
-ﻲﻟﺎﻤﺟإ
-ﻲﻟﺎﻤﺟا
-ﻲﻟﺎﻤﺟا "
-,"assets", "liabilities", "equity" ," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-"total assets", "total liabilities", "total equity"
-,]
-negatives: [
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-ﺔﻤﺋﺎﻗ
-" ,"
-ﻞﻣﺎﺸﻟا
-ﻞﺧﺪﻟا
-" ,"
-ﻞﺧﺪﻟا
-," ﺔﯾﺪﻘﻨﻟا
-ﺔﻤﺋﺎﻗ "
-,"statement of income" ," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-ﻲﻓ
-تاﺮﯿﻐﺘﻟا
-"statement of comprehensive income", "statement of cash flows",
-"changes in equity"
-]
-,}
-income: {
-key: "income",
-titles: [
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-ﺔﻤﺋﺎﻗ "
-," ﺮﺋﺎﺴﺨﻟاو
-حﺎﺑرﻷا
-ﺔﻤﺋﺎﻗ "
-," ﺮﺋﺎﺴﺨﻟاوحﺎﺑرﻻا
-ﺔﻤﺋﺎﻗ "
-," ةرﺎﺴﺨﻟاو
-ﺢﺑﺮﻟا
-"statement of income",
-"income statement",
-"statement of profit or loss",
-"profit or loss",
-"consolidated statement of profit or loss"
-,]
-structure: incomeKeywords.length ? incomeKeywords : [
-ﺔﻔﻠﻜﺗ
-" ,"
-" ,"
-," تﺎﻌﯿﺒﻤﻟا
-تاداﺮﯾﻻا "
-تﺎﻌﯿﺒﻤﻟا
-تاداﺮﯾﻹا
-" ,"
-ﺔﻔﻠﻜﺗ "
-ﻞﻤﺠﻣ
-" ,"
-," ﺢﺑﺮﻟا
-تاداﺮﯾﻹا
-ﺔﻔﻠﻜﺗ
-" ,"
-تاداﺮﯾﻻا
-ﺢﺑﺮﻟا "
-," ﺢﺑﺮﻟا
-ﻲﻓﺎﺻ
-" ,"
-ﻲﻠﯿﻐﺸﺘﻟا
-ﻞﺧﺪﻟا
-" ,"
-ﻲﻠﯿﻐﺸﺘﻟا
-,"reeﺎﺻ "
-nue", "sales", "cost osales" ,"gross profit", "operating profit", "operating income",
-"net profit", "net income"
-,]
-negatives: [
-ﻞﺧﺪﻟا "
-," ﻞﻣﺎﺸﻟا
-ﻞﺧﺪﻟا
-ﺔﻤﺋﺎﻗ
-" ,"
-ﻞﻣﺎﺸﻟا
-"statement of comprehensive income", "other comprehensive income",
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-ﺔﻤﺋﺎﻗ
-" ,"
-," ﺔﯾﺪﻘﻨﻟا
-ﻲﻟﺎﻤﻟا
-ﺰﻛﺮﻤﻟا
-"changes in equity", "statement of cash flows"
-]
-,}
-cashflow: {
-key: "cashflow",
-titles: [
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-," ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا
-نﺎﯿﺑ "
-," ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-," ﺔﯾﺪﻘﻨﻟا
-"cash flow statement",
-"statement of cash flows",
-"consolidated statement of cash flows"
-,]
-structure: cashflowKeywords.length ? cashflowKeywords : [
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﺔﻄﺸﻧﻻا
-ﻲﻓﺎﺻ "
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺪﻘﻨﻟا
-ﻲﻓ
-ﺎﻣو
-ﺪﻘﻨﻟا
-ﻲﻓ
-ﺮﯿﻐﺘﻟا
-" ,"
-ﺪﻘﻨﻟا
-," ﮫﻤﻜﺣ
-ﺮﯿﻐﺘﻟا "
-ﻲﻓ
-ﺪﻘﻨﻟا "
-,"caﻲﻓ
-و
-h flows from operating actities" ,""cash flows from investing activities",
-"cash flows from financing activities",
-"cash and cash equivalents"
-,]
-negatives: [
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-ﺔﻤﺋﺎﻗ
-" ,"
-ﻞﻣﺎﺸﻟا
-ﻞﺧﺪﻟا
-" ,"
-ﻞﺧﺪﻟا
-," ﻲﻟﺎﻤﻟا
-ﺔﻤﺋﺎﻗ "
-,"statement of income" ," ﺔﯿﻜﻠﻤﻟا
-قﻮﻘﺣ
-ﻲﻓ
-تاﺮﯿﻐﺘﻟا
-"comprehensive income", "financial position", "changes in equity"
-]
-}
-}
-;}
-const ACTIVE_STATEMENT_CONFIGS =
-STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
-function mergeStatementConfigWithSectorKeywords(kind, cfg) {
-const sectorStructure =
-kind === "income"
-? incomeKeywords
-: kind === "balance"
-? balanceKeywords
-: cashflowKeywords;
-return {
-...cfg,
-structure: unique([
-...(cfg?.structure || []),
-...(sectorStructure || [])
-])
-};
-function getHeaderSearchText(pageCtx) {
-return flattenValue(pageCtx?.header || "");
-}
-}
-function getPageStatementText(pageCtx) {
-const firstRowsText = (pageCtx?.mainRows || [])
-.slice(0, 10)
-.map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-.join("\n");
-return [
-getHeaderSearchText(pageCtx),
-pageCtx?.headerText || "",
-firstRowsText,
-pageCtx?.mainTableText || "",
-pageCtx?.text || "",
-pageCtx?.structuralText || ""
-].join("\n");
-}
-function statementRankScore(pageCtx, cfg, kind) {
-let score = 0;
-const reasons = [];
-const signals = {};
-if (!pageCtx) {
-return { score, reasons, signals };
-}
-const headerText = getHeaderSearchText(pageCtx);
-const wholeText = getPageStatementText(pageCtx);
-const firstRowsText = (pageCtx.mainRows || [])
-.slice(0, 6)
-.map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-.join("\n");
-const pageText = normalizeText(
-[
-pageCtx.text || "",
-pageCtx.headerText || "",
-pageCtx.mainTableText || "",
-firstRowsText
-].join("\n")
-);
-const titleHitsHeader = countDistinctPhraseHits(
-`${headerText}\n${pageCtx.headerText || ""}\n${pageCtx.mainTableText || ""}`,
-cfg.titles || []
-);
-const titleHitsAll = countDistinctPhraseHits(wholeText, cfg.titles || []);
-const structureHitsAll = countDistinctPhraseHits(wholeText, cfg.structure || []);
-const structureHitsFirstRows = countDistinctPhraseHits(
-`${firstRowsText}\n${pageCtx.mainTableText || ""}`,
-cfg.structure || []
-);
-const negativeHits = countDistinctPhraseHits(wholeText, cfg.negatives || []);
-signals.titleHitsHeader = titleHitsHeader;
-signals.titleHitsAll = titleHitsAll;
-signals.structureHitsAll = structureHitsAll;
-signals.structureHitsFirstRows = structureHitsFirstRows;
-signals.negativeHits = negativeHits;
-if (titleHitsHeader.length > 0) {
-const base = titleHitsHeader.length * 90;
-const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
-const s = Math.round(base * multiplier);
-score += s;
-reasons.push(`titleHeader:+${s}`);
-} else if (titleHitsAll.length > 0) {
-const base = titleHitsAll.length * 40;
-const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
-const s = Math.round(base * multiplier);
-score += s;
-reasons.push(`titleAll:+${s}`);
-}
-if (structureHitsAll.length > 0) {
-const s = Math.min(structureHitsAll.length, 10) * 16;
-score += s;
-reasons.push(`structureAll:+${s}`);
-}
-if (structureHitsFirstRows.length > 0) {
-const s = Math.min(structureHitsFirstRows.length, 6) * 18;
-score += s;
-reasons.push(`structureFirstRows:+${s}`);
-}
-const structureSupportCount =
-structureHitsAll.length + structureHitsFirstRows.length;
-if (structureSupportCount >= 5 && pageCtx.positionRatio <= 0.35) {
-score += 25;
-reasons.push("strongStructureBonus:+25");
-}
-if (pageCtx.hasYearLikeHeader) {
-const s = structureSupportCount > 0 ? 22 : 10;
-score += s;
-reasons.push(`yearHeader:+${s}`);
-}
-if (pageCtx.years && pageCtx.years.length >= 2) {
-const s = structureSupportCount > 0 ? 14 : 6;
-score += s;
-reasons.push(`yearsDetected:+${s}`);
-} else if (pageCtx.years && pageCtx.years.length === 1) {
-const s = structureSupportCount > 0 ? 5 : 2;
-score += s;
-reasons.push(`singleYearDetected:+${s}`);
-}
-if (pageCtx.numbersCount > 20) {
-const s = structureSupportCount > 0 ? 10 : 4;
-score += s;
-reasons.push(`numbersDensity:+${s}`);
-}
-if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
-const s = structureSupportCount > 0 ? 8 : 3;
-score += s;
-reasons.push(`rowRange:+${s}`);
-}
-if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
-const s = structureSupportCount > 0 ? 8 : 3;
-score += s;
-reasons.push(`columnRange:+${s}`);
-}
-if (pageCtx.positionRatio <= 0.30) {
-const s = structureSupportCount > 0 ? 8 : 3;
-score += s;
-reasons.push(`earlyPage:+${s}`);
-} else if (pageCtx.positionRatio >= 0.35) {
-score -= 180;
-reasons.push("latePagePenalty:-180");
-}
-if (pageCtx.isLikelyIndexPage) {
-score -= 220;
-reasons.push("indexPenalty:-220");
-}
-if (pageCtx.isLikelyStandardsPage) {
-score -= 190;
-reasons.push("standardsPenalty:-190");
-}
-if (pageCtx.isLikelyNarrativePage) {
-score -= 170;
-reasons.push("narrativePenalty:-170");
-}
-if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
-score -= 140;
-reasons.push("comprehensiveIncomePenalty:-140");
-}
-if (kind !== "income" && pageCtx.isLikelyComprehensiveIncome) {
-score -= 60;
-reasons.push("crossStatementComprehensivePenalty:-60");
-}
-if (pageCtx.isLikelyEquityStatement) {
-score -= 120;
-reasons.push("equityStatementPenalty:-120");
-}
-if (negativeHits.length > 0) {
-const s = Math.min(negativeHits.length, 8) * 22;
-score -= s;
-reasons.push(`negativeHits:-${s}`);
-}
-const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
-const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
-if (hasNoTitle) {
-const penalty = kind === "balance" ? 90 : 170;
-score -= penalty;
-reasons.push(`noTitlePenalty:-${penalty}`);
-}
-if (hasNoTitle && hasNoStructure) {
-const penalty = kind === "balance" ? 140 : 260;
-score -= penalty;
-reasons.push(`noTitleNoStructure:-${penalty}`);
-}
-const isTitleOnlyCoverPage =
-(titleHitsHeader.length > 0 || titleHitsAll.length > 0) &&
-hasNoStructure &&
-(!pageCtx.years || pageCtx.years.length === 0) &&
-pageCtx.mainColumnCount <= 2 &&
-pageCtx.mainRowCount <= 10;
-if (isTitleOnlyCoverPage) {
-score -= 180;
-reasons.push("titleOnlyCoverPagePenalty:-180");
-}
-if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
-score -= 120;
-reasons.push("cashflowTitleWithoutStructurePenalty:-120");
-}
-if (
-kind === "cashflow" &&
-hasNoTitle &&
-hasNoStructure &&
-pageCtx.mainColumnCount === 3 &&
-pageCtx.mainRowCount >= 40 &&
-(pageCtx.years || []).length >= 2
-{ )
-score += 40;
-reasons.push("cashflowTall3ColFallbackBonus:+40");
-}
-const auditNarrativeHits =
-ﺮﻣا "(pageText.includes
-|| )" ﮫﻌﺟاﺮﻤﻟا
-رﻮﻣا "(pageText.includes
-|| )" ﮫﻌﺟاﺮﻤﻟا
-ءﺎﻨﺛا
-ﮫﯿﻔﯿﻛ "(pageText.includes
-|| )" ﺎﻨﺘﻌﺟاﺮﻣ
-ﺮﻣﻻا
-اﺬھ
-ﮫﺠﻟﺎﻌﻣ
-|| )" ﻊﺟاﺮﻤﻟا "(pageText.includes
-ﺮﯾﺮﻘﺗ "(pageText.includes
-|| )" ﻊﺟاﺮﻤﻟا
-pageText.includes("key audit") ||
-pageText.includes("key audit matters") ||
-pageText.includes("auditor") ||
-pageText.includes("independent auditor");
-if (auditNarrativeHits) {
-score -= 220;
-reasons.push("auditNarrativePenalty:-220");
-}
-if (kind === "cashflow" && isLikelyAssetRollforwardPage(pageCtx)) {
-score -= 260;
-reasons.push("assetRollforwardPenalty:-260");
-}
-return {
-score,
-reasons,
-signals
-};
-}
-function rankPages(kind) {
-const cfg = mergeStatementConfigWithSectorKeywords(
-kind,
-ACTIVE_STATEMENT_CONFIGS[kind]
-);
-return pageContexts
-.map((pageCtx) => {
-const ranked = statementRankScore(pageCtx, cfg, kind);
-return {
-pageNumber: pageCtx.pageNumber,
-score: ranked.score,
-reasons: ranked.reasons,
-signals: ranked.signals,
-years: pageCtx.years,
-numbersCount: pageCtx.numbersCount,
-rowCount: pageCtx.rowCount,
-tableCount: pageCtx.tableCount,
-mainColumnCount: pageCtx.mainColumnCount,
-mainRowCount: pageCtx.mainRowCount,
-positionRatio: pageCtx.positionRatio,
-header: pageCtx.header
-};
-})
-.sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
-}
-const rankedBalance = rankPages("balance");
-const rankedIncome = rankPages("income");
-const rankedCashflow = rankPages("cashflow");
-function normalizeRankingScores(list) {
-if (!Array.isArray(list) || !list.length) return [];
-const maxScore = Math.max(...list.map((x) => x.score));
-const minScore = Math.min(...list.map((x) => x.score));
-const range = Math.max(1, maxScore - minScore);
-return list.map((item) => ({
-...item,
-}));
-normalizedScore: Math.round(((item.score - minScore) / range) * 100)
-}
-const calibratedIncome = normalizeRankingScores(rankedIncome);
-const calibratedBalance = normalizeRankingScores(rankedBalance);
-const calibratedCashflow = normalizeRankingScores(rankedCashflow);
-function computeConfidence(rankList) {
-if (!rankList || rankList.length < 2) return 0.5;
-const top = rankList[0].score;
-const second = rankList[1].score;
-const diff = top - second;
-if (diff > 200) return 0.95;
-if (diff > 120) return 0.9;
-if (diff > 60) return 0.8;
-if (diff > 30) return 0.7;
-if (diff > 10) return 0.6;
-return 0.5;
-}
-const confidence = {
-income: computeConfidence(rankedIncome),
-balance: computeConfidence(rankedBalance),
-cashflow: computeConfidence(rankedCashflow)
-};
-let incomePage = rankedIncome[0]?.pageNumber || null;
-let balancePage = rankedBalance[0]?.pageNumber || null;
-let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
-function topPages(list, limit = 3) {
-return (list || []).slice(0, limit).map((x) => x.pageNumber);
-}
-const strongIncomePages = new Set(topPages(rankedIncome, 3));
-const strongBalancePages = new Set(topPages(rankedBalance, 3));
-const strongCashflowPages = new Set(topPages(rankedCashflow, 3));
-function findAlternative(list, blockedPages) {
-return (list || []).find((p) => !blockedPages.has(p.pageNumber))?.pageNumber || null;
-}
-function getPageContextByNumber(pageNumber) {
-return pageContexts.find((p) => p.pageNumber === pageNumber) || null;
-}
-function hasReliableCashflowEvidence(rankedEntry, pageCtx) {
-if (!rankedEntry || !pageCtx) return false;
-if (isLikelyAssetRollforwardPage(pageCtx)) return false;
-if (pageCtx.isLikelyIndexPage) return false;
-if (pageCtx.isLikelyNarrativePage) return false;
-const header = pageCtx?.header || {};
-const resolutionMode = String(header?.resolutionMode || "").trim();
-const titleHitsCount =
-(rankedEntry?.signals?.titleHitsHeader?.length || 0) +
-(rankedEntry?.signals?.titleHitsAll?.length || 0);
-const structureHitsCount =
-(rankedEntry?.signals?.structureHitsAll?.length || 0) +
-(rankedEntry?.signals?.structureHitsFirstRows?.length || 0);
-const cashflowCoreHits = countDistinctPhraseHits(
-getPageStatementText(pageCtx),
-[
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻻا
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﮫﻄﺸﻧﻻا
-," ﮫﯿﻠﯿﻐﺸﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻻا
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯾرﺎﻤﺜﺘﺳﻻا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻻا
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-ﺔﻄﺸﻧﻷا
-," ﺔﯿﻠﯾﻮﻤﺘﻟا
-ﻦﻣ
-ﺔﯾﺪﻘﻨﻟا
-ﻲﻓﺎﺻ "
-," ﻦﻣ
-ﺞﺗﺎﻨﻟا
-ﺪﻘﻨﻟا
-ﻲﻓﺎﺻ "
-," ﻲﻓ
-مﺪﺨﺘﺴﻤﻟا
-ﺪﻘﻨﻟا
-ﺔﯾﺪﻘﻨﻟا "
-," ﺎﮭﻟدﺎﻌﯾ
-ﺎﻣو
-ﺪﻘﻨﻟا "
-," ﮫﻤﻜﺣ
-ﻲﻓ
-ﺎﻣو
-"cash flows from operating activities",
-"cash flows from investing activities",
-"cash flows from financing activities",
-"net cash from operating activities",
-"net cash used in investing activities",
-"net cash from financing activities",
-"cash and cash equivalents"
-]
-;)
-const topRecoveredLabels = extractRowsFromPageContext(pageCtx, "cashflow")
-.slice(0, 5)
-.map((row) => normalizeLabelForRow(row?.label))
-.filter(Boolean);
-const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
-return (
-hasLetterChars(label) &&
-isAcceptableFinancialLabel(label, "cashflow") &&
-!isLikelyMetaOrHeaderLabel(label) &&
-!isLikelyStatementTitleRow(label, "cashflow")
-;)
-}).length;
-const weakSingleNumericColumn =
-resolutionMode === "single_numeric_column" &&
-titleHitsCount === 0 &&
-structureHitsCount === 0 &&
-cashflowCoreHits.length === 0;
-if (weakSingleNumericColumn) {
-return false;
-}
-if (titleHitsCount > 0 || structureHitsCount > 0 || cashflowCoreHits.length > 0) {
-return true;
-if ((rankedEntry?.score ?? -999) >= 80 && validRecoveredLabelCount >= 3) {
-return true;
-}
-}
-return false;
-}
-function getNeighborPageContext(basePageNumber, offset = 1) {
-if (!Number.isFinite(basePageNumber)) return null;
-return getPageContextByNumber(basePageNumber + offset);
-}
-function getContinuationConfig(kind) {
-const cfg = mergeStatementConfigWithSectorKeywords(
-kind,
-ACTIVE_STATEMENT_CONFIGS[kind]
-);
-return {
-titles: cfg?.titles || [],
-structure: cfg?.structure || [],
-negatives: cfg?.negatives || []
-};
-}
-function continuationScore(candidateCtx, kind) {
-if (!candidateCtx) {
-return { score: -999, reasons: [] };
-}
-const cfg = getContinuationConfig(kind);
-const text = getPageStatementText(candidateCtx);
-const firstRowsText = (candidateCtx.mainRows || [])
-.slice(0, 8)
-.map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
-.join("\n");
-const titleHits = countDistinctPhraseHits(
-`${candidateCtx.headerText || ""}\n${candidateCtx.mainTableText || ""}`,
-cfg.titles
-);
-const structureHitsAll = countDistinctPhraseHits(text, cfg.structure);
-const structureHitsFirstRows = countDistinctPhraseHits(firstRowsText, cfg.structure);
-const negativeHits = countDistinctPhraseHits(text, cfg.negatives);
-let score = 0;
-const reasons = [];
-if (structureHitsAll.length > 0) {
-const s = Math.min(structureHitsAll.length, 8) * 18;
-score += s;
-reasons.push(`structureAll:+${s}`);
-}
-if (titleHits.length === 0 && structureHitsFirstRows.length === 0) {
-score -= 70;
-reasons.push("noTitleNoFirstRows:-70");
-}
-if (structureHitsFirstRows.length > 0) {
-const s = Math.min(structureHitsFirstRows.length, 5) * 20;
-score += s;
-reasons.push(`structureFirstRows:+${s}`);
-}
-if (titleHits.length > 0) {
-const base = Math.min(titleHits.length, 2) * 20;
-const multiplier = structureHitsAll.length > 0 || structureHitsFirstRows.length > 0 ? 1 : 0.5;
-const s = Math.round(base * multiplier);
-score += s;
-reasons.push(`title:+${s}`);
-}
-if (candidateCtx.hasYearLikeHeader) {
-score += 15;
-reasons.push("yearHeader:+15");
-}
-if ((candidateCtx.years || []).length >= 2) {
-score += 12;
-reasons.push("years:+12");
-}
-if (candidateCtx.numbersCount >= 12) {
-score += 12;
-reasons.push("numbers:+12");
-}
-if (candidateCtx.mainRowCount >= 6) {
-score += 10;
-reasons.push("rowCount:+10");
-}
-if (candidateCtx.mainColumnCount >= 3) {
-score += 8;
-reasons.push("columnCount:+8");
-}
-if (candidateCtx.isLikelyIndexPage) {
-score -= 220;
-reasons.push("indexPenalty:-220");
-}
-if (candidateCtx.isLikelyStandardsPage) {
-score -= 180;
-reasons.push("standardsPenalty:-180");
-}
-if (candidateCtx.isLikelyNarrativePage) {
-score -= 150;
-reasons.push("narrativePenalty:-150");
-}
-if (candidateCtx.isLikelyEquityStatement) {
-score -= 120;
-reasons.push("equityPenalty:-120");
-}
-if (kind === "income" && candidateCtx.isLikelyComprehensiveIncome) {
-score -= 120;
-reasons.push("comprehensivePenalty:-120");
-}
-if (negativeHits.length > 0) {
-const s = Math.min(negativeHits.length, 6) * 22;
-score -= s;
-reasons.push(`negativeHits:-${s}`);
-}
-return { score, reasons };
-}
-function pageLooksLikeOtherStatementTitle(pageCtx, currentKind) {
-if (!pageCtx) return false;
-const kinds = ["income", "balance", "cashflow"].filter((k) => k !== currentKind);
-const titleText = [
-pageCtx.headerText || "",
-...(pageCtx.mainRows || [])
-.slice(0, 3)
-.map((r) => Array.isArray(r) ? r.join(" | ") : "")
-].join("\n");
-for (const kind of kinds) {
-const cfg = mergeStatementConfigWithSectorKeywords(
-kind,
-ACTIVE_STATEMENT_CONFIGS[kind]
-const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
-if (otherTitleHits.length >= 1) {
-return true;
-);
-}
-}
-return false;
-}
-function looksLikeSameStatement(baseCtx, candidateCtx) {
-if (!baseCtx || !candidateCtx) return false;
-let score = 0;
-if (Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1) score += 20;
-if (Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20) score += 20;
-if (Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20) score += 20;
-if (baseCtx.years && candidateCtx.years && baseCtx.years.some((y) => candidateCtx.years.includes(y))) score += 20;
-if ((baseCtx.mainRowCount || 0) > 5 && (candidateCtx.mainRowCount || 0) > 5) score += 20;
-return score >= 60;
-}
-function detectStatementContinuation(basePageNumber, kind) {
-const baseCtx = getPageContextByNumber(basePageNumber);
-if (!baseCtx) {
-return {
-basePage: basePageNumber || null,
-pages: Number.isFinite(basePageNumber) ? [basePageNumber] : [],
-details: {
-previousPage: null,
-nextPage: null
-}
-};
-}
-const prevCtx = getNeighborPageContext(basePageNumber, -1);
-const nextCtx = getNeighborPageContext(basePageNumber, 1);
-const prevEval = continuationScore(prevCtx, kind);
-const nextEval = continuationScore(nextCtx, kind);
-const pages = [basePageNumber];
-if (
-prevCtx &&
-prevEval.score >= 55 &&
-!pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
-(looksLikeSameStatement(baseCtx, prevCtx) || prevEval.score >= 120)
-) {
-pages.unshift(prevCtx.pageNumber);
-}
-if (
-nextCtx &&
-nextEval.score >= 65 &&
-!pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
-(looksLikeSameStatement(baseCtx, nextCtx) || nextEval.score >= 120)
-) {
-pages.push(nextCtx.pageNumber);
-}
-return {
-basePage: basePageNumber,
-pages: unique(pages).sort((a, b) => a - b),
-details: {
-acceptedPrevious: pages.includes(prevCtx?.pageNumber),
-acceptedNext: pages.includes(nextCtx?.pageNumber),
-previousPage: prevCtx
-? {
-pageNumber: prevCtx.pageNumber,
-score: prevEval.score,
-reasons: prevEval.reasons
-}
-: null,
-nextPage: nextCtx
-? {
-pageNumber: nextCtx.pageNumber,
-score: nextEval.score,
-reasons: nextEval.reasons
-}
-: null
-}
-};
-}
-if (incomePage && balancePage && incomePage === balancePage) {
-const incomeScore = rankedIncome.find((p) => p.pageNumber === incomePage)?.score ?? -999999;
-const balanceScore = rankedBalance.find((p) => p.pageNumber === balancePage)?.score ?? -999999;
-if (balanceScore >= incomeScore) {
-incomePage =
-findAlternative(rankedIncome, new Set([balancePage, cashFlowPage].filter(Boolean))) || incomePage;
-} else {
-balancePage =
-findAlternative(
-rankedBalance,
-new Set([incomePage, ...strongIncomePages, cashFlowPage].filter(Boolean))
-) || balancePage;
-}
-}
-if (incomePage && cashFlowPage && incomePage === cashFlowPage) {
-cashFlowPage =
-findAlternative(
-rankedCashflow,
-new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
-) || cashFlowPage;
-}
-if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
-cashFlowPage =
-findAlternative(
-rankedCashflow,
-new Set([balancePage, incomePage, ...strongBalancePages].filter(Boolean))
-) || cashFlowPage;
-}
-if (incomePage && strongCashflowPages.has(incomePage) && !strongIncomePages.has(incomePage)) {
-incomePage =
-findAlternative(
-rankedIncome,
-) || incomePage;
-new Set([balancePage, cashFlowPage, ...strongCashflowPages].filter(Boolean))
-}
-if (cashFlowPage && strongIncomePages.has(cashFlowPage) && !strongCashflowPages.has(cashFlowPage)) {
-cashFlowPage =
-findAlternative(
-rankedCashflow,
-new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
-) || cashFlowPage;
-}
-const cashflowSelectionDiagnostics = (() => {
-const selectedEntry = rankedCashflow.find((p) => p.pageNumber === cashFlowPage) || null;
-const selectedPageCtx = getPageContextByNumber(cashFlowPage);
-const reliableEntries = rankedCashflow.filter((entry) =>
-hasReliableCashflowEvidence(entry, getPageContextByNumber(entry.pageNumber))
-);
-if (!selectedEntry || !selectedPageCtx) {
-return {
-reliableCandidateFound: false,
-selectedPageReliable: false,
-reason: "cashflow_page_not_selected",
-topReliablePages: []
-};
-}
-const selectedReliable = hasReliableCashflowEvidence(selectedEntry, selectedPageCtx);
-if (selectedReliable) {
-return {
-reliableCandidateFound: true,
-selectedPageReliable: true,
-reason: null,
-topReliablePages: reliableEntries.slice(0, 5).map((x) => x.pageNumber)
-};
-}
-const fallbackReliable = reliableEntries.find((entry) =>
-![incomePage, balancePage].filter(Boolean).includes(entry.pageNumber)
-) || reliableEntries[0] || null;
-if (fallbackReliable) {
-cashFlowPage = fallbackReliable.pageNumber;
-return {
-reliableCandidateFound: true,
-selectedPageReliable: false,
-replacedWithReliablePage: fallbackReliable.pageNumber,
-originalSelectedPage: selectedEntry.pageNumber,
-reason: "cashflow_false_positive_replaced",
-topReliablePages: reliableEntries.slice(0, 5).map((x) => x.pageNumber)
-};
-}
-cashFlowPage = null;
-return {
-reliableCandidateFound: false,
-selectedPageReliable: false,
-originalSelectedPage: selectedEntry.pageNumber,
-reason: "cashflow_no_reliable_candidate",
-topReliablePages: []
-};
-})();
-const incomeContinuation = detectStatementContinuation(incomePage, "income");
-const balanceContinuation = detectStatementContinuation(balancePage, "balance");
-const cashflowContinuation = detectStatementContinuation(cashFlowPage, "cashflow");
-const statementPageRanges = {
-income: incomeContinuation.pages,
-balance: balanceContinuation.pages,
-cashflow: cashflowContinuation.pages
-};
-const statementSelectionResolved = {
-income: {
-basePage: incomePage,
-pages: statementPageRanges.income,
-pageContexts: getPageContextsByNumbers(statementPageRanges.income)
-},
-balance: {
-basePage: balancePage,
-pages: statementPageRanges.balance,
-pageContexts: getPageContextsByNumbers(statementPageRanges.balance)
-},
-cashflow: {
-basePage: cashFlowPage,
-pages: statementPageRanges.cashflow,
-pageContexts: getPageContextsByNumbers(statementPageRanges.cashflow)
-}
-};
-// =========================================================
-// Layer 5: Raw Financial Row Extraction
-// =========================================================
-function getCell(row, idx) {
-if (!Array.isArray(row)) return "";
-if (!Number.isFinite(idx)) return "";
-return String(row[idx] == null ? "" : row[idx]).trim();
-}
-function pickFallbackLabelCell(row, header, statementType) {
-if (!Array.isArray(row) || !row.length) return "";
-const cells = row.map((cell, idx) => ({
-idx,
-}));
-cell: String(cell == null ? "" : cell).trim()
-const reserved = new Set(
-[
-header?.currentCol,
-header?.previousCol
-].filter((x) => Number.isFinite(x))
-);
-const textCandidates = cells
-.filter((x) => !reserved.has(x.idx))
-.filter((x) => isLikelyTextLabelCell(x.cell))
-.filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
-.filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
-.filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType));
-if (textCandidates.length > 0) {
-const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
-return rtlPick?.cell || "";
-}
-const fallbackFromAnyText = cells
-.filter((x) => !reserved.has(x.idx))
-.filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
-.filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
-.filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
-.filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType))
-.sort((a, b) => b.idx - a.idx)[0];
-return fallbackFromAnyText?.cell || "";
-}
-function normalizeLabelForRow(label) {
-return cleanupLabel(
-String(label || "")
-.replace(/\.+$/g, "")
-.replace(/\s{2,}/g, " ")
-.trim()
-;)
-}
-function isLikelyStatementTitleRow(label, statementType) {
-const s = normalizeText(label);
-if (!s) return false;
-const titleMap = {
-income: [
-ﺔﻤﺋﺎﻗ "
-," ﻞﺧﺪﻟا
-ﺔﻤﺋﺎﻗ "
-," ﺮﺋﺎﺴﺨﻟاو
-حﺎﺑرﻻا
-ﺔﻤﺋﺎﻗ "
-," ﺮﺋﺎﺴﺨﻟاو
-حﺎﺑرﻷا
-ﺔﻤﺋﺎﻗ "
-," ﻞﻣﺎﺸﻟا
-ﻞﺧﺪﻟا
-"statement of income",
-"income statement",
-"statement of profit or loss",
-"statement of comprehensive income",
-"profit or loss"
-,]
-balance: [
-ﺔﻤﺋﺎﻗ "
-ﺰﻛﺮﻤﻟا
-," ﻲﻟﺎﻤﻟا
-ﺰﻛﺮﻤﻟا "
-," ﻲﻟﺎﻤﻟا
-ﺔﻤﺋﺎﻗ "
-," ﻲﻟﺎﻤﻟا
-ﻊﺿﻮﻟا
-"statement of financial position",
-"balance sheet",
-"financial position"
-,]
-cashflow: [
-ﺔﻤﺋﺎﻗ "
-تﺎﻘﻓﺪﺘﻟا
-," ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا
-نﺎﯿﺑ "
-," ﺔﯾﺪﻘﻨﻟا
-تﺎﻘﻓﺪﺘﻟا "
-," ﺔﯾﺪﻘﻨﻟا
-"statement of cash flows",
-"cash flow statement"
-]
-;}
-return (titleMap[statementType] || []).some((x) => s.includes(normalizeText(x)));
-}
-function isLikelyMetaOrHeaderLabel(label) {
+ 
+    function isAcceptableFinancialLabel(label, statementType) {
+      const cleanLabel = cleanupLabel(label);
+      const normalizedLabel = normalizeText(cleanLabel);
+ 
+      if (!cleanLabel) return false;
+ 
+      const trimmed = cleanLabel.trim();
+      const normalized = (normalizedLabel || "").trim();
+ 
+      if (!hasLetterChars(trimmed)) return false;
+      if (normalized.length <= 2) return false;
+      if (/^[0-9٠-٩\s,،٫.\-()]+$/.test(trimmed)) return false;
+      if (/^(19|20)\d{2}$/.test(trimmed)) return false;
+      if (/^(١٩|٢٠)[٠-٩]{2}$/.test(trimmed)) return false;
+ 
+      if (
+        /^(19|20)\d{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed) ||
+        /^(١٩|٢٠)[٠-٩]{2}\s*(ريال|sar|usd|دولار)/i.test(trimmed)
+      ) {
+        return false;
+      }
+ 
+      if (isLikelyCurrencyOrUnitHeader(trimmed)) return false;
+      if (/^[0-9٠-٩]{1,3}[\s,،٫.\-][0-9٠-٩]{1,3}$/.test(trimmed)) return false;
+      if (/^[0-9٠-٩]+$/.test(trimmed)) return false;
+ 
+      const words = normalized.split(/\s+/).filter(Boolean);
+      if (words.length === 1 && normalized.length < 4) return false;
+ 
+      if (isLikelyReferenceValue(trimmed)) return false;
+      if (isLikelyMetaOrHeaderLabel(trimmed)) return false;
+      if (isLikelyStatementTitleRow(trimmed, statementType)) return false;
+      if (isSectionHeaderOnlyLabel(trimmed, statementType)) return false;
+ 
+      if (
+        normalized.includes("الايضاحات المرفقه") ||
+        normalized.includes("الإيضاحات المرفقة") ||
+        normalized.includes("integral part") ||
+        normalized.includes("accompanying notes")
+      ) {
+        return false;
+      }
+ 
+      return true;
+    }
+ 
+    function extractLabelCandidatesFromPageText(pageCtx, statementType) {
+      const textBlob = [
+        pageCtx?.mainTableText || "",
+        pageCtx?.text || "",
+        pageCtx?.structuralText || ""
+      ].join("\n");
+ 
+      const candidates = splitTextIntoLogicalLines(textBlob)
+        .map((line) => cleanupLabel(line))
+        .filter(Boolean)
+        .filter((line) => !isLikelyStatementDateText(line))
+        .filter((line) => !isLikelyStandardEffectiveDateText(line))
+        .filter((line) => !isLikelyNarrativeLine(line))
+        .filter((line) => !isQuarterOrPeriodCell(line))
+        .filter((line) => !isPureNumericSymbolCell(line))
+        .filter((line) => !isLikelyOnlyReferenceText(line))
+        .filter((line) => hasLetterChars(line));
+ 
+      const enriched = [];
+ 
+      for (const line of candidates) {
+        enriched.push(line);
+        const salvaged = salvageFinancialLabelCandidate(line);
+        if (salvaged && normalizeText(salvaged) !== normalizeText(line)) {
+          enriched.push(salvaged);
+        }
+      }
+ 
+      return dedupePreserveOrder(enriched).filter((line) => {
+        return !isLikelyMetaOrHeaderLabel(line) &&
+          !isLikelyStatementTitleRow(line, statementType);
+      });
+    }
+ 
+ 
+    function getTablesForPage(pageNumber) {
+      return tablesPreview.filter((t) => pageNumFromObj(t) === pageNumber);
+    }
+ 
+    function getTableDensityScore(table) {
+      return (getTableRowCount(table) * 10) + getTableColumnCount(table);
+    }
+ 
+    function pickMainTable(tables) {
+      const list = Array.isArray(tables) ? tables : [];
+      if (!list.length) return null;
+      return list.slice().sort((a, b) => getTableDensityScore(b) - getTableDensityScore(a))[0];
+    }
+ 
+    function getHeaderRows(rows) {
+      return [rows[0] || [], rows[1] || [], rows[2] || [], rows[3] || [], rows[4] || [], rows[5] || []];
+    }
+ 
+    function getNumericColumnDensity(rows, limit = 24) {
+      const out = {};
+      for (const row of (rows || []).slice(0, limit)) {
+        if (!Array.isArray(row)) continue;
+        row.forEach((cell, idx) => {
+          const num = parseNumberSmart(cell);
+          if (num != null && !isLikelyReferenceValue(cell) && !isYearCell(cell)) {
+            out[idx] = (out[idx] || 0) + 1;
+          }
+        });
+      }
+ 
+      return Object.keys(out)
+        .map((k) => ({ idx: Number(k), score: out[k] }))
+        .sort((a, b) => b.score - a.score || a.idx - b.idx);
+    }
+ 
+    function detectTableLanguageDirection(rows) {
+      let arabicScore = 0;
+      let latinScore = 0;
+ 
+      for (const row of (rows || []).slice(0, 20)) {
+        if (!Array.isArray(row)) continue;
+        for (const cell of row) {
+          const raw = String(cell || "").trim();
+          if (!raw) continue;
+          if (hasArabicChars(raw)) arabicScore += 2;
+          if (hasLatinChars(raw)) latinScore += 1;
+        }
+      }
+ 
+      return {
+        isArabicTable: arabicScore > latinScore,
+        direction: arabicScore > latinScore ? "rtl" : "ltr",
+        arabicScore,
+        latinScore
+      };
+    }
+ 
+    function detectHeaderColumns(rows) {
+      const headerRows = getHeaderRows(rows);
+      const language = detectTableLanguageDirection(rows);
+ 
+      let latest = null;
+      let previous = null;
+      let currentCol = null;
+      let previousCol = null;
+      let noteCol = null;
+      let labelCol = null;
+      let headerRowIndex = null;
+      let mode = "fallback";
+ 
+      for (let i = 0; i < headerRows.length; i += 1) {
+        const row = headerRows[i];
+        if (!Array.isArray(row) || !row.length) continue;
+ 
+        const yearCells = row
+          .map((cell, idx) => ({ idx, year: getYearFromCell(cell) }))
+          .filter((x) => Number.isFinite(x.year));
+ 
+        if (yearCells.length >= 2) {
+          const sortedYears = yearCells.slice().sort((a, b) => b.year - a.year || a.idx - b.idx);
+          latest = sortedYears[0]?.year ?? null;
+          previous = sortedYears[1]?.year ?? null;
+          currentCol = yearCells.find((x) => x.year === latest)?.idx ?? null;
+          previousCol = yearCells.find((x) => x.year === previous)?.idx ?? null;
+          headerRowIndex = i;
+          mode = "year_header";
+          break;
+        }
+      }
+ 
+      for (const row of headerRows) {
+        for (let i = 0; i < row.length; i += 1) {
+          if (isNoteHeaderCell(row[i])) {
+            noteCol = i;
+            break;
+          }
+        }
+        if (noteCol != null) break;
+      }
+ 
+      if (currentCol == null || previousCol == null) {
+        const numericCols = getNumericColumnDensity(rows, 24)
+          .filter((x) => x.idx !== noteCol);
+ 
+        if (numericCols.length >= 2) {
+          const candidates = numericCols
+            .slice(0, 6)
+            .map((x) => x.idx)
+            .sort((a, b) => a - b)
+            .slice(-2);
+ 
+          previousCol = candidates[0] ?? previousCol;
+          currentCol = candidates[1] ?? currentCol;
+          mode = mode === "fallback" ? "numeric_density" : mode;
+        } else if (numericCols.length === 1) {
+          currentCol = numericCols[0].idx;
+          mode = mode === "fallback" ? "single_numeric_column" : mode;
+        }
+      }
+ 
+      const maxColCount = Math.max(
+        0,
+        ...((rows || []).map((r) => Array.isArray(r) ? r.length : 0))
+      );
+ 
+      const reservedCols = new Set(
+        [currentCol, previousCol, noteCol].filter((x) => Number.isFinite(x))
+      );
+ 
+      const freeCols = [];
+      for (let c = 0; c < maxColCount; c += 1) {
+        if (!reservedCols.has(c)) freeCols.push(c);
+      }
+ 
+      if (freeCols.length > 0) {
+        labelCol = language.direction === "rtl" ? Math.max(...freeCols) : Math.min(...freeCols);
+      }
+ 
+      const distinctLabel = Number.isFinite(labelCol) && !reservedCols.has(labelCol);
+ 
+      return {
+        latest,
+        previous,
+        currentCol,
+        previousCol,
+        noteCol,
+        labelCol: distinctLabel ? labelCol : null,
+        hasDistinctLabelColumn: distinctLabel,
+        headerRowIndex,
+        resolutionMode: mode,
+        direction: language.direction,
+        isArabicTable: language.isArabicTable,
+        languageScores: {
+          arabic: language.arabicScore,
+          latin: language.latinScore
+        }
+      };
+    }
+ 
+    function buildPageContext(pageNumber, orderedPageNumbers) {
+      const pageMeta = pages.find((p) => safeNumber(p.pageNumber) === pageNumber) || {};
+      const pageTables = getTablesForPage(pageNumber);
+      const mainTable = pickMainTable(pageTables);
+      const mainRows = extractTableRows(mainTable);
+      const header = detectHeaderColumns(mainRows);
+ 
+      const mainTableText = tableText(mainTable);
+      const allText = pageTables.map(tableText).join("\n\n");
+      const headerText = getHeaderRows(mainRows).map((r) => flattenValue(r)).join("\n");
+      const firstRowsText = mainRows.slice(0, 10).map((r) => r.join(" | ")).join("\n");
+      const lastRowsText = mainRows.slice(-10).map((r) => r.join(" | ")).join("\n");
+      const structuralText = `${headerText}\n${firstRowsText}\n${lastRowsText}\n${mainTableText}\n${allText}`;
+      const normalizedText = normalizeText(structuralText);
+ 
+      const index = orderedPageNumbers.indexOf(pageNumber);
+      const positionRatio = orderedPageNumbers.length > 1
+        ? index / (orderedPageNumbers.length - 1)
+        : 0;
+ 
+      const hasStatementTitle = containsAny(`${headerText}\n${mainTableText}\n${allText}`, [
+        "قائمة المركز المالي",
+        "قائمة الدخل",
+        "قائمة الدخل الموحدة",
+        "قائمة التدفقات النقدية",
+        "statement of financial position",
+        "income statement",
+        "statement of income",
+        "statement of cash flows",
+        "cash flow statement",
+        "statement of profit or loss",
+        "statement of comprehensive income",
+        "statement of profit or loss and other comprehensive income"
+      ]);
+ 
+      const hasYearLikeHeader = getHeaderRows(mainRows).some((r) => {
+        const joined = normalizeText(r.join(" | "));
+        return extractYears(joined).length >= 2 && (
+          joined.includes("ايضاح") ||
+          joined.includes("notes") ||
+          joined.includes("note") ||
+          isQuarterOrPeriodCell(joined)
+        );
+      });
+ 
+      const isLikelyIndexPage =
+        containsAny(normalizedText, [
+          "الفهرس",
+          "جدول المحتويات",
+          "table of contents",
+          "independent auditor",
+          "تقرير مراجعي الحسابات المستقلين"
+        ]) &&
+        containsAny(normalizedText, [
+          "قائمة المركز المالي",
+          "قائمة الدخل",
+          "قائمة التدفقات النقدية",
+          "statement of financial position",
+          "statement of profit or loss",
+          "statement of cash flows"
+        ]);
+ 
+      const isLikelyStandardsPage =
+        (
+          containsAny(normalizedText, [
+            "السياسات المحاسبية",
+            "السياسة المحاسبية",
+            "accounting policies",
+            "financial instruments",
+            "risk management",
+            "تحليل الحساسية",
+            "liquidity risk",
+            "credit risk",
+            "maturity",
+            "repricing",
+            "ifrs",
+            "international accounting standard",
+            "international financial reporting standard"
+          ]) ||
+          isLikelyStandardEffectiveDateText(normalizedText)
+        ) &&
+        !hasStatementTitle;
+ 
+      const isLikelyEquityStatement =
+        getTableColumnCount(mainTable) >= 8 ||
+        containsAny(normalizedText, [
+          "قائمة التغيرات في حقوق الملكية",
+          "قائمة التغيرات في حقوق المساهمين",
+          "statement of changes in equity",
+          "retained earnings",
+          "treasury shares",
+          "non-controlling interests",
+          "احتياطي نظامي",
+          "اسهم خزينة",
+          "أسهم خزينة",
+          "share capital",
+          "share premium"
+        ]);
+ 
+      const isLikelyComprehensiveIncome =
+        containsAny(normalizedText, [
+          "قائمة الدخل الشامل",
+          "الدخل الشامل",
+          "statement of comprehensive income",
+          "other comprehensive income",
+          "بنود الدخل الشامل الاخر",
+          "other comprehensive"
+        ]);
+ 
+      const isLikelyNarrativePage =
+        isLikelyNarrativeLine(normalizedText) ||
+        isLikelyStandardEffectiveDateText(normalizedText);
+ 
+      return {
+        pageNumber,
+        pageMeta,
+        tables: pageTables,
+        mainTable,
+        mainTableText,
+        mainRows,
+        mainRowsMeta: rowsWithMeta(mainTable),
+        mainColumnCount: getTableColumnCount(mainTable),
+        mainRowCount: getTableRowCount(mainTable),
+        tableCount: pageTables.length,
+        rowCount: pageTables.reduce((sum, t) => sum + getTableRowCount(t), 0),
+        columnCount: pageTables.reduce((sum, t) => sum + getTableColumnCount(t), 0),
+        text: allText,
+        headerText,
+        structuralText,
+        normalizedText,
+        numbersCount: countNumbers(allText),
+        years: extractYears(allText),
+        header,
+        hasDistinctLabelColumn: !!header?.hasDistinctLabelColumn,
+        positionRatio,
+        hasStatementTitle,
+        hasYearLikeHeader,
+        isLikelyIndexPage,
+        isLikelyStandardsPage,
+        isLikelyEquityStatement,
+        isLikelyComprehensiveIncome,
+        isLikelyNarrativePage
+      };
+    }
+ 
+    const allPageNumbers = unique(
+      tablesPreview
+        .map((t) => pageNumFromObj(t))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    ).sort((a, b) => a - b);
+ 
+    const pageContexts = allPageNumbers.map((pageNumber) =>
+      buildPageContext(pageNumber, allPageNumbers)
+    );
+ 
+    function getPageContextsByNumbers(pageNumbers) {
+      const wanted = new Set((pageNumbers || []).filter((n) => Number.isFinite(n)));
+      return pageContexts.filter((p) => wanted.has(p.pageNumber));
+    }
+ 
+    function isLikelyAssetRollforwardPage(pageCtx) {
+      const text = normalizeText(
+        [
+          pageCtx?.headerText || "",
+          pageCtx?.mainTableText || "",
+          pageCtx?.structuralText || "",
+          pageCtx?.text || ""
+        ].join("\n")
+      );
+ 
+      if (!text) return false;
+ 
+      const rollforwardHeaderHits = countDistinctPhraseHits(text, [
+        "صافي القيمة الدفترية",
+        "خسارة الانخفاض في القيمة",
+        "الانخفاض في القيمة خسائر",
+        "الاستهلاك المتراكم",
+        "مجمع الاستهلاك",
+        "التكلفة",
+        "cost",
+        "accumulated depreciation",
+        "accumulated amortization",
+        "impairment loss",
+        "net book value",
+        "carrying amount"
+      ]);
+ 
+      const cashflowCoreHits = countDistinctPhraseHits(text, [
+        "التدفقات النقدية من الانشطة التشغيلية",
+        "التدفقات النقدية من الانشطه التشغيليه",
+        "التدفقات النقدية من الأنشطة التشغيلية",
+        "التدفقات النقدية من الانشطة الاستثمارية",
+        "التدفقات النقدية من الأنشطة الاستثمارية",
+        "التدفقات النقدية من الانشطة التمويلية",
+        "التدفقات النقدية من الأنشطة التمويلية",
+        "صافي النقد الناتج من",
+        "صافي النقد المستخدم في",
+        "cash flows from operating activities",
+        "cash flows from investing activities",
+        "cash flows from financing activities",
+        "net cash from operating activities",
+        "net cash used in investing activities",
+        "net cash from financing activities"
+      ]);
+ 
+      const hasRollforwardHeader =
+        rollforwardHeaderHits.length >= 3 &&
+        (pageCtx?.mainColumnCount || 0) >= 4 &&
+        (pageCtx?.mainRowCount || 0) >= 8;
+ 
+      const lacksCashflowLanguage = cashflowCoreHits.length === 0;
+ 
+      return hasRollforwardHeader && lacksCashflowLanguage;
+    }
+ 
+ 
+        // =========================================================
+    // Layer 3: Statement Profile Detection
+    // =========================================================
+ 
+    const PROFILE_CONFIG = {
+      bank: {
+        key: "bank",
+        positive: [
+          "الدخل من التمويل",
+          "التمويل والاستثمارات",
+          "رسوم الخدمات المصرفية",
+          "اجمالي دخل العمليات",
+          "ودائع العملاء",
+          "البنوك المركزية",
+          "المؤسسات المالية الاخرى",
+          "تمويل وسلف",
+          "صكوك",
+          "special commission",
+          "customer deposits",
+          "central banks",
+          "due from banks",
+          "due to banks",
+          "financing and advances",
+          "commission income"
+        ],
+        negative: [
+          "revenue",
+          "cost of sales",
+          "gross profit",
+          "inventories",
+          "selling and distribution expenses",
+          "insurance revenue",
+          "investment properties"
+        ]
+      },
+ 
+      insurance: {
+        key: "insurance",
+        positive: [
+          "ايرادات التامين",
+          "إيرادات التأمين",
+          "خدمة التامين",
+          "خدمة التأمين",
+          "اعاده التامين",
+          "إعادة التأمين",
+          "مطالبات",
+          "claims",
+          "reinsurance",
+          "insurance revenue",
+          "insurance service result",
+          "insurance finance income",
+          "insurance finance expenses",
+          "liability for incurred claims"
+        ],
+        negative: [
+          "customer deposits",
+          "special commission",
+          "gross financing",
+          "investment properties"
+        ]
+      },
+ 
+      reit: {
+        key: "reit",
+        positive: [
+          "عقارات استثمارية",
+          "دخل ايجار",
+          "دخل إيجار",
+          "وحدات الصندوق",
+          "القيمه العادله للوحده",
+          "القيمة العادلة للوحدة",
+          "investment properties",
+          "rental income",
+          "fair value of unit",
+          "fund units",
+          "real estate"
+        ],
+        negative: [
+          "customer deposits",
+          "insurance revenue",
+          "gross financing and investment income"
+        ]
+      },
+ 
+      operating_company: {
+        key: "operating_company",
+        positive: [
+          "الايرادات",
+          "المبيعات",
+          "تكلفة المبيعات",
+          "تكلفة الايرادات",
+          "مجمل الربح",
+          "الربح التشغيلي",
+          "المخزون",
+          "المدينون التجاريون",
+          "الموردون",
+          "revenue",
+          "sales",
+          "cost of sales",
+          "cost of revenue",
+          "gross profit",
+          "operating profit",
+          "inventories",
+          "trade receivables",
+          "trade payables",
+          "selling and distribution expenses",
+          "general and administrative expenses"
+        ],
+        negative: [
+          "ودائع العملاء",
+          "البنوك المركزية",
+          "المؤسسات المالية الاخرى",
+          "special commission",
+          "customer deposits",
+          "central banks",
+          "due from banks",
+          "due to banks",
+          "insurance revenue"
+        ]
+      }
+    };
+ 
+    function detectStatementProfile() {
+      const fullText = pageContexts.map((p) => p.structuralText || "").join("\n\n");
+      const scores = {};
+ 
+      for (const key of Object.keys(PROFILE_CONFIG)) {
+        const cfg = PROFILE_CONFIG[key];
+        const positive = keywordHits(fullText, cfg.positive);
+        const negative = keywordHits(fullText, cfg.negative);
+        scores[key] = (positive * 8) - (negative * 5);
+      }
+ 
+      const sorted = Object.keys(scores)
+        .map((k) => ({ key: k, score: scores[k] }))
+        .sort((a, b) => b.score - a.score);
+ 
+      const statementProfile = sorted[0]?.key || "operating_company";
+ 
+      return {
+        statementProfile,
+        scores,
+        rankedProfiles: sorted,
+        reason: `${statementProfile} keywords strongest`
+      };
+    }
+ 
+    const profileDetection = detectStatementProfile();
+    const statementProfile = profileDetection.statementProfile;
+    let finalSector = detectedSector;
+ 
+    if (
+      finalSector === "operating_company" &&
+      statementProfile &&
+      sectorProfiles[statementProfile]
+    ) {
+      finalSector = statementProfile;
+    }
+ 
+    const finalSectorProfile =
+      sectorProfiles[finalSector] || sectorProfiles.operating_company || {};
+ 
+    const sectorInfo =
+      finalSector !== rawSectorInfo?.sector
+        ? {
+            ...rawSectorInfo,
+            sector: finalSector,
+            reasons: [
+              `sector overridden by statement profile: ${rawSectorInfo?.sector} -> ${finalSector}`
+            ]
+          }
+        : {
+            ...rawSectorInfo,
+            sector: finalSector
+          };
+ 
+    // =========================================================
+    // Layer 4: Statement Page Ranking and Selection
+    // =========================================================
+ 
+    const STATEMENT_CONFIGS = {
+      bank: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "قائمة الوضع المالي",
+            "الميزانية",
+            "الميزانية العمومية",
+            "statement of financial position",
+            "financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات",
+            "اجمالي المطلوبات وحقوق الملكيه",
+            "الموجودات",
+            "المطلوبات",
+            "حقوق الملكيه",
+            "ودائع العملاء",
+            "نقد وارصده لدى البنوك المركزيه",
+            "ارصده لدى البنوك والمؤسسات الماليه الاخرى",
+            "تمويل وسلف",
+            "استثمارات",
+            "total assets",
+            "total liabilities",
+            "total equity",
+            "total liabilities and equity",
+            "assets",
+            "liabilities",
+            "equity"
+          ],
+          negatives: [
+            "قائمة الدخل",
+            "الدخل الشامل",
+            "قائمة التغيرات في حقوق الملكية",
+            "قائمة التدفقات النقدية",
+            "statement of income",
+            "statement of comprehensive income",
+            "changes in equity",
+            "cash flow"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "قائمة الدخل الموحدة",
+            "قائمة الارباح والخسائر",
+            "قائمة الربح والخسارة",
+            "statement of income",
+            "income statement",
+            "profit and loss",
+            "profit or loss",
+            "statement of profit or loss",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "الدخل من التمويل",
+            "الدخل من التمويل والاستثمارات",
+            "صافي الدخل من التمويل والاستثمار",
+            "صافي دخل العمولات الخاصة",
+            "ايرادات العمولات الخاصة",
+            "رسوم الخدمات المصرفية",
+            "صافي دخل الاتعاب والعمولات",
+            "اجمالي دخل العمليات",
+            "اجمالي مصاريف العمليات",
+            "دخل العمليات",
+            "دخل السنة قبل الزكاة",
+            "صافي دخل السنة",
+            "ربحية السهم",
+            "gross financing and investment income",
+            "net financing and investment income",
+            "fee from banking services",
+            "net special commission income",
+            "total operating income",
+            "operating income",
+            "operating profit",
+            "net income",
+            "earnings"
+          ],
+          negatives: [
+            "الدخل الشامل",
+            "قائمة الدخل الشامل",
+            "statement of comprehensive income",
+            "other comprehensive income",
+            "قائمة التغيرات في حقوق الملكية",
+            "changes in equity",
+            "قائمة المركز المالي",
+            "قائمة التدفقات النقدية"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "بيان التدفقات النقدية",
+            "التدفقات النقدية",
+            "cash flow statement",
+            "statement of cash flows",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد من الانشطة التشغيلية",
+            "صافي النقد المستخدم في الانشطة الاستثمارية",
+            "صافي النقد من الانشطة الاستثمارية",
+            "صافي النقد الناتج من الانشطة التمويلية",
+            "صافي النقد من الانشطة التمويلية",
+            "التغير في النقد",
+            "التغير في النقد وما في حكمه",
+            "النقد وشبه النقد",
+            "النقد وما في حكمه",
+            "operating activities",
+            "investing activities",
+            "financing activities",
+            "cash and cash equivalents",
+            "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities"
+          ],
+          negatives: [
+            "قائمة الدخل",
+            "الدخل الشامل",
+            "قائمة المركز المالي",
+            "قائمة التغيرات في حقوق الملكية",
+            "statement of income",
+            "comprehensive income",
+            "financial position",
+            "changes in equity"
+          ]
+        }
+      },
+ 
+      insurance: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "statement of financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "نقد وما في حكمه",
+            "ودائع لاجل",
+            "استثمارات",
+            "ذمم اعاده التامين",
+            "موجودات اعاده التامين",
+            "مطلوبات عقود التامين",
+            "liabilities for incurred claims",
+            "reinsurance contract assets",
+            "insurance contract liabilities",
+            "total assets",
+            "total liabilities",
+            "total equity",
+            "assets",
+            "liabilities",
+            "equity"
+          ],
+          negatives: [
+            "statement of cash flows",
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "statement of income",
+            "income statement",
+            "statement of profit or loss",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "ايرادات التامين",
+            "إيرادات التأمين",
+            "نتيجه خدمه التامين",
+            "نتيجة خدمة التأمين",
+            "مطالبات",
+            "اعاده التامين",
+            "إعادة التأمين",
+            "insurance revenue",
+            "insurance service result",
+            "reinsurance",
+            "claims",
+            "net income",
+            "operating income"
+          ],
+          negatives: [
+            "statement of comprehensive income",
+            "other comprehensive income",
+            "statement of cash flows",
+            "changes in equity"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "statement of cash flows",
+            "cash flow statement",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد من الانشطة التشغيلية",
+            "صافي النقد المستخدم في الانشطة الاستثمارية",
+            "صافي النقد من الانشطة الاستثمارية",
+            "صافي النقد الناتج من الانشطة التمويلية",
+            "صافي النقد من الانشطة التمويلية",
+            "التغير في النقد",
+            "التغير في النقد وما في حكمه",
+            "cash flows from operating activities",
+            "cash and cash equivalents",
+            "operating activities",
+            "investing activities",
+            "financing activities"
+          ],
+          negatives: [
+            "statement of comprehensive income",
+            "effective date",
+            "المعايير",
+            "changes in equity"
+          ]
+        }
+      },
+ 
+      reit: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "statement of financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: [
+            "عقارات استثمارية",
+            "موجودات",
+            "مطلوبات",
+            "حقوق الملكية",
+            "اجمالي الموجودات",
+            "اجمالي المطلوبات",
+            "اجمالي حقوق الملكية",
+            "investment properties",
+            "assets",
+            "liabilities",
+            "equity",
+            "total assets",
+            "total liabilities",
+            "total equity"
+          ],
+          negatives: [
+            "statement of cash flows",
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "statement of income",
+            "income statement",
+            "statement of profit or loss",
+            "statement of comprehensive income",
+            "consolidated statement of profit or loss"
+          ],
+          structure: [
+            "دخل ايجار",
+            "دخل إيجار",
+            "صافي الربح",
+            "ربح التشغيل",
+            "ايرادات",
+            "investment properties",
+            "rental income",
+            "operating profit",
+            "net income",
+            "revenue",
+            "total comprehensive income",
+            "comprehensive income"
+          ],
+          negatives: [
+            "statement of cash flows",
+            "changes in equity"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "statement of cash flows",
+            "cash flow statement",
+            "consolidated statement of cash flows"
+          ],
+          structure: [
+            "صافي النقد الناتج من الانشطة التشغيلية",
+            "صافي النقد من الانشطة التشغيلية",
+            "صافي النقد من الانشطة الاستثمارية",
+            "صافي النقد من الانشطة التمويلية",
+            "التغير في النقد",
+            "النقد وما في حكمه",
+            "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities",
+            "cash and cash equivalents"
+          ],
+          negatives: [
+            "statement of comprehensive income",
+            "changes in equity"
+          ]
+        }
+      },
+ 
+      operating_company: {
+        balance: {
+          key: "balance",
+          titles: [
+            "قائمة المركز المالي",
+            "المركز المالي",
+            "قائمة الوضع المالي",
+            "الميزانية",
+            "الميزانية العمومية",
+            "statement of financial position",
+            "balance sheet",
+            "consolidated statement of financial position"
+          ],
+          structure: balanceKeywords.length ? balanceKeywords : [
+            "الموجودات", "الأصول", "الاصول", "المطلوبات", "الالتزامات",
+            "حقوق الملكية", "إجمالي الموجودات", "اجمالي الموجودات",
+            "إجمالي المطلوبات", "اجمالي المطلوبات", "إجمالي حقوق الملكية",
+            "اجمالي حقوق الملكية", "assets", "liabilities", "equity",
+            "total assets", "total liabilities", "total equity"
+          ],
+          negatives: [
+            "قائمة الدخل", "الدخل الشامل", "قائمة التدفقات النقدية",
+            "قائمة التغيرات في حقوق الملكية", "statement of income",
+            "statement of comprehensive income", "statement of cash flows",
+            "changes in equity"
+          ]
+        },
+        income: {
+          key: "income",
+          titles: [
+            "قائمة الدخل",
+            "قائمة الأرباح والخسائر",
+            "قائمة الارباح والخسائر",
+            "قائمة الربح والخسارة",
+            "statement of income",
+            "income statement",
+            "statement of profit or loss",
+            "profit or loss",
+            "consolidated statement of profit or loss"
+          ],
+          structure: incomeKeywords.length ? incomeKeywords : [
+            "الايرادات", "الإيرادات", "المبيعات", "تكلفة المبيعات",
+            "تكلفة الايرادات", "تكلفة الإيرادات", "مجمل الربح",
+            "الربح التشغيلي", "الدخل التشغيلي", "صافي الربح",
+            "صافي الدخل", "revenue", "sales", "cost of sales",
+            "gross profit", "operating profit", "operating income",
+            "net profit", "net income"
+          ],
+          negatives: [
+            "الدخل الشامل", "قائمة الدخل الشامل",
+            "statement of comprehensive income", "other comprehensive income",
+            "قائمة المركز المالي", "قائمة التدفقات النقدية",
+            "changes in equity", "statement of cash flows"
+          ]
+        },
+        cashflow: {
+          key: "cashflow",
+          titles: [
+            "قائمة التدفقات النقدية",
+            "بيان التدفقات النقدية",
+            "التدفقات النقدية",
+            "cash flow statement",
+            "statement of cash flows",
+            "consolidated statement of cash flows"
+          ],
+          structure: cashflowKeywords.length ? cashflowKeywords : [
+            "التدفقات النقدية من الأنشطة التشغيلية",
+            "التدفقات النقدية من الأنشطة الاستثمارية",
+            "التدفقات النقدية من الأنشطة التمويلية",
+            "صافي النقد من الانشطة التشغيلية",
+            "صافي النقد من الانشطة الاستثمارية",
+            "صافي النقد من الانشطة التمويلية",
+            "التغير في النقد", "التغير في النقد وما في حكمه",
+            "النقد وما في حكمه", "cash flows from operating activities",
+            "cash flows from investing activities",
+            "cash flows from financing activities",
+            "cash and cash equivalents"
+          ],
+          negatives: [
+            "قائمة الدخل", "الدخل الشامل", "قائمة المركز المالي",
+            "قائمة التغيرات في حقوق الملكية", "statement of income",
+            "comprehensive income", "financial position", "changes in equity"
+          ]
+        }
+      }
+    };
+ 
+    const ACTIVE_STATEMENT_CONFIGS =
+      STATEMENT_CONFIGS[statementProfile] || STATEMENT_CONFIGS.operating_company;
+ 
+    function mergeStatementConfigWithSectorKeywords(kind, cfg) {
+      const sectorStructure =
+        kind === "income"
+          ? incomeKeywords
+          : kind === "balance"
+            ? balanceKeywords
+            : cashflowKeywords;
+ 
+      return {
+        ...cfg,
+        structure: unique([
+          ...(cfg?.structure || []),
+          ...(sectorStructure || [])
+        ])
+      };
+    }
+ 
+    function getHeaderSearchText(pageCtx) {
+      return flattenValue(pageCtx?.header || "");
+    }
+ 
+    function getPageStatementText(pageCtx) {
+      const firstRowsText = (pageCtx?.mainRows || [])
+        .slice(0, 10)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
+ 
+      return [
+        getHeaderSearchText(pageCtx),
+        pageCtx?.headerText || "",
+        firstRowsText,
+        pageCtx?.mainTableText || "",
+        pageCtx?.text || "",
+        pageCtx?.structuralText || ""
+      ].join("\n");
+    }
+ 
+        function statementRankScore(pageCtx, cfg, kind) {
+      let score = 0;
+      const reasons = [];
+      const signals = {};
+ 
+      if (!pageCtx) {
+        return { score, reasons, signals };
+      }
+ 
+      const headerText = getHeaderSearchText(pageCtx);
+      const wholeText = getPageStatementText(pageCtx);
+      const firstRowsText = (pageCtx.mainRows || [])
+        .slice(0, 6)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
+ 
+      const pageText = normalizeText(
+        [
+          pageCtx.text || "",
+          pageCtx.headerText || "",
+          pageCtx.mainTableText || "",
+          firstRowsText
+        ].join("\n")
+      );
+ 
+      const titleHitsHeader = countDistinctPhraseHits(
+        `${headerText}\n${pageCtx.headerText || ""}\n${pageCtx.mainTableText || ""}`,
+        cfg.titles || []
+      );
+      const titleHitsAll = countDistinctPhraseHits(wholeText, cfg.titles || []);
+      const structureHitsAll = countDistinctPhraseHits(wholeText, cfg.structure || []);
+      const structureHitsFirstRows = countDistinctPhraseHits(
+        `${firstRowsText}\n${pageCtx.mainTableText || ""}`,
+        cfg.structure || []
+      );
+      const negativeHits = countDistinctPhraseHits(wholeText, cfg.negatives || []);
+ 
+      signals.titleHitsHeader = titleHitsHeader;
+      signals.titleHitsAll = titleHitsAll;
+      signals.structureHitsAll = structureHitsAll;
+      signals.structureHitsFirstRows = structureHitsFirstRows;
+      signals.negativeHits = negativeHits;
+ 
+      if (titleHitsHeader.length > 0) {
+        const base = titleHitsHeader.length * 90;
+        const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
+        const s = Math.round(base * multiplier);
+        score += s;
+        reasons.push(`titleHeader:+${s}`);
+      } else if (titleHitsAll.length > 0) {
+        const base = titleHitsAll.length * 40;
+        const multiplier = structureHitsAll.length > 0 ? 1 : 0.6;
+        const s = Math.round(base * multiplier);
+        score += s;
+        reasons.push(`titleAll:+${s}`);
+      }
+ 
+      if (structureHitsAll.length > 0) {
+        const s = Math.min(structureHitsAll.length, 10) * 16;
+        score += s;
+        reasons.push(`structureAll:+${s}`);
+      }
+ 
+      if (structureHitsFirstRows.length > 0) {
+        const s = Math.min(structureHitsFirstRows.length, 6) * 18;
+        score += s;
+        reasons.push(`structureFirstRows:+${s}`);
+      }
+ 
+      const structureSupportCount =
+        structureHitsAll.length + structureHitsFirstRows.length;
+ 
+      if (structureSupportCount >= 5 && pageCtx.positionRatio <= 0.35) {
+        score += 25;
+        reasons.push("strongStructureBonus:+25");
+      }
+ 
+      if (pageCtx.hasYearLikeHeader) {
+        const s = structureSupportCount > 0 ? 22 : 10;
+        score += s;
+        reasons.push(`yearHeader:+${s}`);
+      }
+ 
+      if (pageCtx.years && pageCtx.years.length >= 2) {
+        const s = structureSupportCount > 0 ? 14 : 6;
+        score += s;
+        reasons.push(`yearsDetected:+${s}`);
+      } else if (pageCtx.years && pageCtx.years.length === 1) {
+        const s = structureSupportCount > 0 ? 5 : 2;
+        score += s;
+        reasons.push(`singleYearDetected:+${s}`);
+      }
+ 
+      if (pageCtx.numbersCount > 20) {
+        const s = structureSupportCount > 0 ? 10 : 4;
+        score += s;
+        reasons.push(`numbersDensity:+${s}`);
+      }
+ 
+      if (pageCtx.mainRowCount >= 8 && pageCtx.mainRowCount <= 60) {
+        const s = structureSupportCount > 0 ? 8 : 3;
+        score += s;
+        reasons.push(`rowRange:+${s}`);
+      }
+ 
+      if (pageCtx.mainColumnCount >= 3 && pageCtx.mainColumnCount <= 8) {
+        const s = structureSupportCount > 0 ? 8 : 3;
+        score += s;
+        reasons.push(`columnRange:+${s}`);
+      }
+ 
+      if (pageCtx.positionRatio <= 0.30) {
+        const s = structureSupportCount > 0 ? 8 : 3;
+        score += s;
+        reasons.push(`earlyPage:+${s}`);
+      } else if (pageCtx.positionRatio >= 0.35) {
+        score -= 180;
+        reasons.push("latePagePenalty:-180");
+      }
+ 
+      if (pageCtx.isLikelyIndexPage) {
+        score -= 220;
+        reasons.push("indexPenalty:-220");
+      }
+ 
+      if (pageCtx.isLikelyStandardsPage) {
+        score -= 190;
+        reasons.push("standardsPenalty:-190");
+      }
+ 
+      if (pageCtx.isLikelyNarrativePage) {
+        score -= 170;
+        reasons.push("narrativePenalty:-170");
+      }
+ 
+      if (kind === "income" && pageCtx.isLikelyComprehensiveIncome) {
+        score -= 140;
+        reasons.push("comprehensiveIncomePenalty:-140");
+      }
+ 
+      if (kind !== "income" && pageCtx.isLikelyComprehensiveIncome) {
+        score -= 60;
+        reasons.push("crossStatementComprehensivePenalty:-60");
+      }
+ 
+      if (pageCtx.isLikelyEquityStatement) {
+        score -= 120;
+        reasons.push("equityStatementPenalty:-120");
+      }
+ 
+      if (negativeHits.length > 0) {
+        const s = Math.min(negativeHits.length, 8) * 22;
+        score -= s;
+        reasons.push(`negativeHits:-${s}`);
+      }
+ 
+      const hasNoTitle = titleHitsHeader.length === 0 && titleHitsAll.length === 0;
+      const hasNoStructure = structureHitsAll.length === 0 && structureHitsFirstRows.length === 0;
+ 
+      if (hasNoTitle) {
+        const penalty = kind === "balance" ? 90 : 170;
+        score -= penalty;
+        reasons.push(`noTitlePenalty:-${penalty}`);
+      }
+ 
+      if (hasNoTitle && hasNoStructure) {
+        const penalty = kind === "balance" ? 140 : 260;
+        score -= penalty;
+        reasons.push(`noTitleNoStructure:-${penalty}`);
+      }
+ 
+      const isTitleOnlyCoverPage =
+        (titleHitsHeader.length > 0 || titleHitsAll.length > 0) &&
+        hasNoStructure &&
+        (!pageCtx.years || pageCtx.years.length === 0) &&
+        pageCtx.mainColumnCount <= 2 &&
+        pageCtx.mainRowCount <= 10;
+ 
+      if (isTitleOnlyCoverPage) {
+        score -= 180;
+        reasons.push("titleOnlyCoverPagePenalty:-180");
+      }
+ 
+      if (kind === "cashflow" && !hasNoTitle && hasNoStructure) {
+        score -= 120;
+        reasons.push("cashflowTitleWithoutStructurePenalty:-120");
+      }
+ 
+      if (
+        kind === "cashflow" &&
+        hasNoTitle &&
+        hasNoStructure &&
+        pageCtx.mainColumnCount === 3 &&
+        pageCtx.mainRowCount >= 40 &&
+        (pageCtx.years || []).length >= 2
+      ) {
+        score += 40;
+        reasons.push("cashflowTall3ColFallbackBonus:+40");
+      }
+ 
+      const auditNarrativeHits =
+        pageText.includes("امر المراجعه") ||
+        pageText.includes("امور المراجعه") ||
+        pageText.includes("كيفيه معالجه هذا الامر اثناء مراجعتنا") ||
+        pageText.includes("المراجع") ||
+        pageText.includes("تقرير المراجع") ||
+        pageText.includes("key audit") ||
+        pageText.includes("key audit matters") ||
+        pageText.includes("auditor") ||
+        pageText.includes("independent auditor");
+ 
+      if (auditNarrativeHits) {
+        score -= 220;
+        reasons.push("auditNarrativePenalty:-220");
+      }
+ 
+      if (kind === "cashflow" && isLikelyAssetRollforwardPage(pageCtx)) {
+        score -= 260;
+        reasons.push("assetRollforwardPenalty:-260");
+      }
+ 
+      return {
+        score,
+        reasons,
+        signals
+      };
+    }
+ 
+    function rankPages(kind) {
+      const cfg = mergeStatementConfigWithSectorKeywords(
+        kind,
+        ACTIVE_STATEMENT_CONFIGS[kind]
+      );
+ 
+      return pageContexts
+        .map((pageCtx) => {
+          const ranked = statementRankScore(pageCtx, cfg, kind);
+ 
+          return {
+            pageNumber: pageCtx.pageNumber,
+            score: ranked.score,
+            reasons: ranked.reasons,
+            signals: ranked.signals,
+            years: pageCtx.years,
+            numbersCount: pageCtx.numbersCount,
+            rowCount: pageCtx.rowCount,
+            tableCount: pageCtx.tableCount,
+            mainColumnCount: pageCtx.mainColumnCount,
+            mainRowCount: pageCtx.mainRowCount,
+            positionRatio: pageCtx.positionRatio,
+            header: pageCtx.header
+          };
+        })
+        .sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
+    }
+ 
+    const rankedBalance = rankPages("balance");
+    const rankedIncome = rankPages("income");
+    const rankedCashflow = rankPages("cashflow");
+ 
+    function normalizeRankingScores(list) {
+      if (!Array.isArray(list) || !list.length) return [];
+ 
+      const maxScore = Math.max(...list.map((x) => x.score));
+      const minScore = Math.min(...list.map((x) => x.score));
+      const range = Math.max(1, maxScore - minScore);
+ 
+      return list.map((item) => ({
+        ...item,
+        normalizedScore: Math.round(((item.score - minScore) / range) * 100)
+      }));
+    }
+ 
+    const calibratedIncome = normalizeRankingScores(rankedIncome);
+    const calibratedBalance = normalizeRankingScores(rankedBalance);
+    const calibratedCashflow = normalizeRankingScores(rankedCashflow);
+ 
+    function computeConfidence(rankList) {
+      if (!rankList || rankList.length < 2) return 0.5;
+ 
+      const top = rankList[0].score;
+      const second = rankList[1].score;
+      const diff = top - second;
+ 
+      if (diff > 200) return 0.95;
+      if (diff > 120) return 0.9;
+      if (diff > 60) return 0.8;
+      if (diff > 30) return 0.7;
+      if (diff > 10) return 0.6;
+ 
+      return 0.5;
+    }
+ 
+    const confidence = {
+      income: computeConfidence(rankedIncome),
+      balance: computeConfidence(rankedBalance),
+      cashflow: computeConfidence(rankedCashflow)
+    };
+ 
+    let incomePage = rankedIncome[0]?.pageNumber || null;
+    let balancePage = rankedBalance[0]?.pageNumber || null;
+    let cashFlowPage = rankedCashflow[0]?.pageNumber || null;
+ 
+    function topPages(list, limit = 3) {
+      return (list || []).slice(0, limit).map((x) => x.pageNumber);
+    }
+ 
+    const strongIncomePages = new Set(topPages(rankedIncome, 3));
+    const strongBalancePages = new Set(topPages(rankedBalance, 3));
+    const strongCashflowPages = new Set(topPages(rankedCashflow, 3));
+ 
+    function findAlternative(list, blockedPages) {
+      return (list || []).find((p) => !blockedPages.has(p.pageNumber))?.pageNumber || null;
+    }
+ 
+    function getPageContextByNumber(pageNumber) {
+      return pageContexts.find((p) => p.pageNumber === pageNumber) || null;
+    }
+ 
+    function hasReliableCashflowEvidence(rankedEntry, pageCtx) {
+      if (!rankedEntry || !pageCtx) return false;
+      if (isLikelyAssetRollforwardPage(pageCtx)) return false;
+      if (pageCtx.isLikelyIndexPage) return false;
+      if (pageCtx.isLikelyNarrativePage) return false;
+ 
+      const header = pageCtx?.header || {};
+      const resolutionMode = String(header?.resolutionMode || "").trim();
+ 
+      const titleHitsCount =
+        (rankedEntry?.signals?.titleHitsHeader?.length || 0) +
+        (rankedEntry?.signals?.titleHitsAll?.length || 0);
+ 
+      const structureHitsCount =
+        (rankedEntry?.signals?.structureHitsAll?.length || 0) +
+        (rankedEntry?.signals?.structureHitsFirstRows?.length || 0);
+ 
+      const cashflowCoreHits = countDistinctPhraseHits(
+        getPageStatementText(pageCtx),
+        [
+          "التدفقات النقدية من الانشطة التشغيلية",
+          "التدفقات النقدية من الأنشطة التشغيلية",
+          "التدفقات النقدية من الانشطه التشغيليه",
+          "التدفقات النقدية من الانشطة الاستثمارية",
+          "التدفقات النقدية من الأنشطة الاستثمارية",
+          "التدفقات النقدية من الانشطة التمويلية",
+          "التدفقات النقدية من الأنشطة التمويلية",
+          "صافي النقد الناتج من",
+          "صافي النقد المستخدم في",
+          "النقدية وما يعادلها",
+          "النقد وما في حكمه",
+          "cash flows from operating activities",
+          "cash flows from investing activities",
+          "cash flows from financing activities",
+          "net cash from operating activities",
+          "net cash used in investing activities",
+          "net cash from financing activities",
+          "cash and cash equivalents"
+        ]
+      );
+ 
+      const topRecoveredLabels = extractRowsFromPageContext(pageCtx, "cashflow")
+        .slice(0, 5)
+        .map((row) => normalizeLabelForRow(row?.label))
+        .filter(Boolean);
+ 
+      const validRecoveredLabelCount = topRecoveredLabels.filter((label) => {
+        return (
+          hasLetterChars(label) &&
+          isAcceptableFinancialLabel(label, "cashflow") &&
+          !isLikelyMetaOrHeaderLabel(label) &&
+          !isLikelyStatementTitleRow(label, "cashflow")
+        );
+      }).length;
+ 
+      const weakSingleNumericColumn =
+        resolutionMode === "single_numeric_column" &&
+        titleHitsCount === 0 &&
+        structureHitsCount === 0 &&
+        cashflowCoreHits.length === 0;
+ 
+      if (weakSingleNumericColumn) {
+        return false;
+      }
+ 
+      if (titleHitsCount > 0 || structureHitsCount > 0 || cashflowCoreHits.length > 0) {
+        return true;
+      }
+ 
+      if ((rankedEntry?.score ?? -999) >= 80 && validRecoveredLabelCount >= 3) {
+        return true;
+      }
+ 
+      return false;
+    }
+ 
+    function getNeighborPageContext(basePageNumber, offset = 1) {
+      if (!Number.isFinite(basePageNumber)) return null;
+      return getPageContextByNumber(basePageNumber + offset);
+    }
+ 
+    function getContinuationConfig(kind) {
+      const cfg = mergeStatementConfigWithSectorKeywords(
+        kind,
+        ACTIVE_STATEMENT_CONFIGS[kind]
+      );
+ 
+      return {
+        titles: cfg?.titles || [],
+        structure: cfg?.structure || [],
+        negatives: cfg?.negatives || []
+      };
+    }
+ 
+    function continuationScore(candidateCtx, kind) {
+      if (!candidateCtx) {
+        return { score: -999, reasons: [] };
+      }
+ 
+      const cfg = getContinuationConfig(kind);
+      const text = getPageStatementText(candidateCtx);
+      const firstRowsText = (candidateCtx.mainRows || [])
+        .slice(0, 8)
+        .map((r) => (Array.isArray(r) ? r.join(" | ") : ""))
+        .join("\n");
+ 
+      const titleHits = countDistinctPhraseHits(
+        `${candidateCtx.headerText || ""}\n${candidateCtx.mainTableText || ""}`,
+        cfg.titles
+      );
+ 
+      const structureHitsAll = countDistinctPhraseHits(text, cfg.structure);
+      const structureHitsFirstRows = countDistinctPhraseHits(firstRowsText, cfg.structure);
+      const negativeHits = countDistinctPhraseHits(text, cfg.negatives);
+ 
+      let score = 0;
+      const reasons = [];
+ 
+      if (structureHitsAll.length > 0) {
+        const s = Math.min(structureHitsAll.length, 8) * 18;
+        score += s;
+        reasons.push(`structureAll:+${s}`);
+      }
+ 
+      if (titleHits.length === 0 && structureHitsFirstRows.length === 0) {
+        score -= 70;
+        reasons.push("noTitleNoFirstRows:-70");
+      }
+ 
+      if (structureHitsFirstRows.length > 0) {
+        const s = Math.min(structureHitsFirstRows.length, 5) * 20;
+        score += s;
+        reasons.push(`structureFirstRows:+${s}`);
+      }
+ 
+      if (titleHits.length > 0) {
+        const base = Math.min(titleHits.length, 2) * 20;
+        const multiplier = structureHitsAll.length > 0 || structureHitsFirstRows.length > 0 ? 1 : 0.5;
+        const s = Math.round(base * multiplier);
+        score += s;
+        reasons.push(`title:+${s}`);
+      }
+ 
+      if (candidateCtx.hasYearLikeHeader) {
+        score += 15;
+        reasons.push("yearHeader:+15");
+      }
+ 
+      if ((candidateCtx.years || []).length >= 2) {
+        score += 12;
+        reasons.push("years:+12");
+      }
+ 
+      if (candidateCtx.numbersCount >= 12) {
+        score += 12;
+        reasons.push("numbers:+12");
+      }
+ 
+      if (candidateCtx.mainRowCount >= 6) {
+        score += 10;
+        reasons.push("rowCount:+10");
+      }
+ 
+      if (candidateCtx.mainColumnCount >= 3) {
+        score += 8;
+        reasons.push("columnCount:+8");
+      }
+ 
+      if (candidateCtx.isLikelyIndexPage) {
+        score -= 220;
+        reasons.push("indexPenalty:-220");
+      }
+ 
+      if (candidateCtx.isLikelyStandardsPage) {
+        score -= 180;
+        reasons.push("standardsPenalty:-180");
+      }
+ 
+      if (candidateCtx.isLikelyNarrativePage) {
+        score -= 150;
+        reasons.push("narrativePenalty:-150");
+      }
+ 
+      if (candidateCtx.isLikelyEquityStatement) {
+        score -= 120;
+        reasons.push("equityPenalty:-120");
+      }
+ 
+      if (kind === "income" && candidateCtx.isLikelyComprehensiveIncome) {
+        score -= 120;
+        reasons.push("comprehensivePenalty:-120");
+      }
+ 
+      if (negativeHits.length > 0) {
+        const s = Math.min(negativeHits.length, 6) * 22;
+        score -= s;
+        reasons.push(`negativeHits:-${s}`);
+      }
+ 
+      return { score, reasons };
+    }
+ 
+        function pageLooksLikeOtherStatementTitle(pageCtx, currentKind) {
+      if (!pageCtx) return false;
+ 
+      const kinds = ["income", "balance", "cashflow"].filter((k) => k !== currentKind);
+ 
+      const titleText = [
+        pageCtx.headerText || "",
+        ...(pageCtx.mainRows || [])
+          .slice(0, 3)
+          .map((r) => Array.isArray(r) ? r.join(" | ") : "")
+      ].join("\n");
+ 
+      for (const kind of kinds) {
+        const cfg = mergeStatementConfigWithSectorKeywords(
+          kind,
+          ACTIVE_STATEMENT_CONFIGS[kind]
+        );
+ 
+        const otherTitleHits = countDistinctPhraseHits(titleText, cfg?.titles || []);
+        if (otherTitleHits.length >= 1) {
+          return true;
+        }
+      }
+ 
+      return false;
+    }
+ 
+    function looksLikeSameStatement(baseCtx, candidateCtx) {
+      if (!baseCtx || !candidateCtx) return false;
+ 
+      let score = 0;
+ 
+      if (Math.abs((baseCtx.mainColumnCount || 0) - (candidateCtx.mainColumnCount || 0)) <= 1) score += 20;
+      if (Math.abs((baseCtx.numbersCount || 0) - (candidateCtx.numbersCount || 0)) <= 20) score += 20;
+      if (Math.abs((baseCtx.mainRowCount || 0) - (candidateCtx.mainRowCount || 0)) <= 20) score += 20;
+      if (baseCtx.years && candidateCtx.years && baseCtx.years.some((y) => candidateCtx.years.includes(y))) score += 20;
+      if ((baseCtx.mainRowCount || 0) > 5 && (candidateCtx.mainRowCount || 0) > 5) score += 20;
+ 
+      return score >= 60;
+    }
+ 
+    function detectStatementContinuation(basePageNumber, kind) {
+      const baseCtx = getPageContextByNumber(basePageNumber);
+ 
+      if (!baseCtx) {
+        return {
+          basePage: basePageNumber || null,
+          pages: Number.isFinite(basePageNumber) ? [basePageNumber] : [],
+          details: {
+            previousPage: null,
+            nextPage: null
+          }
+        };
+      }
+ 
+      const prevCtx = getNeighborPageContext(basePageNumber, -1);
+      const nextCtx = getNeighborPageContext(basePageNumber, 1);
+ 
+      const prevEval = continuationScore(prevCtx, kind);
+      const nextEval = continuationScore(nextCtx, kind);
+ 
+      const pages = [basePageNumber];
+ 
+      if (
+        prevCtx &&
+        prevEval.score >= 55 &&
+        !pageLooksLikeOtherStatementTitle(prevCtx, kind) &&
+        (looksLikeSameStatement(baseCtx, prevCtx) || prevEval.score >= 120)
+      ) {
+        pages.unshift(prevCtx.pageNumber);
+      }
+ 
+      if (
+        nextCtx &&
+        nextEval.score >= 65 &&
+        !pageLooksLikeOtherStatementTitle(nextCtx, kind) &&
+        (looksLikeSameStatement(baseCtx, nextCtx) || nextEval.score >= 120)
+      ) {
+        pages.push(nextCtx.pageNumber);
+      }
+ 
+      return {
+        basePage: basePageNumber,
+        pages: unique(pages).sort((a, b) => a - b),
+        details: {
+          acceptedPrevious: pages.includes(prevCtx?.pageNumber),
+          acceptedNext: pages.includes(nextCtx?.pageNumber),
+          previousPage: prevCtx
+            ? {
+                pageNumber: prevCtx.pageNumber,
+                score: prevEval.score,
+                reasons: prevEval.reasons
+              }
+            : null,
+          nextPage: nextCtx
+            ? {
+                pageNumber: nextCtx.pageNumber,
+                score: nextEval.score,
+                reasons: nextEval.reasons
+              }
+            : null
+        }
+      };
+    }
+ 
+    if (incomePage && balancePage && incomePage === balancePage) {
+      const incomeScore = rankedIncome.find((p) => p.pageNumber === incomePage)?.score ?? -999999;
+      const balanceScore = rankedBalance.find((p) => p.pageNumber === balancePage)?.score ?? -999999;
+ 
+      if (balanceScore >= incomeScore) {
+        incomePage =
+          findAlternative(rankedIncome, new Set([balancePage, cashFlowPage].filter(Boolean))) || incomePage;
+      } else {
+        balancePage =
+          findAlternative(
+            rankedBalance,
+            new Set([incomePage, ...strongIncomePages, cashFlowPage].filter(Boolean))
+          ) || balancePage;
+      }
+    }
+ 
+    if (incomePage && cashFlowPage && incomePage === cashFlowPage) {
+      cashFlowPage =
+        findAlternative(
+          rankedCashflow,
+          new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
+        ) || cashFlowPage;
+    }
+ 
+    if (balancePage && cashFlowPage && balancePage === cashFlowPage) {
+      cashFlowPage =
+        findAlternative(
+          rankedCashflow,
+          new Set([balancePage, incomePage, ...strongBalancePages].filter(Boolean))
+        ) || cashFlowPage;
+    }
+ 
+    if (incomePage && strongCashflowPages.has(incomePage) && !strongIncomePages.has(incomePage)) {
+      incomePage =
+        findAlternative(
+          rankedIncome,
+          new Set([balancePage, cashFlowPage, ...strongCashflowPages].filter(Boolean))
+        ) || incomePage;
+    }
+ 
+    if (cashFlowPage && strongIncomePages.has(cashFlowPage) && !strongCashflowPages.has(cashFlowPage)) {
+      cashFlowPage =
+        findAlternative(
+          rankedCashflow,
+          new Set([incomePage, balancePage, ...strongIncomePages].filter(Boolean))
+        ) || cashFlowPage;
+    }
+ 
+    const cashflowSelectionDiagnostics = (() => {
+      const selectedEntry = rankedCashflow.find((p) => p.pageNumber === cashFlowPage) || null;
+      const selectedPageCtx = getPageContextByNumber(cashFlowPage);
+ 
+      const reliableEntries = rankedCashflow.filter((entry) =>
+        hasReliableCashflowEvidence(entry, getPageContextByNumber(entry.pageNumber))
+      );
+ 
+      if (!selectedEntry || !selectedPageCtx) {
+        return {
+          reliableCandidateFound: false,
+          selectedPageReliable: false,
+          reason: "cashflow_page_not_selected",
+          topReliablePages: []
+        };
+      }
+ 
+      const selectedReliable = hasReliableCashflowEvidence(selectedEntry, selectedPageCtx);
+ 
+      if (selectedReliable) {
+        return {
+          reliableCandidateFound: true,
+          selectedPageReliable: true,
+          reason: null,
+          topReliablePages: reliableEntries.slice(0, 5).map((x) => x.pageNumber)
+        };
+      }
+ 
+      const fallbackReliable = reliableEntries.find((entry) =>
+        ![incomePage, balancePage].filter(Boolean).includes(entry.pageNumber)
+      ) || reliableEntries[0] || null;
+ 
+      if (fallbackReliable) {
+        cashFlowPage = fallbackReliable.pageNumber;
+        return {
+          reliableCandidateFound: true,
+          selectedPageReliable: false,
+          replacedWithReliablePage: fallbackReliable.pageNumber,
+          originalSelectedPage: selectedEntry.pageNumber,
+          reason: "cashflow_false_positive_replaced",
+          topReliablePages: reliableEntries.slice(0, 5).map((x) => x.pageNumber)
+        };
+      }
+ 
+      cashFlowPage = null;
+      return {
+        reliableCandidateFound: false,
+        selectedPageReliable: false,
+        originalSelectedPage: selectedEntry.pageNumber,
+        reason: "cashflow_no_reliable_candidate",
+        topReliablePages: []
+      };
+    })();
+ 
+    const incomeContinuation = detectStatementContinuation(incomePage, "income");
+    const balanceContinuation = detectStatementContinuation(balancePage, "balance");
+    const cashflowContinuation = detectStatementContinuation(cashFlowPage, "cashflow");
+ 
+    const statementPageRanges = {
+      income: incomeContinuation.pages,
+      balance: balanceContinuation.pages,
+      cashflow: cashflowContinuation.pages
+    };
+ 
+    const statementSelectionResolved = {
+      income: {
+        basePage: incomePage,
+        pages: statementPageRanges.income,
+        pageContexts: getPageContextsByNumbers(statementPageRanges.income)
+      },
+      balance: {
+        basePage: balancePage,
+        pages: statementPageRanges.balance,
+        pageContexts: getPageContextsByNumbers(statementPageRanges.balance)
+      },
+      cashflow: {
+        basePage: cashFlowPage,
+        pages: statementPageRanges.cashflow,
+        pageContexts: getPageContextsByNumbers(statementPageRanges.cashflow)
+      }
+    };
+ 
+    // =========================================================
+    // Layer 5: Raw Financial Row Extraction
+    // =========================================================
+ 
+    function getCell(row, idx) {
+      if (!Array.isArray(row)) return "";
+      if (!Number.isFinite(idx)) return "";
+      return String(row[idx] == null ? "" : row[idx]).trim();
+    }
+ 
+    function pickFallbackLabelCell(row, header, statementType) {
+      if (!Array.isArray(row) || !row.length) return "";
+ 
+      const cells = row.map((cell, idx) => ({
+        idx,
+        cell: String(cell == null ? "" : cell).trim()
+      }));
+ 
+      const reserved = new Set(
+        [
+          header?.currentCol,
+          header?.previousCol
+        ].filter((x) => Number.isFinite(x))
+      );
+ 
+      const textCandidates = cells
+        .filter((x) => !reserved.has(x.idx))
+        .filter((x) => isLikelyTextLabelCell(x.cell))
+        .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
+        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
+        .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType));
+ 
+      if (textCandidates.length > 0) {
+        const rtlPick = textCandidates.slice().sort((a, b) => b.idx - a.idx)[0];
+        return rtlPick?.cell || "";
+      }
+ 
+      const fallbackFromAnyText = cells
+        .filter((x) => !reserved.has(x.idx))
+        .filter((x) => /[A-Za-z\u0600-\u06FF]/.test(x.cell))
+        .filter((x) => !isLikelyStatementTitleRow(x.cell, statementType))
+        .filter((x) => !isLikelyMetaOrHeaderLabel(x.cell))
+        .filter((x) => !isSectionHeaderOnlyLabel(x.cell, statementType))
+        .sort((a, b) => b.idx - a.idx)[0];
+ 
+      return fallbackFromAnyText?.cell || "";
+    }
+ 
+    function normalizeLabelForRow(label) {
+      return cleanupLabel(
+        String(label || "")
+          .replace(/\.+$/g, "")
+          .replace(/\s{2,}/g, " ")
+          .trim()
+      );
+    }
+ 
+    function isLikelyStatementTitleRow(label, statementType) {
       const s = normalizeText(label);
-
+ 
+      if (!s) return false;
+ 
+      const titleMap = {
+        income: [
+          "قائمة الدخل",
+          "قائمة الارباح والخسائر",
+          "قائمة الأرباح والخسائر",
+          "قائمة الدخل الشامل",
+          "statement of income",
+          "income statement",
+          "statement of profit or loss",
+          "statement of comprehensive income",
+          "profit or loss"
+        ],
+        balance: [
+          "قائمة المركز المالي",
+          "المركز المالي",
+          "قائمة الوضع المالي",
+          "statement of financial position",
+          "balance sheet",
+          "financial position"
+        ],
+        cashflow: [
+          "قائمة التدفقات النقدية",
+          "بيان التدفقات النقدية",
+          "التدفقات النقدية",
+          "statement of cash flows",
+          "cash flow statement"
+        ]
+      };
+ 
+      return (titleMap[statementType] || []).some((x) => s.includes(normalizeText(x)));
+    }
+ 
+    function isLikelyMetaOrHeaderLabel(label) {
+      const s = normalizeText(label);
+ 
       if (!s) return true;
-
+ 
       return (
         isLikelyStatementDateText(s) ||
         isLikelyStandardEffectiveDateText(s) ||
         isLikelyNarrativeLine(s) ||
         isQuarterOrPeriodCell(s) ||
-        isLikelyCurrencyOrUnitHeader(s) ||
         s === "البيان" ||
         s === "البيانات" ||
         s === "description" ||
@@ -3216,284 +2937,320 @@ function isLikelyMetaOrHeaderLabel(label) {
         s === "notes" ||
         s === "note" ||
         s === "ايضاح" ||
-        s === "الايضاح" ||
-        s === "ايضاحات" ||
-        s === "الايضاحات" ||
-        s === "الإيضاحات" ||
-        s === "للسنه" ||
-        s === "للسنة" ||
-        s === "السنه" ||
-        s === "السنة" ||
-        s === "المنتهيه" ||
-        s === "المنتهية"
+        s === "الايضاح"
       );
     }
-function rowHasUsefulNumericValue(row, header) {
-const currentRaw = getCell(row, header?.currentCol);
-const previousRaw = getCell(row, header?.previousCol);
-const currentValue = parseNumberSmart(currentRaw);
-const previousValue = parseNumberSmart(previousRaw);
-return currentValue != null || previousValue != null;
-}
-function shouldSkipExtractedRow({
-row,
-rowIndex,
-label,
-statementType,
-pageCtx,
-currentYearValue,
-previousYearValue
-{ )}
-const cleanLabel = normalizeLabelForRow(label);
-if (!cleanLabel) return true;
-if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
-if (!rowHasUsefulNumericValue(row, pageCtx?.header)) return true;
-if (
-{ )
-statementType === "income" &&
-currentYearValue == null &&
-previousYearValue == null
-return true;
-}
-if (statementType === "cashflow") {
-const resolutionMode = String(pageCtx?.header?.resolutionMode || "").trim();
-if (pageCtx?.isLikelyIndexPage || pageCtx?.isLikelyNarrativePage) {
-return true;
-}
-if (
-resolutionMode === "single_numeric_column" &&
-!containsAny(
-cleanLabel,
-[
-تﺎﻘﻓﺪﺘﻟا "
-," ﺔﯾﺪﻘﻨﻟا
-ﻲﻓﺎﺻ "
-," ﺪﻘﻨﻟا
-ﺔﯾﺪﻘﻨﻟا "
-," ﺎﮭﻟدﺎﻌﯾ
-ﺎﻣو
-ﺪﻘﻨﻟا "
-," ﮫﻤﻜﺣ
-ﻲﻓ
-ﺎﻣو
-"cash flow",
-"net cash",
-"cash and cash equivalents"
-)
-) {
-}
-]
-return true;
-if (!isAcceptableFinancialLabel(cleanLabel, statementType)) {
-return true;
-}
-}
-return false;
-}
-function collectNumericRows(pageCtx, statementType) {
+ 
+    function rowHasUsefulNumericValue(row, header) {
+      const currentRaw = getCell(row, header?.currentCol);
+      const previousRaw = getCell(row, header?.previousCol);
+ 
+      const currentValue = parseNumberSmart(currentRaw);
+      const previousValue = parseNumberSmart(previousRaw);
+ 
+      return currentValue != null || previousValue != null;
+    }
+ 
+    function shouldSkipExtractedRow({
+      row,
+      rowIndex,
+      label,
+      statementType,
+      pageCtx,
+      currentYearValue,
+      previousYearValue
+    }) {
+      const cleanLabel = normalizeLabelForRow(label);
+ 
+      if (!cleanLabel) return true;
+      if (rowIndex <= safeNumber(pageCtx?.header?.headerRowIndex, -1)) return true;
+      if (!rowHasUsefulNumericValue(row, pageCtx?.header)) return true;
+ 
+      if (
+        statementType === "income" &&
+        currentYearValue == null &&
+        previousYearValue == null
+      ) {
+        return true;
+      }
+ 
+      if (statementType === "cashflow") {
+        const resolutionMode = String(pageCtx?.header?.resolutionMode || "").trim();
+ 
+        if (pageCtx?.isLikelyIndexPage || pageCtx?.isLikelyNarrativePage) {
+          return true;
+        }
+ 
+        if (
+          resolutionMode === "single_numeric_column" &&
+          !containsAny(
+            cleanLabel,
+            [
+              "التدفقات النقدية",
+              "صافي النقد",
+              "النقدية وما يعادلها",
+              "النقد وما في حكمه",
+              "cash flow",
+              "net cash",
+              "cash and cash equivalents"
+            ]
+          )
+        ) {
+          return true;
+        }
+      }
+ 
+      if (!isAcceptableFinancialLabel(cleanLabel, statementType)) {
+        return true;
+      }
+ 
+      return false;
+    }
+ 
+    function isSafeTableTextLabelCandidate(cell, statementType) {
+      const clean = normalizeLabelForRow(cell);
+      if (!clean) return null;
+      if (isLikelyReferenceValue(clean)) return null;
+      if (isLikelyMetaOrHeaderLabel(clean)) return null;
+      if (isLikelyStatementTitleRow(clean, statementType)) return null;
+      if (isSectionHeaderOnlyLabel(clean, statementType)) return null;
+      if (isLikelyCurrencyOrUnitHeader(clean)) return null;
+      if (!isAcceptableFinancialLabel(clean, statementType)) return null;
+      return clean;
+    }
+
+    function getIncomeTableOnlyLabelCandidate(pageCtx, row, rowIndex, statementType) {
       const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
       const header = pageCtx?.header || {};
-      const numericRows = [];
+      if (!Array.isArray(row) || !rows.length) return null;
 
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-        const row = rows[rowIndex];
-        if (!Array.isArray(row) || !row.length) continue;
-        if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
-        if (!rowHasUsefulNumericValue(row, header)) continue;
+      const scanRow = (targetRow, sourceTag) => {
+        if (!Array.isArray(targetRow) || !targetRow.length) return null;
 
-        const sameRowMeta = getSameRowLabelCandidate(row, header, statementType);
-        let labelCandidate = sameRowMeta.labelCandidate;
-        const note = sameRowMeta.note;
+        const priorityIndexes = [
+          header?.labelCol,
+          ...targetRow.map((_, idx) => idx)
+        ].filter((v, i, arr) => Number.isFinite(v) && arr.indexOf(v) === i);
 
-        let labelRecoveredFrom = null;
-        if (statementType === "income") {
-          const sameRowAcceptable =
-            labelCandidate && isIncomeTableLabelCandidate(labelCandidate);
-
-          if (!sameRowAcceptable) {
-            const nearbyTableLabel = findBestNearbyTableLabelCandidate(
-              rows,
-              rowIndex,
-              header,
-              statementType
-            );
-
-            if (!nearbyTableLabel) {
-              continue;
-            }
-
-            labelCandidate = nearbyTableLabel.label;
-            labelRecoveredFrom = nearbyTableLabel.recoveredFrom;
+        for (const idx of priorityIndexes) {
+          if (!Number.isFinite(idx)) continue;
+          if (idx === header?.noteCol) continue;
+          if (idx === header?.currentCol) continue;
+          if (idx === header?.previousCol) continue;
+          const accepted = isSafeTableTextLabelCandidate(getCell(targetRow, idx), statementType);
+          if (accepted) {
+            return { label: accepted, recoveredFrom: sourceTag };
           }
         }
 
-        const currentYearValueRaw = getCell(row, header.currentCol);
-        const previousYearValueRaw = getCell(row, header.previousCol);
-
-        const currentYearValue = parseNumberSmart(currentYearValueRaw);
-        const previousYearValue = parseNumberSmart(previousYearValueRaw);
-
-        numericRows.push({
-          statementType,
-          pageNumber: pageCtx.pageNumber,
-          rowIndex,
-          row,
-          labelCandidate,
-          note,
-          currentYearValue,
-          previousYearValue,
-          source: {
-            labelCol: Number.isFinite(header.labelCol) ? header.labelCol : null,
-            noteCol: Number.isFinite(header.noteCol) ? header.noteCol : null,
-            currentCol: Number.isFinite(header.currentCol) ? header.currentCol : null,
-            previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
-            resolutionMode: header.resolutionMode || null,
-            direction: header.direction || null,
-            ...(labelRecoveredFrom ? { labelRecoveredFrom } : {})
+        for (const cell of targetRow) {
+          const accepted = isSafeTableTextLabelCandidate(cell, statementType);
+          if (accepted) {
+            return { label: accepted, recoveredFrom: sourceTag };
           }
-        });
+        }
+
+        return null;
+      };
+
+      const primary = scanRow(row, "table_row_primary");
+      if (primary) return primary;
+
+      const offsets = [-1, 1, -2, 2];
+      for (const offset of offsets) {
+        const idx = rowIndex + offset;
+        if (idx < 0 || idx >= rows.length) continue;
+        if (idx <= safeNumber(header?.headerRowIndex, -1)) continue;
+        const nearby = scanRow(rows[idx], "table_row_primary_nearby");
+        if (nearby) return nearby;
       }
 
+      return null;
+    }
+
+    function collectNumericRows(pageCtx, statementType) {
+      const rows = Array.isArray(pageCtx?.mainRows) ? pageCtx.mainRows : [];
+      const header = pageCtx?.header || {};
+      const numericRows = [];
+ 
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+        try {
+          const row = rows[rowIndex];
+          if (!Array.isArray(row) || !row.length) continue;
+          if (rowIndex <= safeNumber(header?.headerRowIndex, -1)) continue;
+          if (!rowHasUsefulNumericValue(row, header)) continue;
+ 
+          const labelFromHeader = getCell(row, header.labelCol);
+          const fallbackLabel = pickFallbackLabelCell(row, header, statementType);
+          const noteRaw = getCell(row, header.noteCol);
+
+          const noteLooksLikeLabel =
+            header.labelCol == null &&
+            !!noteRaw &&
+            isLikelyTextLabelCell(noteRaw) &&
+            !isLikelyReferenceValue(noteRaw) &&
+            !isLikelyMetaOrHeaderLabel(noteRaw) &&
+            !isLikelyStatementTitleRow(noteRaw, statementType) &&
+            !isSectionHeaderOnlyLabel(noteRaw, statementType) &&
+            !isLikelyCurrencyOrUnitHeader(noteRaw);
+
+          const directLabelCandidate = normalizeLabelForRow(
+            labelFromHeader ||
+            fallbackLabel ||
+            (noteLooksLikeLabel ? noteRaw : "")
+          );
+
+          const incomeTableLabel =
+            statementType === "income"
+              ? getIncomeTableOnlyLabelCandidate(pageCtx, row, rowIndex, statementType)
+              : null;
+
+          const labelCandidate = normalizeLabelForRow(
+            statementType === "income"
+              ? (incomeTableLabel?.label || directLabelCandidate || "")
+              : (directLabelCandidate || "")
+          );
+
+          if (statementType === "income" && !labelCandidate) {
+            continue;
+          }
+ 
+          const note =
+            noteLooksLikeLabel
+              ? null
+              : (isLikelyReferenceValue(noteRaw) ? noteRaw : null);
+ 
+          const currentYearValueRaw = getCell(row, header.currentCol);
+          const previousYearValueRaw = getCell(row, header.previousCol);
+ 
+          const currentYearValue = parseNumberSmart(currentYearValueRaw);
+          const previousYearValue = parseNumberSmart(previousYearValueRaw);
+ 
+          numericRows.push({
+            statementType,
+            pageNumber: pageCtx.pageNumber,
+            rowIndex,
+            row,
+            labelCandidate,
+            note,
+            currentYearValue,
+            previousYearValue,
+            source: {
+              labelCol: Number.isFinite(header.labelCol) ? header.labelCol : null,
+              noteCol: Number.isFinite(header.noteCol) ? header.noteCol : null,
+              currentCol: Number.isFinite(header.currentCol) ? header.currentCol : null,
+              previousCol: Number.isFinite(header.previousCol) ? header.previousCol : null,
+              resolutionMode: header.resolutionMode || null,
+              direction: header.direction || null,
+              ...(statementType === "income" && incomeTableLabel
+                ? { labelRecoveredFrom: incomeTableLabel.recoveredFrom }
+                : {})
+            }
+          });
+        } catch (_err) {
+          continue;
+        }
+      }
+ 
       return numericRows;
     }
-function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
-if (!Array.isArray(candidates) || !candidates.length) return null;
-const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
-for (const offset of offsets) {
-const idx = startIndex + offset;
-if (idx < 0 || idx >= candidates.length) continue;
-const candidate = normalizeLabelForRow(candidates[idx]);
-const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
-if (isAcceptableFinancialLabel(candidate, statementType)) {
-return {
-label: candidate,
-recoveredFrom: "page_text_nearby"
-};
-}
-if (
-) {
-salvagedCandidate &&
-isAcceptableFinancialLabel(salvagedCandidate, statementType)
-return {
-label: salvagedCandidate,
-recoveredFrom: "page_text_salvaged_nearby"
-};
-}
-}
-return null;
-}
-function extractBestTableLabelFromRow(row, header, statementType) {
-if (!Array.isArray(row) || !row.length) return null;
-const reserved = new Set(
-[
-header?.currentCol,
-header?.previousCol,
-header?.noteCol
-].filter((x) => Number.isFinite(x))
-);
-const candidates = row
-.map((cell, idx) => ({
-idx,
-raw: String(cell == null ? "" : cell).trim()
-}))
-.filter((x) => x.raw)
-.filter((x) => !reserved.has(x.idx))
-.filter((x) => isLikelyTextLabelCell(x.raw))
-.filter((x) => !isLikelyReferenceValue(x.raw))
-.filter((x) => !isLikelyMetaOrHeaderLabel(x.raw))
-.filter((x) => !isLikelyStatementTitleRow(x.raw, statementType))
-.filter((x) => !isSectionHeaderOnlyLabel(x.raw, statementType))
-.map((x) => {
-const normalized = normalizeLabelForRow(x.raw);
-const salvaged = salvageFinancialLabelCandidate(normalized);
-return {
-idx: x.idx,
-normalized,
-salvaged
-};
-})
-.filter((x) => x.normalized || x.salvaged);
-if (!candidates.length) return null;
-const direction = String(header?.direction || "rtl").toLowerCase();
-const ordered = candidates.slice().sort((a, b) => {
-return direction === "rtl" ? b.idx - a.idx : a.idx - b.idx;
-});
-for (const candidate of ordered) {
-if (isAcceptableFinancialLabel(candidate.normalized, statementType)) {
-return {
-label: candidate.normalized,
-recoveredFrom: "table_row_primary"
-};
-}
-if (
-) {
-candidate.salvaged &&
-isAcceptableFinancialLabel(candidate.salvaged, statementType)
-return {
-label: candidate.salvaged,
-recoveredFrom: "table_row_salvaged"
-};
-}
-}
-return null;
-}
-function findBestNearbyTableLabelCandidate(rows, startRowIndex, header, statementType) {
-if (!Array.isArray(rows) || !rows.length) return null;
-const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
-for (const offset of offsets) {
-const idx = startRowIndex + offset;
-if (idx < 0 || idx >= rows.length) continue;
-const fromRow = extractBestTableLabelFromRow(rows[idx], header, statementType);
-if (fromRow) {
-return {
-label: fromRow.label,
-recoveredFrom: offset === 0
-? fromRow.recoveredFrom
-: `${fromRow.recoveredFrom}_nearby`
-};
-}
-}
-return null;
-}
-function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
+ 
+    function findBestNearbyLabelCandidate(candidates, startIndex, statementType) {
+      if (!Array.isArray(candidates) || !candidates.length) return null;
+ 
+      const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6];
+ 
+      for (const offset of offsets) {
+        const idx = startIndex + offset;
+        if (idx < 0 || idx >= candidates.length) continue;
+ 
+        const candidate = normalizeLabelForRow(candidates[idx]);
+        const salvagedCandidate = salvageFinancialLabelCandidate(candidate);
+ 
+        if (isAcceptableFinancialLabel(candidate, statementType)) {
+          return {
+            label: candidate,
+            recoveredFrom: "page_text_nearby"
+          };
+        }
+ 
+        if (
+          salvagedCandidate &&
+          isAcceptableFinancialLabel(salvagedCandidate, statementType)
+        ) {
+          return {
+            label: salvagedCandidate,
+            recoveredFrom: "page_text_salvaged_nearby"
+          };
+        }
+      }
+ 
+      return null;
+    }
+ 
+    function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
       if (!Array.isArray(rawEntries) || !rawEntries.length) return [];
 
       if (statementType === "income") {
-        return rawEntries.map((en) => {
-          const normalizedLabel = normalizeLabelForRow(en.labelCandidate);
-          return {
-            ...en,
-            label: isIncomeTableLabelCandidate(normalizedLabel) ? normalizedLabel : ""
-          };
-        });
-      }
+        return rawEntries
+          .map((en) => {
+            const finalLabel = normalizeLabelForRow(en.labelCandidate);
+            if (isAcceptableFinancialLabel(finalLabel, statementType)) {
+              return {
+                ...en,
+                label: finalLabel
+              };
+            }
 
+            const fallback = getIncomeTableOnlyLabelCandidate(
+              pageCtx,
+              Array.isArray(en?.row) ? en.row : [],
+              safeNumber(en?.rowIndex, 0),
+              statementType
+            );
+
+            if (fallback && isAcceptableFinancialLabel(fallback.label, statementType)) {
+              return {
+                ...en,
+                label: fallback.label,
+                source: {
+                  ...en.source,
+                  labelRecoveredFrom: fallback.recoveredFrom
+                }
+              };
+            }
+
+            return null;
+          })
+          .filter(Boolean);
+      }
+ 
       const candidates = extractLabelCandidatesFromPageText(pageCtx, statementType);
       if (!candidates.length) return rawEntries;
-
+ 
       const headerRowIndex = safeNumber(pageCtx?.header?.headerRowIndex, -1);
-
+ 
       return rawEntries.map((en) => {
         const finalLabel = normalizeLabelForRow(en.labelCandidate);
-
+ 
         if (isAcceptableFinancialLabel(finalLabel, statementType)) {
           return {
             ...en,
             label: finalLabel
           };
         }
-
+ 
         const relativeRowIndex = Math.max(
           0,
           safeNumber(en?.rowIndex, 0) - headerRowIndex - 1
         );
-
+ 
         const nearby = findBestNearbyLabelCandidate(
           candidates,
           relativeRowIndex,
           statementType
         );
-
+ 
         if (nearby) {
           return {
             ...en,
@@ -3504,273 +3261,322 @@ function repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType) {
             }
           };
         }
-
+ 
         return {
           ...en,
           label: finalLabel
         };
       });
     }
-function extractRowsFromPageContext(pageCtx, statementType) {
-if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
-return [];
-}
-const rawEntries = collectNumericRows(pageCtx, statementType);
-const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
-const header = pageCtx.header || {};
-const extracted = [];
-for (const en of repairedEntries) {
-const label = normalizeLabelForRow(en.label);
-if (
-shouldSkipExtractedRow({
-row: en.row,
-rowIndex: en.rowIndex,
-label,
-statementType,
-pageCtx,
-currentYearValue: en.currentYearValue,
-previousYearValue: en.previousYearValue
-})
-) {
-continue;
-}
-extracted.push({
-statementType,
-pageNumber: pageCtx.pageNumber,
-rowIndex: en.rowIndex,
-label,
-note: en.note,
-currentYear: {
-year: Number.isFinite(header.latest) ? header.latest : null,
-value: en.currentYearValue
-},
-previousYear: {
-year: Number.isFinite(header.previous) ? header.previous : null,
-value: en.previousYearValue
-},
-source: en.source,
-rawRow: en.row
-});
-}
-return extracted;
-}
-function dedupeExtractedRows(rows) {
-const seen = new Set();
-const out = [];
-for (const row of rows || []) {
-const key = [
-row.statementType,
-row.pageNumber,
-normalizeText(row.label),
-row.currentYear?.year,
-row.currentYear?.value,
-row.previousYear?.year,
-row.previousYear?.value
-].join("|");
-if (seen.has(key)) continue;
-seen.add(key);
-out.push(row);
-}
-return out;
-}
-function buildMissingLabelDiagnostics(rawEntries, repairedEntries, pageCtx, statementType) {
-const acceptableTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType)
-.filter((label) => isAcceptableFinancialLabel(label, statementType));
-const noteLikeRawCount = (rawEntries || []).filter((entry) => {
-const candidate = normalizeLabelForRow(entry?.labelCandidate);
-return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
-}).length;
-const acceptedCount = (repairedEntries || []).filter((entry) => {
-const label = normalizeLabelForRow(entry?.label);
-return isAcceptableFinancialLabel(label, statementType);
-}).length;
-const header = pageCtx?.header || {};
-const likelyMissingLabelsInPayload =
-statementType === "income" &&
-!Number.isFinite(header.labelCol) &&
-rawEntries.length > 0 &&
-acceptedCount === 0 &&
-acceptableTextCandidates.length === 0;
-return {
-likelyMissingLabelsInPayload,
-acceptableTextCandidatesCount: acceptableTextCandidates.length,
-noteLikeOrRejectedRawLabelsCount: noteLikeRawCount,
-acceptedLabelCountAfterRepair: acceptedCount,
-reason: likelyMissingLabelsInPayload
-? "income_labels_missing_from_payload"
-: null
+ 
+    function extractRowsFromPageContext(pageCtx, statementType) {
+      if (!pageCtx || !Array.isArray(pageCtx.mainRows) || !pageCtx.mainRows.length) {
+        return [];
+      }
+ 
+      const rawEntries = collectNumericRows(pageCtx, statementType);
+      const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
+      const header = pageCtx.header || {};
+      const extracted = [];
+ 
+      for (const en of repairedEntries) {
+        const label = normalizeLabelForRow(en.label);
+ 
+        if (
+          shouldSkipExtractedRow({
+            row: en.row,
+            rowIndex: en.rowIndex,
+            label,
+            statementType,
+            pageCtx,
+            currentYearValue: en.currentYearValue,
+            previousYearValue: en.previousYearValue
+          })
+        ) {
+          continue;
+        }
+ 
+        extracted.push({
+          statementType,
+          pageNumber: pageCtx.pageNumber,
+          rowIndex: en.rowIndex,
+          label,
+          note: en.note,
+          currentYear: {
+            year: Number.isFinite(header.latest) ? header.latest : null,
+            value: en.currentYearValue
+          },
+          previousYear: {
+            year: Number.isFinite(header.previous) ? header.previous : null,
+            value: en.previousYearValue
+          },
+          source: en.source,
+          rawRow: en.row
+        });
+      }
+ 
+      return extracted;
+    }
+ 
+    function dedupeExtractedRows(rows) {
+      const seen = new Set();
+      const out = [];
+ 
+      for (const row of rows || []) {
+        const key = [
+          row.statementType,
+          row.pageNumber,
+          normalizeText(row.label),
+          row.currentYear?.year,
+          row.currentYear?.value,
+          row.previousYear?.year,
+          row.previousYear?.value
+        ].join("|");
+ 
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(row);
+      }
+ 
+      return out;
+    }
+ 
+    function buildMissingLabelDiagnostics(rawEntries, repairedEntries, pageCtx, statementType) {
+      const acceptableTextCandidates = extractLabelCandidatesFromPageText(pageCtx, statementType)
+        .filter((label) => isAcceptableFinancialLabel(label, statementType));
+ 
+      const noteLikeRawCount = (rawEntries || []).filter((entry) => {
+        const candidate = normalizeLabelForRow(entry?.labelCandidate);
+        return !candidate || isLikelyReferenceValue(candidate) || !isAcceptableFinancialLabel(candidate, statementType);
+      }).length;
+ 
+      const acceptedCount = (repairedEntries || []).filter((entry) => {
+        const label = normalizeLabelForRow(entry?.label);
+        return isAcceptableFinancialLabel(label, statementType);
+      }).length;
+ 
+      const header = pageCtx?.header || {};
+      const likelyMissingLabelsInPayload =
+        statementType === "income" &&
+        !Number.isFinite(header.labelCol) &&
+        rawEntries.length > 0 &&
+        acceptedCount === 0 &&
+        acceptableTextCandidates.length === 0;
+ 
+      return {
+        likelyMissingLabelsInPayload,
+        acceptableTextCandidatesCount: acceptableTextCandidates.length,
+        noteLikeOrRejectedRawLabelsCount: noteLikeRawCount,
+        acceptedLabelCountAfterRepair: acceptedCount,
+        reason: likelyMissingLabelsInPayload
+          ? "income_labels_missing_from_payload"
+          : null
+      };
+    }
+ 
+    function buildExtractionDiagnostics(statementSelection) {
+      const diagnostics = {};
+ 
+      for (const statementType of ["income", "balance", "cashflow"]) {
+        const en = statementSelection?.[statementType];
+        const pageContextsForStatement = Array.isArray(en?.pageContexts)
+          ? en.pageContexts
+          : [];
+ 
+        const perPage = pageContextsForStatement.map((pageCtx) => {
+          const rawEntries = collectNumericRows(pageCtx, statementType);
+          const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
+ 
+          const acceptedEntries = repairedEntries.filter((row) => {
+            const label = normalizeLabelForRow(row.label);
+            return !shouldSkipExtractedRow({
+              row: row.row,
+              rowIndex: row.rowIndex,
+              label,
+              statementType,
+              pageCtx,
+              currentYearValue: row.currentYearValue,
+              previousYearValue: row.previousYearValue
+            });
+          });
+ 
+          const missingLabelDiagnostics = buildMissingLabelDiagnostics(
+            rawEntries,
+            repairedEntries,
+            pageCtx,
+            statementType
+          );
+ 
+          return {
+            pageNumber: pageCtx.pageNumber,
+            rawEntriesCount: rawEntries.length,
+            repairedEntriesCount: repairedEntries.length,
+            acceptedEntriesCount: acceptedEntries.length,
+            header: pageCtx.header,
+            missingLabelDiagnostics,
+            sampleRaw: rawEntries.slice(0, 3).map((x) => ({
+              rowIndex: x.rowIndex,
+              labelCandidate: x.labelCandidate,
+              note: x.note,
+              currentYearValue: x.currentYearValue,
+              previousYearValue: x.previousYearValue,
+              source: x.source,
+              rawRow: x.row
+            })),
+            sampleRepaired: repairedEntries.slice(0, 3).map((x) => ({
+              rowIndex: x.rowIndex,
+              label: x.label,
+              note: x.note,
+              source: x.source
+            })),
+            sampleAccepted: acceptedEntries.slice(0, 3).map((x) => ({
+              rowIndex: x.rowIndex,
+              label: normalizeLabelForRow(x.label),
+              note: x.note,
+              source: x.source
+            }))
+          };
+        });
+ 
+        diagnostics[statementType] = {
+          pages: pageContextsForStatement.map((p) => p.pageNumber),
+          perPage
+        };
+      }
+ 
+      return diagnostics;
+    }
+ 
+    function extractStatementRows(statementSelection) {
+      const result = {
+        income: [],
+        balance: [],
+        cashflow: []
+      };
+ 
+      for (const statementType of ["income", "balance", "cashflow"]) {
+        const entry = statementSelection?.[statementType];
+        const pageContextsForStatement = Array.isArray(entry?.pageContexts)
+          ? entry.pageContexts
+          : [];
+ 
+        const rows = pageContextsForStatement.flatMap((pageCtx) =>
+          extractRowsFromPageContext(pageCtx, statementType)
+        );
+ 
+        result[statementType] = dedupeExtractedRows(rows);
+      }
+ 
+      return result;
+    }
+        const financialRows = extractStatementRows(statementSelectionResolved);
+    const extractionDiagnostics = buildExtractionDiagnostics(statementSelectionResolved);
+ 
+    return send(200, {
+      ok: true,
+      sector: finalSector,
+      sectorInfo,
+      activeSectorProfile: finalSectorProfile,
+      engine: "extract-financial-v7.1",
+      phase: "5_financial_line_item_extraction_professional_input_resolution",
+      fileName: inputFileName || null,
+      statementProfile,
+ 
+      selectedPages: {
+        incomePage,
+        balancePage,
+        cashFlowPage
+      },
+ 
+      statementPageRanges,
+      statementSelection: {
+        income: {
+          basePage: incomePage,
+          pages: statementPageRanges.income
+        },
+        balance: {
+          basePage: balancePage,
+          pages: statementPageRanges.balance
+        },
+        cashflow: {
+          basePage: cashFlowPage,
+          pages: statementPageRanges.cashflow
+        }
+      },
+      statementSelectionResolved,
+      financialRows,
+ 
+      confidence,
+ 
+      debug: {
+        inputResolution: {
+          source: resolvedInput.source,
+          localTestPath,
+          localFileExists: resolvedInput.diagnostics.localFileExists,
+          reqBodyKeys: resolvedInput.diagnostics.reqBodyKeys,
+          envelopeKeys: resolvedInput.diagnostics.envelopeKeys,
+          normalizedKeys: resolvedInput.diagnostics.normalizedKeys,
+          resolvedPagesCount: pages.length,
+          resolvedTablesCount: tablesPreview.length
+        },
+        extraction: {
+          incomeRowsCount: financialRows.income.length,
+          balanceRowsCount: financialRows.balance.length,
+          cashflowRowsCount: financialRows.cashflow.length
+        },
+        stageDiagnostics: extractionDiagnostics,
+        continuation: {
+          income: incomeContinuation,
+          balance: balanceContinuation,
+          cashflow: cashflowContinuation
+        },
+        profileDetection,
+        activeProfileKeywords: {
+          income: incomeKeywords.slice(0, 12),
+          balance: balanceKeywords.slice(0, 12),
+          cashflow: cashflowKeywords.slice(0, 12)
+        },
+        ranking: {
+          balanceTop: calibratedBalance.slice(0, 5),
+          incomeTop: calibratedIncome.slice(0, 5),
+          cashFlowTop: calibratedCashflow.slice(0, 15)
+        }
+      },
+ 
+      meta: {
+        pages: normalized?.meta?.pages ?? pages.length ?? null,
+        tables: normalized?.meta?.tables ?? tablesPreview.length ?? null,
+        textLength: normalized?.meta?.textLength ?? null
+      },
+ 
+      normalizedPrevExists: !!normalizedPrev
+    });
+  } catch (err) {
+    context.log.error("extract-financial:error", err?.stack || err?.message || err);
+    return send(500, {
+      ok: false,
+      error: err?.message || "unknown error in extract-financial",
+      debug: {
+        stack: String(err?.stack || "").split("\n").slice(0, 8),
+        localTestFile:
+          req?.body?.localTestFile ||
+          req?.body?.fileName ||
+          "almarai-layout.json"
+      }
+    });
+  }
 };
-}
-function buildExtractionDiagnostics(statementSelection) {
-const diagnostics = {};
-for (const statementType of ["income", "balance", "cashflow"]) {
-const en = statementSelection?.[statementType];
-const pageContextsForStatement = Array.isArray(en?.pageContexts)
-? en.pageContexts
-: [];
-const perPage = pageContextsForStatement.map((pageCtx) => {
-const rawEntries = collectNumericRows(pageCtx, statementType);
-const repairedEntries = repairMissingLabelsFromPageText(rawEntries, pageCtx, statementType);
-const acceptedEntries = repairedEntries.filter((row) => {
-const label = normalizeLabelForRow(row.label);
-return !shouldSkipExtractedRow({
-row: row.row,
-rowIndex: row.rowIndex,
-label,
-statementType,
-pageCtx,
-currentYearValue: row.currentYearValue,
-previousYearValue: row.previousYearValue
-});
-});
-const missingLabelDiagnostics = buildMissingLabelDiagnostics(
-rawEntries,
-repairedEntries,
-pageCtx,
-statementType
-);
-return {
-pageNumber: pageCtx.pageNumber,
-rawEntriesCount: rawEntries.length,
-repairedEntriesCount: repairedEntries.length,
-acceptedEntriesCount: acceptedEntries.length,
-header: pageCtx.header,
-missingLabelDiagnostics,
-sampleRaw: rawEntries.slice(0, 3).map((x) => ({
-rowIndex: x.rowIndex,
-labelCandidate: x.labelCandidate,
-note: x.note,
-currentYearValue: x.currentYearValue,
-previousYearValue: x.previousYearValue,
-source: x.source,
-rawRow: x.row
-})),
-sampleRepaired: repairedEntries.slice(0, 3).map((x) => ({
-rowIndex: x.rowIndex,
-label: x.label,
-note: x.note,
-source: x.source
-})),
-sampleAccepted: acceptedEntries.slice(0, 3).map((x) => ({
-rowIndex: x.rowIndex,
-label: normalizeLabelForRow(x.label),
-note: x.note,
-source: x.source
-}))
-};
-});
-diagnostics[statementType] = {
-pages: pageContextsForStatement.map((p) => p.pageNumber),
-perPage
-};
-}
-return diagnostics;
-}
-function extractStatementRows(statementSelection) {
-const result = {
-income: [],
-balance: [],
-cashflow: []
-};
-for (const statementType of ["income", "balance", "cashflow"]) {
-const entry = statementSelection?.[statementType];
-const pageContextsForStatement = Array.isArray(entry?.pageContexts)
-? entry.pageContexts
-: [];
-const rows = pageContextsForStatement.flatMap((pageCtx) =>
-extractRowsFromPageContext(pageCtx, statementType)
-);
-result[statementType] = dedupeExtractedRows(rows);
-}
-return result;
-}
-const financialRows = extractStatementRows(statementSelectionResolved);
-const extractionDiagnostics = buildExtractionDiagnostics(statementSelectionResolved);
-return send(200, {
-ok: true,
-sector: finalSector,
-sectorInfo,
-activeSectorProfile: finalSectorProfile,
-engine: "extract-financial-v7.1",
-phase: "5_financial_line_item_extraction_professional_input_resolution",
-fileName: inputFileName || null,
-statementProfile,
-selectedPages: {
-incomePage,
-balancePage,
-cashFlowPage
-},
-statementPageRanges,
-statementSelection: {
-income: {
-basePage: incomePage,
-pages: statementPageRanges.income
-},
-balance: {
-basePage: balancePage,
-pages: statementPageRanges.balance
-},
-cashflow: {
-basePage: cashFlowPage,
-pages: statementPageRanges.cashflow
-}
-},
-statementSelectionResolved,
-financialRows,
-confidence,
-debug: {
-inputResolution: {
-source: resolvedInput.source,
-localTestPath,
-localFileExists: resolvedInput.diagnostics.localFileExists,
-reqBodyKeys: resolvedInput.diagnostics.reqBodyKeys,
-envelopeKeys: resolvedInput.diagnostics.envelopeKeys,
-normalizedKeys: resolvedInput.diagnostics.normalizedKeys,
-resolvedPagesCount: pages.length,
-resolvedTablesCount: tablesPreview.length
-},
-extraction: {
-incomeRowsCount: financialRows.income.length,
-balanceRowsCount: financialRows.balance.length,
-cashflowRowsCount: financialRows.cashflow.length
-},
-stageDiagnostics: extractionDiagnostics,
-continuation: {
-income: incomeContinuation,
-balance: balanceContinuation,
-cashflow: cashflowContinuation
-},
-profileDetection,
-activeProfileKeywords: {
-income: incomeKeywords.slice(0, 12),
-balance: balanceKeywords.slice(0, 12),
-cashflow: cashflowKeywords.slice(0, 12)
-},
-ranking: {
-balanceTop: calibratedBalance.slice(0, 5),
-incomeTop: calibratedIncome.slice(0, 5),
-cashFlowTop: calibratedCashflow.slice(0, 15)
-}
-},
-meta: {
-pages: normalized?.meta?.pages ?? pages.length ?? null,
-tables: normalized?.meta?.tables ?? tablesPreview.length ?? null,
-textLength: normalized?.meta?.textLength ?? null
-},
-normalizedPrevExists: !!normalizedPrev
-});
-} catch (err) {
-context.log.error("extract-financial:error", err?.stack || err?.message || err);
-return send(500, {
-ok: false,
-error: err?.message || "unknown error in extract-financial",
-debug: {
-stack: String(err?.stack || "").split("\n").slice(0, 8),
-localTestFile:
-req?.body?.localTestFile ||
-req?.body?.fileName ||
-"almarai-layout.json"
-}
-});
-}
-};
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
